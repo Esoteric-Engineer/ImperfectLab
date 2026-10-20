@@ -1,0 +1,451 @@
+{
+ "class": "male",
+ "base_nodes": 72,
+ "groups": [
+  "torso",
+  "R arm",
+  "R hand",
+  "L arm",
+  "L hand",
+  "R leg",
+  "L leg",
+  "face",
+  "props"
+ ],
+ "twist": {
+  "R.upper_arm": [
+   "R.upper_twist",
+   "R.forearm",
+   0.25,
+   0.55
+  ],
+  "R.forearm": [
+   "R.forearm_twist",
+   "R.hand",
+   0.45,
+   0.8
+  ],
+  "L.upper_arm": [
+   "L.upper_twist",
+   "L.forearm",
+   0.25,
+   0.55
+  ],
+  "L.forearm": [
+   "L.forearm_twist",
+   "L.hand",
+   0.45,
+   0.8
+  ]
+ },
+ "nodes": {
+  "0": {
+   "name": "Root",
+   "group": "torso"
+  },
+  "1": {
+   "name": "Pelvis",
+   "group": "torso",
+   "role": "pelvis",
+   "required": true
+  },
+  "2": {
+   "name": "Spine",
+   "group": "torso",
+   "role": "spine"
+  },
+  "3": {
+   "name": "Chest",
+   "group": "torso",
+   "role": "chest",
+   "required": true
+  },
+  "4": {
+   "name": "Neck",
+   "group": "torso",
+   "role": "neck"
+  },
+  "5": {
+   "name": "Head",
+   "group": "torso",
+   "role": "head",
+   "required": true
+  },
+  "6": {
+   "name": "Jaw",
+   "group": "face"
+  },
+  "7": {
+   "name": "Jaw 2",
+   "group": "face"
+  },
+  "8": {
+   "name": "Jaw 3",
+   "group": "face"
+  },
+  "9": {
+   "name": "Face 9 (R)",
+   "group": "face"
+  },
+  "10": {
+   "name": "Face 10 (C)",
+   "group": "face"
+  },
+  "11": {
+   "name": "Face 11 (R)",
+   "group": "face"
+  },
+  "12": {
+   "name": "Face 12 (L)",
+   "group": "face"
+  },
+  "13": {
+   "name": "Face 13 (R)",
+   "group": "face"
+  },
+  "14": {
+   "name": "Face 14 (R)",
+   "group": "face"
+  },
+  "15": {
+   "name": "Face 15 (R)",
+   "group": "face"
+  },
+  "16": {
+   "name": "Face 16 (L)",
+   "group": "face"
+  },
+  "17": {
+   "name": "Face 17 (L)",
+   "group": "face"
+  },
+  "18": {
+   "name": "Face 18 (L)",
+   "group": "face"
+  },
+  "19": {
+   "name": "Face 19 (L)",
+   "group": "face"
+  },
+  "20": {
+   "name": "Face 20 (R)",
+   "group": "face"
+  },
+  "21": {
+   "name": "Face 21 (L)",
+   "group": "face"
+  },
+  "40": {
+   "name": "Chest prop base",
+   "group": "props"
+  },
+  "41": {
+   "name": "Chest prop",
+   "group": "props"
+  },
+  "60": {
+   "name": "Hips",
+   "group": "torso"
+  },
+  "69": {
+   "name": "Ground marker",
+   "group": "props"
+  },
+  "70": {
+   "name": "Root marker",
+   "group": "props"
+  },
+  "71": {
+   "name": "Centre marker",
+   "group": "props"
+  },
+  "22": {
+   "name": "R Clavicle",
+   "group": "R arm",
+   "role": "R.clavicle"
+  },
+  "23": {
+   "name": "R Upper arm",
+   "group": "R arm",
+   "role": "R.upper_arm",
+   "required": true
+  },
+  "24": {
+   "name": "R Upper arm twist",
+   "group": "R arm",
+   "role": "R.upper_twist"
+  },
+  "25": {
+   "name": "R Forearm",
+   "group": "R arm",
+   "role": "R.forearm",
+   "required": true
+  },
+  "26": {
+   "name": "R Forearm twist",
+   "group": "R arm",
+   "role": "R.forearm_twist"
+  },
+  "27": {
+   "name": "R Hand",
+   "group": "R hand",
+   "role": "R.hand",
+   "required": true
+  },
+  "28": {
+   "name": "R Fingers (front) 1",
+   "group": "R hand",
+   "role": "R.finger_a.0"
+  },
+  "31": {
+   "name": "R Fingers (back) 1",
+   "group": "R hand",
+   "role": "R.finger_b.0"
+  },
+  "29": {
+   "name": "R Fingers (front) 2",
+   "group": "R hand",
+   "role": "R.finger_a.1"
+  },
+  "32": {
+   "name": "R Fingers (back) 2",
+   "group": "R hand",
+   "role": "R.finger_b.1"
+  },
+  "30": {
+   "name": "R Fingers (front) 3",
+   "group": "R hand",
+   "role": "R.finger_a.2"
+  },
+  "33": {
+   "name": "R Fingers (back) 3",
+   "group": "R hand",
+   "role": "R.finger_b.2"
+  },
+  "34": {
+   "name": "R Thumb 1",
+   "group": "R hand",
+   "role": "R.thumb.0"
+  },
+  "35": {
+   "name": "R Thumb 2",
+   "group": "R hand",
+   "role": "R.thumb.1"
+  },
+  "36": {
+   "name": "R Hand tip",
+   "group": "props"
+  },
+  "37": {
+   "name": "R Palm",
+   "group": "props"
+  },
+  "38": {
+   "name": "R Forearm prop base",
+   "group": "props"
+  },
+  "39": {
+   "name": "R Forearm prop",
+   "group": "props"
+  },
+  "65": {
+   "name": "R Thigh",
+   "group": "R leg",
+   "role": "R.thigh",
+   "required": true
+  },
+  "66": {
+   "name": "R Calf",
+   "group": "R leg",
+   "role": "R.calf",
+   "required": true
+  },
+  "67": {
+   "name": "R Foot",
+   "group": "R leg",
+   "role": "R.foot",
+   "required": true
+  },
+  "68": {
+   "name": "R Toe",
+   "group": "R leg",
+   "role": "R.toe"
+  },
+  "42": {
+   "name": "L Clavicle",
+   "group": "L arm",
+   "role": "L.clavicle"
+  },
+  "43": {
+   "name": "L Upper arm",
+   "group": "L arm",
+   "role": "L.upper_arm",
+   "required": true
+  },
+  "44": {
+   "name": "L Upper arm twist",
+   "group": "L arm",
+   "role": "L.upper_twist"
+  },
+  "45": {
+   "name": "L Forearm",
+   "group": "L arm",
+   "role": "L.forearm",
+   "required": true
+  },
+  "46": {
+   "name": "L Forearm twist",
+   "group": "L arm",
+   "role": "L.forearm_twist"
+  },
+  "47": {
+   "name": "L Hand",
+   "group": "L hand",
+   "role": "L.hand",
+   "required": true
+  },
+  "48": {
+   "name": "L Fingers (front) 1",
+   "group": "L hand",
+   "role": "L.finger_a.0"
+  },
+  "51": {
+   "name": "L Fingers (back) 1",
+   "group": "L hand",
+   "role": "L.finger_b.0"
+  },
+  "49": {
+   "name": "L Fingers (front) 2",
+   "group": "L hand",
+   "role": "L.finger_a.1"
+  },
+  "52": {
+   "name": "L Fingers (back) 2",
+   "group": "L hand",
+   "role": "L.finger_b.1"
+  },
+  "50": {
+   "name": "L Fingers (front) 3",
+   "group": "L hand",
+   "role": "L.finger_a.2"
+  },
+  "53": {
+   "name": "L Fingers (back) 3",
+   "group": "L hand",
+   "role": "L.finger_b.2"
+  },
+  "54": {
+   "name": "L Thumb 1",
+   "group": "L hand",
+   "role": "L.thumb.0"
+  },
+  "55": {
+   "name": "L Thumb 2",
+   "group": "L hand",
+   "role": "L.thumb.1"
+  },
+  "56": {
+   "name": "L Hand tip",
+   "group": "props"
+  },
+  "57": {
+   "name": "L Palm",
+   "group": "props"
+  },
+  "58": {
+   "name": "L Forearm prop base",
+   "group": "props"
+  },
+  "59": {
+   "name": "L Forearm prop",
+   "group": "props"
+  },
+  "61": {
+   "name": "L Thigh",
+   "group": "L leg",
+   "role": "L.thigh",
+   "required": true
+  },
+  "62": {
+   "name": "L Calf",
+   "group": "L leg",
+   "role": "L.calf",
+   "required": true
+  },
+  "63": {
+   "name": "L Foot",
+   "group": "L leg",
+   "role": "L.foot",
+   "required": true
+  },
+  "64": {
+   "name": "L Toe",
+   "group": "L leg",
+   "role": "L.toe"
+  },
+  "72": {
+   "name": "Face 72",
+   "group": "face"
+  },
+  "73": {
+   "name": "Face 73",
+   "group": "face"
+  },
+  "74": {
+   "name": "Face 74",
+   "group": "face"
+  },
+  "75": {
+   "name": "Face 75",
+   "group": "face"
+  },
+  "76": {
+   "name": "Face 76",
+   "group": "face"
+  },
+  "77": {
+   "name": "Face 77",
+   "group": "face"
+  },
+  "78": {
+   "name": "Face 78",
+   "group": "face"
+  },
+  "79": {
+   "name": "Face 79",
+   "group": "face"
+  },
+  "80": {
+   "name": "Face 80",
+   "group": "face"
+  },
+  "81": {
+   "name": "Face 81",
+   "group": "face"
+  },
+  "82": {
+   "name": "Face 82",
+   "group": "face"
+  },
+  "83": {
+   "name": "Face 83",
+   "group": "face"
+  },
+  "84": {
+   "name": "Face 84",
+   "group": "face"
+  },
+  "85": {
+   "name": "Face 85",
+   "group": "face"
+  },
+  "86": {
+   "name": "Face 86",
+   "group": "face"
+  },
+  "87": {
+   "name": "Face 87",
+   "group": "face"
+  }
+ }
+}
