@@ -29,7 +29,7 @@ MEMBER = re.compile(r"^(manifest\.json|model/model\.glb|textures/[A-Za-z0-9_-]{1
 INTERNAL = re.compile(r"^[A-Za-z][A-Za-z0-9]{0,9}$")
 DISPLAY = re.compile(r"^[A-Z0-9 .'&!-]{1,16}$")
 SUFFIX = re.compile(r"^(_[A-Za-z0-9]{1,7})?$")
-COLOUR = re.compile(r"^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$")
+COLOR = re.compile(r"^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$")
 AURA_MODES = ("base", "swap", "tint")
 LIFT = ("light", "medium", "heavy")
 GAMEPLAY = {"damage_taken": (0.1, 3.0), "health": (10, 1000), "run_speed": (1.0, 30.0),
@@ -60,7 +60,7 @@ class Character:
     def __init__(self):
         self.internal_name = "NewHero"
         self.display_name = "NEW HERO"
-        self.name_colour = "#FFFFFF"
+        self.name_color = "#FFFFFF"
         self.base = "johnnyohm"
         self.credits = {"author": "", "description": "", "assets": []}
         self.glb = None
@@ -68,7 +68,7 @@ class Character:
         self.overrides = {}
         self.fit = {"scale": None, "torso_squash": True, "flip": None}
         self.materials = []
-        self.aura = {"mode": "base", "colour": "#40A0FF", "alt_colour": "#50FF50"}
+        self.aura = {"mode": "base", "color": "#40A0FF", "alt_color": "#50FF50"}
         self.stats = default_stats()
         self.gameplay = {}
         self.ui = {"select": {}, "fade": 36, "strip_scale": None, "ready_voice": None, "banner": True}
@@ -86,8 +86,7 @@ class Character:
             files["model/model.glb"] = self.glb
         return {
             "format": FORMAT, "version": VERSION, "game": GAME, "generator": "ImperfectLab %s" % __version__,
-            "character": {"internal_name": self.internal_name, "display_name": self.display_name,
-                          "name_colour": self.name_colour},
+            "character": {"internal_name": self.internal_name, "display_name": self.display_name, "name_color": self.name_color},
             "base": self.base,
             "credits": self.credits,
             "model": {"mapping": {str(k): v for k, v in sorted(self.mapping.items())},
@@ -159,8 +158,8 @@ def _keys(d, allowed, what):
     return d
 
 
-def _colour(v, what):
-    return _str(v, what, 9, COLOUR)
+def _color(v, what):
+    return _str(v, what, 9, COLOR)
 
 
 def upgrade(m):
@@ -181,10 +180,10 @@ def from_manifest(m, files):
     if m.get("game") != GAME:
         raise LabError("this file is for %s, not %s" % (m.get("game"), GAME))
     c = Character()
-    ch = _keys(m.get("character"), ("internal_name", "display_name", "name_colour"), "character")
+    ch = _keys(m.get("character"), ("internal_name", "display_name", "name_color"), "character")
     c.internal_name = _str(ch.get("internal_name"), "internal_name", 10, INTERNAL)
     c.display_name = _str(ch.get("display_name"), "display_name", 16, DISPLAY)
-    c.name_colour = _colour(ch.get("name_colour", "#FFFFFF"), "name_colour")
+    c.name_color = _color(ch.get("name_color", "#FFFFFF"), "name_color")
     c.base = _str(m.get("base"), "base", 20)
     if c.base not in roster.BASES:
         raise LabError("manifest: unknown base character %r" % c.base)
@@ -192,8 +191,8 @@ def from_manifest(m, files):
     assets = _type(cr.get("assets", []), list, "credits.assets")[:32]
     c.credits = {"author": _str(cr.get("author", ""), "credits.author", 200),
                  "description": _str(cr.get("description", ""), "credits.description", 4000),
-                 "assets": [{k: _str(a.get(k, ""), "credits.assets", 500) for k in ("what", "by", "licence", "url")}
-                            for a in assets if isinstance(_keys(a, ("what", "by", "licence", "url"), "credits.assets"), dict)]}
+                 "assets": [{k: _str(a.get(k, ""), "credits.assets", 500) for k in ("what", "by", "license", "url")}
+                            for a in assets if isinstance(_keys(a, ("what", "by", "license", "url"), "credits.assets"), dict)]}
     mo = _keys(m.get("model", {}), ("mapping", "overrides", "fit", "materials"), "model")
     mapping = _type(mo.get("mapping", {}), dict, "model.mapping")
     if len(mapping) > 256:
@@ -232,9 +231,9 @@ def from_manifest(m, files):
                                     _str(d.get("suffix", ""), "material suffix", 8, SUFFIX), size,
                                     bool(d.get("two_sided", False)), tex, alt,
                                     _num(d.get("bind"), "material bind", 0, 255, integer=True)))
-    au = _keys(m.get("aura", {}), ("mode", "colour", "alt_colour"), "aura")
-    c.aura = {"mode": _str(au.get("mode", "base"), "aura.mode", 8), "colour": _colour(au.get("colour", "#40A0FF"), "aura.colour"),
-              "alt_colour": _colour(au.get("alt_colour", "#50FF50"), "aura.alt_colour")}
+    au = _keys(m.get("aura", {}), ("mode", "color", "alt_color"), "aura")
+    c.aura = {"mode": _str(au.get("mode", "base"), "aura.mode", 8), "color": _color(au.get("color", "#40A0FF"), "aura.color"),
+              "alt_color": _color(au.get("alt_color", "#50FF50"), "aura.alt_color")}
     if c.aura["mode"] not in AURA_MODES:
         raise LabError("manifest: unknown aura mode")
     st = _keys(m.get("stats", {}), ("display", "gameplay"), "stats")
@@ -269,7 +268,7 @@ def from_manifest(m, files):
             raise LabError("manifest: an anchor is two numbers")
         c.ui["select"][pose] = {"scale": _num(p.get("scale"), "scale", 0.001, 100.0, False),
                                 "anchor": [_num(a, "anchor", -8192, 8192, False) for a in anchor],
-                                "glow": _colour(p["glow"], "glow") if p.get("glow") else None}
+                                "glow": _color(p["glow"], "glow") if p.get("glow") else None}
     _type(m.get("moves", {}), dict, "moves")
     c.glb = files.pop("model/model.glb", None)
     c.files = files
@@ -374,7 +373,7 @@ def save(character):
 
 
 def slim_glb(data, keep_images):
-    """The GLB without animations, without material textures other than the base colour, and with only
+    """The GLB without animations, without material textures other than the base color, and with only
     the images in keep_images; the binary chunk keeps only what is still referenced."""
     from ..formats import gltf
     g = gltf.GLB(data)

@@ -6,10 +6,10 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFormLayout, QHBoxL
 from ...formats import LabError, gshtool
 from ...game import roster as R
 from ...package import imperfect
-from ..widgets import ColourButton, heading, note, pil_to_pixmap
+from ..widgets import ColorButton, heading, note, pil_to_pixmap
 from . import Page
 
-ASSET_KEYS = ("what", "by", "licence", "url")
+ASSET_KEYS = ("what", "by", "license", "url")
 
 
 class CharacterPage(Page):
@@ -31,9 +31,9 @@ class CharacterPage(Page):
         self.display.textEdited.connect(self.edited)
         form.addRow("Display name", self.display)
         form.addRow("", note("Up to 16 characters, shown on the select and loading screens."))
-        self.colour = ColourButton()
-        self.colour.changed.connect(self.edited)
-        form.addRow("Name colour", self.colour)
+        self.color = ColorButton()
+        self.color.changed.connect(self.edited)
+        form.addRow("Name color", self.color)
         lay.addLayout(form)
 
         lay.addWidget(heading("Base character"))
@@ -59,7 +59,7 @@ class CharacterPage(Page):
         form2.addRow("Description", self.description)
         lay.addLayout(form2)
         self.assets = QTableWidget(0, 4)
-        self.assets.setHorizontalHeaderLabels(["What", "By", "Licence", "Link"])
+        self.assets.setHorizontalHeaderLabels(["What", "By", "License", "Link"])
         self.assets.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.assets.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.assets.setFixedHeight(150)
@@ -114,7 +114,7 @@ class CharacterPage(Page):
             self.internal.setText(c.internal_name)
         if self.display.text() != c.display_name:
             self.display.setText(c.display_name)
-        self.colour.set(c.name_colour)
+        self.color.set(c.name_color)
         i = self.base.findData(c.base)
         if i >= 0:
             self.base.setCurrentIndex(i)
@@ -150,7 +150,7 @@ class CharacterPage(Page):
             self.display.setText(up)
             self.display.setCursorPosition(pos)
         c.display_name = up
-        c.name_colour = self.colour.colour
+        c.name_color = self.color.color
         c.credits = {"author": self.author.text(), "description": self.description.toPlainText(),
                      "assets": [{key: (self.assets.item(r, k).text() if self.assets.item(r, k) else "")
                                  for k, key in enumerate(ASSET_KEYS)} for r in range(self.assets.rowCount())]}

@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QDoubleSpin
 
 from ..build import images, portraits
 from ..build.patch import default_placement, glow_rgba
-from .widgets import ColourButton, note, pil_to_pixmap
+from .widgets import ColorButton, note, pil_to_pixmap
 
 
 class _Box(QGraphicsRectItem):
@@ -161,7 +161,7 @@ class PlacementDialog(QDialog):
             for s in (ax, ay):
                 s.setRange(-8192, 8192)
             glow_on = QCheckBox("Glow")
-            glow = ColourButton("#3CFF5A6E", alpha=True)
+            glow = ColorButton("#3CFF5A6E", alpha=True)
             ghost = QCheckBox("Show Johnny Ohm's")
             ghost.setChecked(True)
             form.addRow("Size", scale)
@@ -213,7 +213,7 @@ class PlacementDialog(QDialog):
             return
         canvas, scale, ax, ay, glow_on, glow, ghost = self.widgets[pose]
         self.spec[pose] = {"scale": scale.value(), "anchor": [ax.value(), ay.value()],
-                           "glow": glow.colour if glow_on.isChecked() else None}
+                           "glow": glow.color if glow_on.isChecked() else None}
         self.render(pose)
 
     def fade_edited(self, v):

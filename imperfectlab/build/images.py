@@ -33,11 +33,11 @@ def encode(record, im):
         data = bytes(vals[i] << 4 | vals[i + 1] for i in range(0, len(vals), 2))
     else:
         data = bytes(vals)
-    colours = [gxtex.to_colour(pic.palette_format, tuple(pal[i:i + 4])) for i in range(0, min(len(pal), 4 * pic.colours), 4)]
-    colours += [0] * (pic.colours - len(colours))
+    colors = [gxtex.to_colour(pic.palette_format, tuple(pal[i:i + 4])) for i in range(0, min(len(pal), 4 * pic.colours), 4)]
+    colors += [0] * (pic.colours - len(colors))
     out = bytearray(record)
     out[pic.pixel_off:pic.pixel_off + len(data)] = data
-    out[pic.palette_off:pic.palette_off + 2 * pic.colours] = struct.pack(">%dH" % pic.colours, *colours)
+    out[pic.palette_off:pic.palette_off + 2 * pic.colours] = struct.pack(">%dH" % pic.colours, *colors)
     out = bytes(out)
     _cache[key] = out
     return out

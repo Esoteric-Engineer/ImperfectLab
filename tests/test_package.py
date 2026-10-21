@@ -11,9 +11,9 @@ from imperfectlab.package import imperfect
 from helpers import make_glb
 
 
-def png_bytes(w=4, h=4, colour=(255, 0, 0, 255)):
+def png_bytes(w=4, h=4, color=(255, 0, 0, 255)):
     from PIL import Image
-    return imperfect.png(Image.new("RGBA", (w, h), colour))
+    return imperfect.png(Image.new("RGBA", (w, h), color))
 
 
 def character():
@@ -26,9 +26,9 @@ def character():
     c.overrides = {"mixamorig:LeftHandMiddle1": 48}
     c.stats = {"normal": [1, 2, 3, 4, 5, 6], "alt": [7, 6, 5, 4, 3, 2]}
     c.gameplay = {"damage_taken": 0.8, "lift": "heavy", "wire_swing": True, "rage_duration": 15000}
-    c.aura = {"mode": "tint", "colour": "#112233", "alt_colour": "#445566"}
+    c.aura = {"mode": "tint", "color": "#112233", "alt_color": "#445566"}
     c.ui["select"] = {"ready": {"scale": 0.5, "anchor": [10, 20], "glow": "#11223344"}}
-    c.credits = {"author": "me", "description": "a test", "assets": [{"what": "model", "by": "me", "licence": "CC0", "url": ""}]}
+    c.credits = {"author": "me", "description": "a test", "assets": [{"what": "model", "by": "me", "license": "CC0", "url": ""}]}
     return c
 
 

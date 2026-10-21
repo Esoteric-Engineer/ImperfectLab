@@ -24,29 +24,29 @@ def checker(w, h, cell=8):
     return im
 
 
-class ColourButton(QPushButton):
+class ColorButton(QPushButton):
     changed = Signal(str)
 
-    def __init__(self, colour="#FFFFFF", alpha=False, parent=None):
+    def __init__(self, color="#FFFFFF", alpha=False, parent=None):
         super().__init__(parent)
         self.alpha = alpha
         self.setFixedWidth(90)
         self.clicked.connect(self.pick)
-        self.set(colour)
+        self.set(color)
 
-    def set(self, colour):
-        self.colour = colour or "#FFFFFF"
-        rgb = self.colour[:7]
-        self.setText(self.colour.upper())
+    def set(self, color):
+        self.color = color or "#FFFFFF"
+        rgb = self.color[:7]
+        self.setText(self.color.upper())
         light = QColor(rgb).lightness() > 140
         self.setStyleSheet("background:%s;color:%s" % (rgb, "black" if light else "white"))
 
     def pick(self):
-        c = QColor(self.colour[:7])
-        if len(self.colour) == 9:
-            c.setAlpha(int(self.colour[7:9], 16))
+        c = QColor(self.color[:7])
+        if len(self.color) == 9:
+            c.setAlpha(int(self.color[7:9], 16))
         opts = QColorDialog.ShowAlphaChannel if self.alpha else QColorDialog.ColorDialogOption(0)
-        got = QColorDialog.getColor(c, self, "Pick a colour", opts)
+        got = QColorDialog.getColor(c, self, "Pick a color", opts)
         if got.isValid():
             text = "#%02X%02X%02X" % (got.red(), got.green(), got.blue())
             if self.alpha:

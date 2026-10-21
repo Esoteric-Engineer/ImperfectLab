@@ -1,7 +1,7 @@
-"""Misc/game.nfx: recoloured copies of the base's effects for the aura tint (experimental).
+"""Misc/game.nfx: recolored copies of the base's effects for the aura tint (experimental).
 
 A tree of effect blocks (a block and every block its effectname/effect0-3 keys name) is copied under
-new names with every colour turned to the chosen hue, keeping each colour's lightness. The copies are
+new names with every color turned to the chosen hue, keeping each color's lightness. The copies are
 appended; nothing of the base's changes.
 """
 import colorsys
@@ -10,7 +10,7 @@ import re
 from ..formats import LabError, call, nfxtool
 
 REFERENCES = ("effectname", "effect0", "effect1", "effect2", "effect3")
-COLOUR_KEYS = ("startcol", "endcol", "startcol2", "endcol2")
+COLOR_KEYS = ("startcol", "endcol", "startcol2", "endcol2")
 HEX_KEYS = ("startcolor", "endcolor", "startcolor2", "endcolor2")
 PARTICLES = ("partsys", "partsysdam", "billboard", "billboardomni", "partcylinder", "partsubfx")
 
@@ -25,8 +25,8 @@ def tint_roots(source, base):
     return roots, alt, fx.cost(roots) + fx.cost(alt), fx.free()
 
 
-def hex_rgb(colour):
-    c = colour.lstrip("#")
+def hex_rgb(color):
+    c = color.lstrip("#")
     return tuple(int(c[i:i + 2], 16) for i in (0, 2, 4))
 
 
@@ -72,7 +72,7 @@ class Effects:
     def free(self):
         return nfxtool.CACHE_SIZE - nfxtool.cache_use(self.items)[1]
 
-    def tinted(self, roots, colour, prefix):
+    def tinted(self, roots, color, prefix):
         """Append tinted copies of the trees of roots; returns {old name: new name}."""
         blocks = self.tree(roots)
         names, k = {}, 0
@@ -85,31 +85,31 @@ class Effects:
             if len(new) > 31:
                 raise LabError("effect name %s is too long" % new)
             names[b.name.lower()] = new
-        target = hex_rgb(colour)
+        target = hex_rgb(color)
         copies = []
         for b in blocks:
             lines = ["%s %s" % (nfxtool.TYPES[b.type], names[b.name.lower()])]
-            coloured = False
+            colored = False
             body = b.lines[1:len(b.lines) - b.ended]
             for line in body:
                 t = nfxtool.tokens(line)
                 key = t[0].lower() if t else ""
                 if key in REFERENCES and len(t) >= 2 and t[1].lower() in names:
                     line = "%s %s" % (t[0], names[t[1].lower()])
-                elif key in COLOUR_KEYS and len(t) >= 2:
+                elif key in COLOR_KEYS and len(t) >= 2:
                     vals = nfxtool.scan_floats(t[1], 4)
                     if len(vals) == 4:
                         r, g, bl = tint(vals[1:], target)
                         line = "%s (%s,%d,%d,%d)" % (t[0], _num(vals[0]), round(r), round(g), round(bl))
-                        coloured = True
+                        colored = True
                 elif key in HEX_KEYS and len(t) >= 2:
                     v = nfxtool.scan_hex(t[1])
                     if v:
                         r, g, bl = tint(((v >> 16) & 255, (v >> 8) & 255, v & 255), target)
                         line = "%s 0x%08x" % (t[0], (v & 0xFF000000) | (round(r) << 16) | (round(g) << 8) | round(bl))
-                        coloured = True
+                        colored = True
                 lines.append(line)
-            if not coloured and nfxtool.TYPES[b.type] in PARTICLES:
+            if not colored and nfxtool.TYPES[b.type] in PARTICLES:
                 lines.append("endcol (255,%d,%d,%d)" % target)
             lines.append("end")
             copies.append(nfxtool.Block(b.type, names[b.name.lower()], lines, True))

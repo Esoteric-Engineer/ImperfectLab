@@ -355,7 +355,7 @@ class ModelPage(Page):
                 os.path.basename(path), len(slim) // 1024, auto.preset))
         name = os.path.splitext(os.path.basename(path))[0]
         if not any(a.get("what") == "model" for a in c.credits.get("assets", [])):
-            c.credits.setdefault("assets", []).append({"what": "model", "by": "", "licence": "", "url": name})
+            c.credits.setdefault("assets", []).append({"what": "model", "by": "", "license": "", "url": name})
         self.state.touch("model")
         self.rebuild()
 

@@ -21,7 +21,7 @@ class Joint:
 
 
 class Prim:
-    """nrm: normals, not necessarily unit length (model/fit.py normalises them in the game frame)."""
+    """nrm: normals, not necessarily unit length (model/fit.py normalizes them in the game frame)."""
     __slots__ = ("material", "pos", "nrm", "uv", "skin", "tris")
 
     def __init__(self, material, pos, nrm, uv, skin, tris):

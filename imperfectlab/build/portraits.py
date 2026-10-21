@@ -142,7 +142,7 @@ class SelectLayout:
         return canvas
 
     def build(self, poses, fade=FADE):
-        """c18_p0 bytes. poses: {pose: (PIL picture, scale, anchor, glow colour RGBA or None)}."""
+        """c18_p0 bytes. poses: {pose: (PIL picture, scale, anchor, glow color RGBA or None)}."""
         from PIL import Image
         bank = call(gshtool.read_gsh, dict(self.files)[self.src + ".gsh"])
         for i, pieces in enumerate(self.records):

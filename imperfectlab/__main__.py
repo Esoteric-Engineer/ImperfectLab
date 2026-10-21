@@ -64,7 +64,7 @@ def cmd_info(args):
     cr = c.credits
     print("\nby %s\n%s" % (cr.get("author") or "(no author)", cr.get("description", "")))
     for a in cr.get("assets", []):
-        print("  %s: %s, %s %s" % (a.get("what"), a.get("by"), a.get("licence"), a.get("url")))
+        print("  %s: %s, %s %s" % (a.get("what"), a.get("by"), a.get("license"), a.get("url")))
 
 
 def cmd_validate(args):

@@ -33,12 +33,12 @@ def hue_shift(im, degrees):
     return out
 
 
-def colour_int(colour):
-    return int(colour.lstrip("#")[:6], 16)
+def color_int(color):
+    return int(color.lstrip("#")[:6], 16)
 
 
-def glow_rgba(colour):
-    c = colour.lstrip("#")
+def glow_rgba(color):
+    c = color.lstrip("#")
     return tuple(int(c[i:i + 2], 16) for i in (0, 2, 4)) + ((int(c[6:8], 16),) if len(c) == 8 else (110,))
 
 
@@ -200,8 +200,8 @@ class Builder:
         if not roots_n and not roots_a:
             raise LabError("%s has no effects to tint; use the Base or Swap aura" % base.label)
         prefix = c.internal_name[:8].lower()
-        mn = fx.tinted(roots_n, c.aura["colour"], prefix + "fx")
-        ma = fx.tinted(roots_a, c.aura["alt_colour"], prefix + "ax")
+        mn = fx.tinted(roots_n, c.aura["color"], prefix + "fx")
+        ma = fx.tinted(roots_a, c.aura["alt_color"], prefix + "ax")
         self.r.sets["Misc/game.nfx"] = fx.build()
         self.note("aura tint: %d effect blocks copied, %d bytes of effect cache left" % (len(mn) + len(ma), fx.free()))
         pick = lambda m, name: m.get((name or "").lower(), name)
@@ -263,7 +263,7 @@ class Builder:
         thumbs = src.entry(P + "screens/clashCharSelect_thumbs.big")
         sets[P + "screens/clashCharSelect_thumbs.big"] = ui.patch_thumbs(thumbs, base.select_id, tiles if tiles[0] else None)
         for name in ("main.big", "mainBE.big"):
-            sets[P + name] = ui.patch_main(src.entry(P + name), c.display_name, colour_int(c.name_colour))
+            sets[P + name] = ui.patch_main(src.entry(P + name), c.display_name, color_int(c.name_color))
         self.hud()
         ready = self.picture("select_ready")
         if ready is None:
@@ -401,5 +401,5 @@ def report(character, result):
     credits = character.credits or {}
     if credits.get("author") or credits.get("assets"):
         lines += ["", "Credits: %s" % credits.get("author", "")]
-        lines += ["  %s by %s (%s) %s" % (a.get("what"), a.get("by"), a.get("licence"), a.get("url")) for a in credits.get("assets", [])]
+        lines += ["  %s by %s (%s) %s" % (a.get("what"), a.get("by"), a.get("license"), a.get("url")) for a in credits.get("assets", [])]
     return "\n".join(lines) + "\n"

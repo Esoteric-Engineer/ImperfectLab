@@ -2,7 +2,7 @@ from PySide6.QtWidgets import QButtonGroup, QFormLayout, QLabel, QRadioButton
 
 from ...build import effects
 from ...formats import LabError
-from ..widgets import ColourButton, heading, note
+from ..widgets import ColorButton, heading, note
 from . import Page
 
 MODES = ("base", "swap", "tint")
@@ -21,7 +21,7 @@ class AuraPage(Page):
         grp = QButtonGroup(self)
         texts = {"base": "The normal base character's",
                  "swap": "Swapped: costume 1 gets the base's alternate aura and costume 2 the normal one",
-                 "tint": "Tinted (experimental): the base's idle and power-up effects recoloured"}
+                 "tint": "Tinted (experimental): the base's idle and power-up effects recolored"}
         for mode in MODES:
             r = QRadioButton(texts[mode])
             grp.addButton(r)
@@ -29,14 +29,14 @@ class AuraPage(Page):
             self.radios[mode] = r
             lay.addWidget(r)
         form = QFormLayout()
-        self.colour, self.alt_colour = ColourButton(), ColourButton()
-        self.colour.changed.connect(self.edited)
-        self.alt_colour.changed.connect(self.edited)
-        form.addRow("Costume 1 colour", self.colour)
-        form.addRow("Costume 2 colour", self.alt_colour)
+        self.color, self.alt_color = ColorButton(), ColorButton()
+        self.color.changed.connect(self.edited)
+        self.alt_color.changed.connect(self.edited)
+        form.addRow("Costume 1 color", self.color)
+        form.addRow("Costume 2 color", self.alt_color)
         lay.addLayout(form)
         self.limits = note("The glow the game draws in power mode belongs to the base's cast name and cannot be "
-                           "recoloured yet (its file has no reader); a tint changes the effects around it. The tint's "
+                           "recolored yet (its file has no reader); a tint changes the effects around it. The tint's "
                            "copies take room in the game's effect memory; the patch checks it fits.")
         lay.addWidget(self.limits)
         self.cost = QLabel()
@@ -62,8 +62,8 @@ class AuraPage(Page):
         self._refreshing = True
         c = self.state.character
         self.radios[c.aura.get("mode", "base")].setChecked(True)
-        self.colour.set(c.aura.get("colour"))
-        self.alt_colour.set(c.aura.get("alt_colour"))
+        self.color.set(c.aura.get("color"))
+        self.alt_color.set(c.aura.get("alt_color"))
         info = self.roots()
         base = self.state.base()
         if info is None:
@@ -77,8 +77,8 @@ class AuraPage(Page):
                                "" if roots or alt else "There is nothing to tint; Base and Swap still apply."))
             self.cost.setText("A tint copies %d bytes of effects; %d bytes are free." % (cost, free) if roots or alt else "")
         tint = c.aura.get("mode") == "tint"
-        self.colour.setEnabled(tint)
-        self.alt_colour.setEnabled(tint)
+        self.color.setEnabled(tint)
+        self.alt_color.setEnabled(tint)
         self._refreshing = False
 
     def edited(self, *_):
@@ -86,7 +86,7 @@ class AuraPage(Page):
             return
         c = self.state.character
         mode = next(m for m, r in self.radios.items() if r.isChecked())
-        c.aura = {"mode": mode, "colour": self.colour.colour[:7], "alt_colour": self.alt_colour.colour[:7]}
-        self.colour.setEnabled(mode == "tint")
-        self.alt_colour.setEnabled(mode == "tint")
+        c.aura = {"mode": mode, "color": self.color.color[:7], "alt_color": self.alt_color.color[:7]}
+        self.color.setEnabled(mode == "tint")
+        self.alt_color.setEnabled(mode == "tint")
         self.edited_character()

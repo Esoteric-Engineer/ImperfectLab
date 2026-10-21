@@ -1,5 +1,5 @@
 """The versus character-select UI for select-screen id 18 (from Doompatcher's patch_ui.py): the select
-screen's lists and grid, the tile, the hero name and colour, and the in-match HUD portraits."""
+screen's lists and grid, the tile, the hero name and color, and the in-match HUD portraits."""
 import struct
 
 from ..formats import LabError, aptpatch, call, gshtool, nbig
@@ -254,7 +254,7 @@ def geo_texture(records, rid):
     raise LabError("no .geo record %d" % rid)
 
 
-def patch_main(data, name, colour=0xFFFFFF):
+def patch_main(data, name, color=0xFFFFFF):
     files, d, apt = open_movie(data)
     movie = apt.apt_off
     done = set()
@@ -272,13 +272,13 @@ def patch_main(data, name, colour=0xFFFFFF):
                     apt.set_push(at, items[:-19] + [apt.push_str(block, name)] + items[-19:-1] + [apt.const_int(19)])
                     done.add("names")
                 elif len(vals) >= 19 and vals[-1] == 18 and vals[-2] == 11897431 and vals[-19] == 9484461:
-                    apt.set_push(at, items[:-19] + [apt.const_int(colour)] + items[-19:-1] + [apt.const_int(19)])
-                    done.add("colours")
+                    apt.set_push(at, items[:-19] + [apt.const_int(color)] + items[-19:-1] + [apt.const_int(19)])
+                    done.add("colors")
                 elif vals[-2:] == ["kGlobal_Max_NumChar", 18]:
                     apt.set_push(at, items[:-1] + [apt.const_int(NEW_ID + 1)])
                     done.add("max")
-    if done != {"names", "colours", "max"}:
-        raise LabError("main movie: lists not found: %s" % sorted({"names", "colours", "max"} - done))
+    if done != {"names", "colors", "max"}:
+        raise LabError("main movie: lists not found: %s" % sorted({"names", "colors", "max"} - done))
     a, c = apt.build()
     return rebuild(files, a, c)
 

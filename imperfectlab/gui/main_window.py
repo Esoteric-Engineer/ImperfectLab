@@ -147,7 +147,7 @@ class MainWindow(QMainWindow):
         if cr.get("description"):
             lines.append(cr["description"].replace("\n", "<br>"))
         for a in cr.get("assets", []):
-            lines.append("%s: %s, %s %s" % (a.get("what"), a.get("by"), a.get("licence"), a.get("url")))
+            lines.append("%s: %s, %s %s" % (a.get("what"), a.get("by"), a.get("license"), a.get("url")))
         box = QMessageBox(QMessageBox.Information, "Credits", "<br>".join(lines), QMessageBox.Ok, self)
         box.setAttribute(Qt.WA_DeleteOnClose)
         box.setModal(False)

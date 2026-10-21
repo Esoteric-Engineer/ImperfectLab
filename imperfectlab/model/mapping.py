@@ -9,9 +9,9 @@ LIMBS = ("clavicle", "upper_arm", "forearm", "hand", "thigh", "calf", "foot", "t
 
 class Preset:
 
-    def __init__(self, name, sides, torso, limbs, fingers, extra, normalise):
+    def __init__(self, name, sides, torso, limbs, fingers, extra, normalize):
         self.name, self.sides, self.torso, self.limbs = name, sides, torso, limbs
-        self.fingers, self.extra, self.normalise = fingers, extra, normalise
+        self.fingers, self.extra, self.normalize = fingers, extra, normalize
 
     def candidates(self):
         """[(role, [names])] for the primary mapping, and [(names, role)] for the extra overrides."""
@@ -136,7 +136,7 @@ def auto_map(model, skeleton):
     for preset in PRESETS:
         lookup = {}
         for n in names:
-            lookup.setdefault(preset.normalise(n), n)
+            lookup.setdefault(preset.normalize(n), n)
         primary, extra = preset.candidates()
         mapping, used = {}, set()
         for role, cands in primary:
@@ -144,14 +144,14 @@ def auto_map(model, skeleton):
             if node is None:
                 continue
             for c in cands:
-                j = lookup.get(preset.normalise(c))
+                j = lookup.get(preset.normalize(c))
                 if j is not None and j not in used:
                     mapping[node] = j
                     used.add(j)
                     break
         overrides = {}
         for cand, role in extra:
-            j, node = lookup.get(preset.normalise(cand)), skeleton.node(role)
+            j, node = lookup.get(preset.normalize(cand)), skeleton.node(role)
             if j is not None and node is not None and j not in used and j in weighted:
                 overrides[j] = node
         score = (sum(1 for r in skeleton.required_roles() if skeleton.node(r) in mapping), len(mapping))
