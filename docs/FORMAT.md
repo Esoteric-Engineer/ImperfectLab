@@ -1,9 +1,9 @@
 # The `.imperfect` format, version 1
 
-A `.imperfect` file is one custom character for *Marvel Nemesis: Rise of the Imperfects* (GameCube, USA, `GVLE69`
-revision 0). It holds the author's own model, pictures and settings, plus a recipe that ImperfectLab applies to the player's own copy of the game.
+A `.imperfect` file is one custom character for *Marvel Nemesis: Rise of the Imperfects* (GameCube, USA, `GVLE69` revision 0).<br />
+It holds the author's own model, pictures and settings, plus a recipe that ImperfectLab applies to the player's own copy of the game.
 
-It **never** holds game data: the base character it builds on is named, and its skeleton, moves, sounds, tuning and portrait layouts are read from the player's disc at patch time.
+**It never holds game data**. The base character it builds on is named, and its skeleton, moves, sounds, tuning and portrait layouts are read from the player's disc at patch time.
 
 ## Container
 
@@ -36,33 +36,42 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
   "version": 1,
   "game": "GVLE69-0",
   "generator": "ImperfectLab 0.1.0",
-  "character": {"internal_name": "DoctorDoom", "display_name": "DOCTOR DOOM", "name_colour": "#FFFFFF"},
+  "character": {"internal_name": "DoctorDoom", "display_name": "DOCTOR DOOM", "name_color": "#FFFFFF"},
   "base": "johnnyohm",
-  "credits": {"author": "...", "description": "...",
-              "assets": [{"what": "model", "by": "...", "licence": "CC BY 4.0", "url": "..."}]},
+  "credits": {"author": "...", "description": "...", "assets": [{ 
+    "what": "model",
+    "by": "...",
+    "license": "CC BY 4.0",
+    "url": "..."
+  }]},
   "model": {
     "mapping": {"1": "Bip01 Pelvis_00", "5": "Bip01 Head_07"},
     "overrides": {"Bip01 L Finger2_016": 48},
     "fit": {"scale": null, "torso_squash": true, "flip": null},
-    "materials": [{"gltf_material": 0, "name": "17401", "include": true, "suffix": "", "size": [512, 512],
-                   "two_sided": false, "texture": "textures/body.png", "alt": "textures/body_alt.png", "bind": null}]
+    "materials": [{" 
+      gltf_material": 0,
+      "name": "17401",
+      "include": true,
+      "suffix": "",
+      "size": [512, 512],
+      "two_sided": false,
+      "texture": "textures/body.png",
+      "alt": "textures/body_alt.png",
+      "bind": null
+    }]
   },
-  "aura": {"mode": "swap", "colour": "#40A0FF", "alt_colour": "#50FF50"},
-  "stats": {"display": {"normal": [7, 4, 3, 6, 5, 4], "alt": [7, 4, 3, 6, 5, 4]},
-            "gameplay": {"damage_taken": 0.7, "lift": "medium", "wire_swing": false}},
-  "ui": {"select": {"ready": {"scale": 0.8, "anchor": [210, 75], "glow": "#3CFF5A6E"}},
-         "fade": 36, "strip_scale": null, "ready_voice": null, "banner": true},
+  "aura": {"mode": "swap", "color": "#40A0FF", "alt_color": "#50FF50"},
+  "stats": {"display": {"normal": [7, 4, 3, 6, 5, 4], "alt": [7, 4, 3, 6, 5, 4]}, "gameplay": {"damage_taken": 0.7, "lift": "medium", "wire_swing": false}},
+  "ui": {"select": {"ready": {"scale": 0.8, "anchor": [210, 75], "glow": "#3CFF5A6E"}}, "fade": 36, "strip_scale": null, "ready_voice": null, "banner": true},
   "moves": {},
   "files": {"model/model.glb": "<sha256>", "ui/select_ready.png": "<sha256>"}
 }
 ```
 
 ### `character`
-- `internal_name`: 1-10 letters and digits, starting with a letter. The character's templates are
-  `act_<name>`, `plr_<name>` and `plr_alt<name>`, its model bundles `Bundles/<name lowercased>[_alt]`, its
-  HUD portraits `plr_<name lowercased>`. It must not be used by the game already (checked against the disc).
+- `internal_name`: 1-10 letters and digits, starting with a letter. The character's templates are `act_<name>`, `plr_<name>` and `plr_alt<name>`, its model bundles `Bundles/<name lowercased>[_alt]`, its HUD portraits `plr_<name lowercased>`. It must not be used by the game already (checked against the disc).
 - `display_name`: 1-16 of `A-Z 0-9 space . ' & ! -`: the name on the select and loading screens.
-- `name_colour`: `#RRGGBB`, the select screen's name colour.
+- `name_color`: `#RRGGBB`, the select screen's name color.
 
 ### `base`
 One of `thing wolverine paradox elektra johnnyohm spiderman daredevil storm aftershock venom heatwave humantorch ironman megalith magneto biohazard defcon roekel`.
@@ -79,7 +88,7 @@ Game bone numbers in `model` belong to the base's body class (male, female or br
     unique.
   - `size`: the texture size, powers of two from 8 to 1024.
   - `two_sided`: draw it from both sides (capes).
-  - `texture`: a `textures/` member, or `null` for the GLB's own base colour image.
+  - `texture`: a `textures/` member, or `null` for the GLB's own base color image.
   - `alt`: the alternate costume's texture: `"same"`, a `textures/` member, or `"hue:<degrees>"`.
   - `bind`: `null`, or a game bone number every vertex of the material is fixed to (a prop).
 
@@ -87,8 +96,8 @@ Game bone numbers in `model` belong to the base's body class (male, female or br
 `mode`:
 - `base`: the base's aura and effects.
 - `swap`: the two costumes exchange the base's normal and alternate auras, effects and intro cutscenes.
-- `tint` (experimental): copies of the base's idle and power-up effects recoloured to `colour` (costume 1) and
-  `alt_colour` (costume 2). The power-mode glow keeps the base's colour.
+- `tint` (experimental): copies of the base's idle and power-up effects recolored to `color` (costume 1) and
+  `alt_color` (costume 2). The power-mode glow keeps the base's color.
 
 ### `stats`
 - `display`: six integers 1-7 per costume: intel, strength, speed, durability, energy, skill. Shown on the
@@ -129,5 +138,5 @@ Reserved; empty in version 1.
 
 ## Licensing
 
-The author is responsible for having the right to share every asset in the file.
+The author is responsible for having the right to share every asset in the file.<br />
 `credits.assets` is shown to whoever opens or patches the file, and ImperfectLab copies it into the patch report; a model under CC BY needs its credit there.
