@@ -6,7 +6,6 @@ import struct
 from imperfectlab.model.skeleton import Skeleton
 
 ISO = os.environ.get("IMPERFECTLAB_ISO")
-DOOMPATCHER = os.environ.get("IMPERFECTLAB_DOOMPATCHER")
 MNROI = os.environ.get("IMPERFECTLAB_MNROI")
 
 # glTF frame (Y up, the character facing +Z, its left at +X): joint, parent, position

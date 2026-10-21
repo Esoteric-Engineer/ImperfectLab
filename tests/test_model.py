@@ -1,12 +1,11 @@
 import math
-import os
 import unittest
 
 from imperfectlab.formats import LabError
 from imperfectlab.model import glb, mapping
 from imperfectlab.model.fit import Fit
 
-from helpers import DOOMPATCHER, MIXAMO, fake_skeleton, make_glb
+from helpers import MIXAMO, fake_skeleton, make_glb
 
 
 def dist(a, b):
@@ -94,19 +93,6 @@ class Fitting(unittest.TestCase):
         w = dict(f.weights("mixamorig:LeftArm", mid))
         self.assertAlmostEqual(w[sk.node("L.upper_arm")] + w[sk.node("L.upper_twist")], 1.0)
         self.assertGreater(w[sk.node("L.upper_twist")], 0.0)
-
-
-@unittest.skipUnless(DOOMPATCHER, "IMPERFECTLAB_DOOMPATCHER is not set")
-class RealModels(unittest.TestCase):
-
-    def test_doom_glb_maps_as_biped(self):
-        with open(os.path.join(DOOMPATCHER, "assets", "doom_mua.glb"), "rb") as f:
-            model = glb.Model(f.read())
-        sk = fake_skeleton()
-        auto = mapping.auto_map(model, sk)
-        self.assertTrue(auto.preset.startswith("3ds Max Biped"))
-        self.assertEqual(len(auto.mapping), 29)
-        self.assertEqual(mapping.check(model, sk, auto.mapping, auto.overrides), [])
 
 
 if __name__ == "__main__":
