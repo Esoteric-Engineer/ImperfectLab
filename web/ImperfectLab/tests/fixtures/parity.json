@@ -1,0 +1,74 @@
+{
+ "parity_a": {
+  "adds": {
+   "Apt/clash/portraits/cvs18_alt.big": "32343a126a4f7034c8e0bfb74d782705172c19fac7f59fda42a86cf548bdcf81",
+   "Bundles/paritya.ngm": "a0688f56675ec0801601bb351317580a3cd28447d5de67676e21010b7939fea5",
+   "Bundles/paritya.ngt": "f45a717c29a7784cb838a11101f669ad78e07eff14caa70fe6d67924106cb22c",
+   "Bundles/paritya.tpl": "e39033b9f12a8cc6470008bcafa7c787577f77db934cd02e875e34bc292419e7",
+   "Bundles/paritya_alt.ngm": "3bfaef4222b88ecc2c78672add1127f1c79b2f8bb53fb8dfb5df5faaff296c0c",
+   "Bundles/paritya_alt.ngt": "d49b991b59faf8370047094ae8e4d4b95cfbe3100625417f43e70e140e5735ab",
+   "Bundles/paritya_alt.tpl": "a592d5369ea21be40bc2b45c5eb9d631582e3ddb81e641803a00e008b753d50f",
+   "Misc/PLAYER_ParityA.nvb": "32a01811e66f563604866a9590608abe1042ccbe72dc790ee6d61b88c7c7481b"
+  },
+  "dol": "3ddfd64cb8f03ecf23ded713f609730228a1c68388f99c80fd45d48be6267e63",
+  "iso": "836e1643e4d3c84c1a859bfa3955506dfd02dc9d3af428f84beb9db1cf24ee59",
+  "notes": [
+   "model: 2 parts, 120 positions, 120 vertices, 40 triangles; scale 1.078; .ngm 63563 bytes, .tpl 4384 bytes",
+   "aura tint: 28 effect blocks copied, 5356 bytes of effect cache left",
+   "HUD portraits not supplied (plr_altparitya, plr_altparitya_rage, plr_paritya, plr_paritya_rage): Johnny Ohm's are used",
+   "no select-screen portrait: Johnny Ohm's portraits are used"
+  ],
+  "report": "ImperfectLab patch report\n\nCharacter: PARITY A (ParityA), base Johnny Ohm\n\nmain.dol: roster record 19, select-screen limits 18 -> 19\nchanged: Apt/clash/main.big (207991 bytes)\nchanged: Apt/clash/mainBE.big (128850 bytes)\nchanged: Apt/clash/portraits/c18_p0.big (143941 bytes)\nchanged: Apt/clash/portraits/cvs18.big (21254 bytes)\nchanged: Apt/clash/screens/clashCharSelect.big (139355 bytes)\nchanged: Apt/clash/screens/clashCharSelect_thumbs.big (115007 bytes)\nchanged: HUD/hudENG.1.gsh (677072 bytes)\nchanged: HUD/hudFRA.1.gsh (677104 bytes)\nchanged: HUD/hudGER.1.gsh (681616 bytes)\nchanged: HUD/hudITA.1.gsh (685328 bytes)\nchanged: Materials/Shaders/shaders.nsa (117290 bytes)\nchanged: Misc/Global.not (292230 bytes)\nchanged: Misc/game.nfx (500387 bytes)\nchanged: Misc/nvblist.txt (504 bytes)\nadded:   Apt/clash/portraits/cvs18_alt.big (21421 bytes)\nadded:   Bundles/paritya.ngm (63563 bytes)\nadded:   Bundles/paritya.ngt (49 bytes)\nadded:   Bundles/paritya.tpl (4384 bytes)\nadded:   Bundles/paritya_alt.ngm (63563 bytes)\nadded:   Bundles/paritya_alt.ngt (53 bytes)\nadded:   Bundles/paritya_alt.tpl (4384 bytes)\nadded:   Misc/PLAYER_ParityA.nvb (5930 bytes)\n\nmodel: 2 parts, 120 positions, 120 vertices, 40 triangles; scale 1.078; .ngm 63563 bytes, .tpl 4384 bytes\naura tint: 28 effect blocks copied, 5356 bytes of effect cache left\nHUD portraits not supplied (plr_altparitya, plr_altparitya_rage, plr_paritya, plr_paritya_rage): Johnny Ohm's are used\nno select-screen portrait: Johnny Ohm's portraits are used\n\nCredits: parity\n  model by test (CC0) \n",
+  "sets": {
+   "Apt/clash/main.big": "9df1f7fbbcbd2990709114c09ad7c15212182a1abf54017aa02adb15cf76ee58",
+   "Apt/clash/mainBE.big": "cf3f98f9f9c6d262425a218d7edd8c4a13a85920d70915e3b7f929cc0b36f69b",
+   "Apt/clash/portraits/c18_p0.big": "32bd737bd74a4fb524a3786ed1b2150882931c3592d27e58e089dd40090ba040",
+   "Apt/clash/portraits/cvs18.big": "be910f64f293bdc357bb914ee939f81ef379a05ab1fd1c6503ea716dbea652d5",
+   "Apt/clash/screens/clashCharSelect.big": "60a827304227caab26dd6bb64ad168a30c023dcdd762bbbf8b6d9ebd756f99d0",
+   "Apt/clash/screens/clashCharSelect_thumbs.big": "8b252280cd9a14d85f8331970b8d94941fe06c38af6c3bd6b3cd208655398711",
+   "HUD/hudENG.1.gsh": "a01215f691f4716f90b6c50e524ee668e7c47bba3858847971164de0bca0feb5",
+   "HUD/hudFRA.1.gsh": "837e3c6063c5636de8d269c5f1fc33a00898b2e5934437988d8e6309de2268dd",
+   "HUD/hudGER.1.gsh": "1afc50de2906bdd449b171e6c82e85bb266709ca41c187e3e72d4a83b6a90ecb",
+   "HUD/hudITA.1.gsh": "5ce5d5b7ad3342d48928ca0a4c95bc75656304106fbcb6f89f60e6671f35ca5d",
+   "Materials/Shaders/shaders.nsa": "0fa3646c254e55545810f9d41a759345084e2e4f59e1b72caea3f19f99578748",
+   "Misc/Global.not": "445439dbaf1cee8f922c139933a5e3ae000cd2e9c4aaa4670ebc383243e53557",
+   "Misc/game.nfx": "a5f450971a3c7a5eb656cc4b58b2340088cdb8c627a1c8b5a9d0411f04c09710",
+   "Misc/nvblist.txt": "e5b4f08185dd33b441a5f76786fc5e3047d03705e3e8b582206b889ff0865cbc"
+  }
+ },
+ "parity_b": {
+  "adds": {
+   "Apt/clash/portraits/cvs18_alt.big": "00d74e18b07420c00d9bb8ce3bc060dcb0edc0e1d20fd7b84af4250fa9d48051",
+   "Bundles/parityb.ngm": "4f14b87dd62c1ab7b39111ae253edeb5e655683a2788401aa643f8915fe08e75",
+   "Bundles/parityb.ngt": "5f8536cbbfb4860a5677bb96c5ab49f963059d2e0868f57e8a0fe833f19d692f",
+   "Bundles/parityb.tpl": "67772ddb3d85c0991866adb25063bf6b527513a470cd4724d2aa39519c900d10",
+   "Bundles/parityb_alt.ngm": "c6f125d9c6b80c470c5150b116383c29d724cd396a9bf4afdc079b5cbe4e41c8",
+   "Bundles/parityb_alt.ngt": "5c177617ddf00ac514192587106ea1e10155a96c89f23a14a62391565f93f94c",
+   "Bundles/parityb_alt.tpl": "40f9425a1c55892958dc38ee1cdbfe27fa5653b76f5f5bd9bd7d1bd0b9130ccb"
+  },
+  "dol": "e712b0853f0515a608096dfd7c35a1a153b240c88cc06066a18a15815b060fab",
+  "iso": "aef6fce6429a1ab5ed5026e4a87d459962dbeae77f92cde34c60e9e96e5907ad",
+  "notes": [
+   "model: 2 parts, 120 positions, 240 vertices, 80 triangles; scale 1.076; .ngm 65893 bytes, .tpl 6432 bytes"
+  ],
+  "report": "ImperfectLab patch report\n\nCharacter: PARITY B (ParityB), base Storm\n\nmain.dol: roster record 19, select-screen limits 18 -> 19\nchanged: Apt/clash/main.big (207997 bytes)\nchanged: Apt/clash/mainBE.big (128849 bytes)\nchanged: Apt/clash/portraits/c18_p0.big (93885 bytes)\nchanged: Apt/clash/portraits/cvs18.big (9967 bytes)\nchanged: Apt/clash/screens/clashCharSelect.big (139344 bytes)\nchanged: Apt/clash/screens/clashCharSelect_thumbs.big (117123 bytes)\nchanged: HUD/hudENG.1.gsh (677072 bytes)\nchanged: HUD/hudENG.2.gsh (930176 bytes)\nchanged: HUD/hudFRA.1.gsh (677104 bytes)\nchanged: HUD/hudFRA.2.gsh (933024 bytes)\nchanged: HUD/hudGER.1.gsh (681616 bytes)\nchanged: HUD/hudGER.2.gsh (1039136 bytes)\nchanged: HUD/hudITA.1.gsh (685328 bytes)\nchanged: HUD/hudITA.2.gsh (1017696 bytes)\nchanged: Materials/Shaders/shaders.nsa (117290 bytes)\nchanged: Misc/Global.not (292266 bytes)\nadded:   Apt/clash/portraits/cvs18_alt.big (10935 bytes)\nadded:   Bundles/parityb.ngm (65893 bytes)\nadded:   Bundles/parityb.ngt (49 bytes)\nadded:   Bundles/parityb.tpl (6432 bytes)\nadded:   Bundles/parityb_alt.ngm (65893 bytes)\nadded:   Bundles/parityb_alt.ngt (53 bytes)\nadded:   Bundles/parityb_alt.tpl (6432 bytes)\n\nmodel: 2 parts, 120 positions, 240 vertices, 80 triangles; scale 1.076; .ngm 65893 bytes, .tpl 6432 bytes\n",
+  "sets": {
+   "Apt/clash/main.big": "ed7974cc994e53a3fff782b95ef9ce5ff0199859a05f01f4fb41c6116f3f6604",
+   "Apt/clash/mainBE.big": "abc20199237624138edaa7903394de59df3d0ee3fdf0816f4af368c2b5b42fb0",
+   "Apt/clash/portraits/c18_p0.big": "e480df728c4be9295a38b15d3cee5bde67708329f84b460c3bf464ef4270e8f6",
+   "Apt/clash/portraits/cvs18.big": "14d90333da2ba412e8e43dc3130ac70f584fb1c5a6d254fdf31abf599bba23af",
+   "Apt/clash/screens/clashCharSelect.big": "878ced14137ae24a9eea7c1419d01d0e83ee0a46990d2712a577aac282e96a39",
+   "Apt/clash/screens/clashCharSelect_thumbs.big": "8e53289bbe9c01adc8e60747aa31454520f42c3dcbd8e838c049a4100753b1be",
+   "HUD/hudENG.1.gsh": "dc985359fde77e74cd1c16bbe56a4d4a8193083ec2c0f331a8faf4cf313c8993",
+   "HUD/hudENG.2.gsh": "dacd32f213d49a82171b6ce460ce26f39987fe6f673a237b70b2ff5ad50c5e04",
+   "HUD/hudFRA.1.gsh": "59807805d6f0f43953b57f451d6d9f1841c61af0753296b4a4f6f892da6cbddf",
+   "HUD/hudFRA.2.gsh": "b8047607c95fa6cd44159bd314d1abf8fa71b1638e6b2857ab95aae9259450d3",
+   "HUD/hudGER.1.gsh": "cd3e7bf2df20b261c71230176212c6ee843bce516909645694649bef62923c34",
+   "HUD/hudGER.2.gsh": "4b35dc93d17ee66c342a14aba8cd94a321b4abf09861560b473e82d135d76ed5",
+   "HUD/hudITA.1.gsh": "84d842f709e540bfabd3c7b2ee9180e0614dc83e7142214986a7b69360e6b09b",
+   "HUD/hudITA.2.gsh": "d3a27c1709c9323ec9547528f1e4e09e7a99710a884bbc7f665b32b4666ce0a0",
+   "Materials/Shaders/shaders.nsa": "d6520414a906bf0af945543ca9c7c3042cc606b20e0d7db9bfdde0fd0408fe80",
+   "Misc/Global.not": "6b8dfaf1d63da5757ecdf354fda26e148a300a37bf248ac9267affcdf3947d39"
+  }
+ }
+}
