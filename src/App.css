@@ -102,6 +102,25 @@ footer {
   margin: 4px 0;
 }
 
+.callout-warn {
+  margin: 8px 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--warn);
+  border-left-width: 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
+
+.callout-warn strong {
+  display: block;
+  color: var(--warn);
+  margin-bottom: 4px;
+}
+
+.callout-warn p {
+  margin: 4px 0 0;
+}
+
 .good {
   color: var(--good);
 }

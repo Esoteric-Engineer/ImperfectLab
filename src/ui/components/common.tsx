@@ -73,6 +73,15 @@ export function Note({ children }: { children: ReactNode }) {
   return <p className="note">{children}</p>
 }
 
+export function Warning({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="callout-warn" role="note">
+      <strong>⚠ {title}</strong>
+      {children}
+    </div>
+  )
+}
+
 export function Progress({ done, total }: { done: number; total: number }) {
   return (
     <div className="progress">
