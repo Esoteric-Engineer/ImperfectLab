@@ -1,4 +1,4 @@
-import { cstring, latin1, u32be, u32le } from '../bytes'
+import { cstring, latin1, putU32be, u32be, u32le } from '../bytes'
 import { LabError } from '../errors'
 
 export const SECTOR = 0x8000
@@ -224,11 +224,14 @@ export async function writeIso(sink: Sink, disc: Disc, dol: Uint8Array, replace:
   for (let j = 1; j < count; j++) if (!fst[j * 12]) fileRows.push(j)
   const row = new Map<string, number>()
   disc.files.forEach((e, k) => row.set(e.path, fileRows[k]))
-  if (dol.length > disc.fstOffset - disc.dolOffset) throw new LabError('the patched main.dol does not fit before the FST')
   const head = disc.boot.length + disc.bi2.length + disc.apploader.length
   if (head > disc.dolOffset) throw new LabError('the disc header overlaps main.dol')
+  // A main.dol that has grown past the FST moves it, and boot.bin says where to.
+  const boot = disc.boot.slice()
+  const fstOffset = Math.max(disc.fstOffset, (disc.dolOffset + dol.length + 0xff) & ~0xff)
+  putU32be(boot, 0x424, fstOffset)
 
-  let pos = disc.fstOffset + disc.fstSize
+  let pos = fstOffset + disc.fstSize
   const plan: [number, number, Uint8Array | Replacement | undefined][] = []
   for (const e of order) {
     const start = Math.max(e.offset, (pos + SECTOR - 1) & ~(SECTOR - 1))
@@ -258,12 +261,12 @@ export async function writeIso(sink: Sink, disc: Disc, dol: Uint8Array, replace:
     await Zeros.write(sink, target - at)
     at = target
   }
-  await put(disc.boot)
+  await put(boot)
   await put(disc.bi2)
   await put(disc.apploader)
   await padTo(disc.dolOffset)
   await put(dol)
-  await padTo(disc.fstOffset)
+  await padTo(fstOffset)
   await put(fst)
   for (const [i, e] of order.entries()) {
     const [start, size, src] = plan[i]

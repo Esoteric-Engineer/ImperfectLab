@@ -62,6 +62,30 @@ describe.skipIf(!ISO)('main.dol', () => {
   it('reads every base record', () => {
     for (const key of R.keys()) expect(D.readRecord(gameSource().dol, D.NORMAL_TABLE, R.BASES[key][2]).name.toLowerCase().startsWith('plr_')).toBe(true)
   })
+
+  it('moves the roster into a new data section for two characters', () => {
+    const dol = gameSource().dol
+    expect(D.tables(dol)).toEqual([D.NORMAL_TABLE, D.ALT_TABLE, 0x4c80fc])
+    expect(D.arenaLo(dol)).toBe(D.ARENA_LO)
+    const out = D.patchTwo(dol, [
+      { internal: 'DoctorDoom', display: 'DOCTOR DOOM', stats: [7, 4, 3, 6, 5, 4], altStats: [7, 4, 3, 6, 5, 4] },
+      { internal: 'CaptainAmerica', display: 'CAPTAIN AMERICA', stats: [3, 4, 2, 3, 1, 6], altStats: [3, 4, 2, 3, 1, 6] },
+    ])
+    const [normal, alt, order] = D.tables(out)
+    expect(normal).toBe(dol.length)
+    expect(D.fileOffset(out, D.ARENA_LO)).toBe(normal)
+    expect(D.arenaLo(out)).toBeGreaterThanOrEqual(D.ARENA_LO + 21 * (2 * 0x4c + 4))
+    expect(D.arenaLo(out) % 32).toBe(0)
+    for (let i = 0; i < 19; i++) expect(D.readRecord(out, normal, i)).toEqual(D.readRecord(dol, D.NORMAL_TABLE, i))
+    for (let i = 0; i < 19; i++) expect(D.readRecord(out, alt, i)).toEqual(D.readRecord(dol, D.ALT_TABLE, i))
+    expect(D.readRecord(out, normal, 19)).toEqual({ name: 'plr_doctordoom', key: 'DOCTOR DOOM', stats: [7, 4, 3, 6, 5, 4], unlocked: 1 })
+    expect(D.readRecord(out, alt, 20)).toEqual({ name: 'plr_altCaptainamerica', key: 'CAPTAIN AMERICA', stats: [3, 4, 2, 3, 1, 6], unlocked: 1 })
+    expect(Array.from({ length: 21 }, (_, i) => out[order + 4 * i + 3])).toEqual([0, 10, 2, 15, 6, 14, 3, 9, 7, 13, 4, 16, 8, 1, 17, 5, 12, 11, 18, 19, 20])
+    expect(D.readEffectCache(D.growEffectCache(out, 0x4a400))).toBe(0x4a400)
+    const c = { internal: 'A', display: 'B', stats: [1, 1, 1, 1, 1, 1], altStats: [1, 1, 1, 1, 1, 1] }
+    expect(() => D.patchTwo(out, [c, c])).toThrow(LabError)
+    expect(() => D.patch(out, 'A', 'B', c.stats, c.altStats)).toThrow(LabError)
+  })
 })
 
 describe.skipIf(!ISO)('game', () => {
