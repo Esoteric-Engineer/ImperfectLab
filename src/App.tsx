@@ -12,6 +12,7 @@ import { MaterialsPage } from './ui/pages/MaterialsPage'
 import { ModelPage } from './ui/pages/ModelPage'
 import { StatsPage } from './ui/pages/StatsPage'
 import { store, useStore } from './ui/store'
+import { THEMES, setTheme, useTheme } from './ui/theme'
 import './App.css'
 
 const STEPS: [string, () => React.JSX.Element][] = [
@@ -32,6 +33,7 @@ function App() {
   const s = store
   const [step, setStep] = useState(0)
   const [about, setAbout] = useState(false)
+  const theme = useTheme()
 
   useEffect(() => {
     document.title = s.title()
@@ -73,6 +75,9 @@ function App() {
           <button onClick={() => setAbout(true)}>About</button>
         </nav>
         <span className="file">{s.fileName ?? `${s.character.displayName} (unsaved)`}{s.dirty ? ' *' : ''}</span>
+        <select aria-label="Theme" value={theme} onChange={(e) => setTheme(e.target.value)}>
+          {THEMES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+        </select>
       </header>
       <aside>
         {PAGES.map(([title], i) => (

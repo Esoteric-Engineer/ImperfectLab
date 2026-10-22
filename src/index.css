@@ -1,16 +1,4 @@
 :root {
-  color-scheme: dark;
-  --bg: #1f2126;
-  --panel: #272a31;
-  --panel2: #2f333b;
-  --line: #41464f;
-  --text: #e4e6ea;
-  --muted: #9aa0aa;
-  --accent: #d8b23a;
-  --accent2: #3b8fd9;
-  --good: #66c37a;
-  --bad: #e5655c;
-  --warn: #e3b341;
   font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
   font-size: 14px;
   line-height: 1.4;

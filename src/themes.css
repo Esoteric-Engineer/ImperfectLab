@@ -1,0 +1,164 @@
+/*
+ * Themes!
+ * To add a theme, copy a block, give it a new data-theme name, and add the name to THEMES in ui/theme.ts.
+ */
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #1f2126;
+  --panel: #272a31;
+  --panel2: #2f333b;
+  --line: #41464f;
+  --text: #e4e6ea;
+  --muted: #9aa0aa;
+  --accent: #d8b23a;
+  --accent2: #3b8fd9;
+  --good: #66c37a;
+  --bad: #e5655c;
+  --warn: #e3b341;
+  --canvas: #292b33;
+  --crop-bg: #111;
+  --thumb: #2a2c33;
+  --thumb-line: #444;
+  --pip-off: #3a3d45;
+  --selected: #34465c;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f3f4f6;
+  --panel: #ffffff;
+  --panel2: #e8eaee;
+  --line: #c4c9d2;
+  --text: #1f2328;
+  --muted: #5b636e;
+  --accent: #946b00;
+  --accent2: #0b6bcb;
+  --good: #1a7f37;
+  --bad: #cf222e;
+  --warn: #9a6700;
+  --canvas: #dfe3ea;
+  --crop-bg: #d9dce2;
+  --thumb: #e8eaee;
+  --thumb-line: #b8bec9;
+  --pip-off: #d3d8e0;
+  --selected: #cfe2f7;
+}
+
+:root[data-theme='nemesis'] {
+  color-scheme: dark;
+  --bg: #050b0d;
+  --panel: #0a1317;
+  --panel2: #112027;
+  --line: #1f3a43;
+  --text: #d3dfe0;
+  --muted: #7396a0;
+  --accent: #3fdde4;
+  --accent2: #4aa3b0;
+  --good: #6fcf8a;
+  --bad: #ef6b60;
+  --warn: #e8b84a;
+  --canvas: #0b171c;
+  --crop-bg: #030709;
+  --thumb: #0a161b;
+  --thumb-line: #1f3a43;
+  --pip-off: #14262d;
+  --selected: #15414b;
+
+  body {
+    background: radial-gradient(ellipse 90% 70% at 50% 40%, #0b1a20 0%, var(--bg) 75%) fixed;
+  }
+
+  header,
+  aside,
+  footer {
+    background: linear-gradient(180deg, #0c171c, var(--panel));
+  }
+
+  header {
+    border-bottom-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+    box-shadow: 0 1px 14px rgba(63, 221, 228, 0.08);
+  }
+
+  header .brand,
+  .page h3,
+  .modal h2 {
+    font-family: Teko, Rajdhani, Bahnschrift, 'Arial Narrow', system-ui, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  header .brand {
+    font-size: 17px;
+    text-shadow: 0 0 12px rgba(63, 221, 228, 0.4);
+  }
+
+  .page h3 {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+
+  aside button {
+    border-radius: 0;
+    border-left: 3px solid transparent;
+
+    &:hover:not(.active) {
+      background: color-mix(in srgb, var(--accent2) 8%, transparent);
+      border-left-color: var(--accent2);
+    }
+
+    &.active {
+      background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 16%, transparent), transparent 85%);
+      border-color: transparent;
+      border-left-color: var(--accent);
+    }
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    border-radius: 2px;
+
+    &:focus-visible {
+      outline: 1px solid var(--accent);
+      outline-offset: 1px;
+    }
+  }
+
+  button:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .card,
+  .problems,
+  pre.log,
+  .tab-body,
+  .modal {
+    border-radius: 2px;
+    border-color: var(--line);
+    background: var(--panel);
+  }
+
+  .modal {
+    border-top: 2px solid var(--accent);
+  }
+
+  .modal-backdrop {
+    background: rgba(0, 3, 4, 0.72);
+  }
+
+  .tabs button.active {
+    border-top: 2px solid var(--accent);
+  }
+
+  .progress .bar {
+    background: linear-gradient(90deg, var(--accent2), var(--accent));
+  }
+
+  & ::selection {
+    background: color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+}

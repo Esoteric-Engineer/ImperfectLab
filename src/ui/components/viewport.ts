@@ -1,5 +1,6 @@
 // A small WebGL2 viewport: textured meshes in the game's frame, bone lines and a weight heat map.
 import type { BoneLine, MeshData } from '../../core/preview'
+import { onThemeChange, themeColor } from '../theme'
 
 const FOV = 35.0
 
@@ -121,6 +122,8 @@ export class Viewport {
   private frameOnResize = true
   private raf = 0
   private observer: ResizeObserver
+  private clear = themeColor('--canvas')
+  private offTheme: () => void
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
@@ -140,9 +143,14 @@ export class Viewport {
       this.update()
     })
     this.observer.observe(canvas)
+    this.offTheme = onThemeChange(() => {
+      this.clear = themeColor('--canvas')
+      this.update()
+    })
   }
 
   dispose() {
+    this.offTheme()
     this.observer.disconnect()
     cancelAnimationFrame(this.raf)
     this.release()
@@ -304,7 +312,7 @@ export class Viewport {
       this.canvas.height = h
     }
     gl.viewport(0, 0, w, h)
-    gl.clearColor(0.16, 0.17, 0.2, 1.0)
+    gl.clearColor(...this.clear, 1.0)
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
     if (this.dirty) this.upload()
     const eye: Vec3 = [

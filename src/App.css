@@ -197,8 +197,8 @@ button.small {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #2a2c33;
-  border: 1px solid #444;
+  background: var(--thumb);
+  border: 1px solid var(--thumb-line);
   overflow: hidden;
   flex: none;
 }
@@ -468,7 +468,7 @@ table.credits input {
 .statbar .pip {
   width: 18px;
   height: 12px;
-  background: #3a3d45;
+  background: var(--pip-off);
   border: 1px solid transparent;
 }
 
@@ -477,7 +477,7 @@ table.credits input {
 }
 
 .statbar .pip.base {
-  border-color: #fff;
+  border-color: var(--text);
 }
 
 .model-page {
@@ -558,7 +558,7 @@ table.credits input {
 }
 
 .tree-row.selected {
-  background: #34465c;
+  background: var(--selected);
 }
 
 .tree-row > span {
@@ -603,7 +603,7 @@ table.credits input {
 .crop-area {
   position: relative;
   overflow: hidden;
-  background: #111;
+  background: var(--crop-bg);
 }
 
 .crop-area canvas {
