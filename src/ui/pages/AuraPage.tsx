@@ -61,10 +61,13 @@ export function AuraPage() {
           {LEVELS.map(([l, text]) => <option key={l} value={l} disabled={tooBig(l)}>{text}{memory(l)}</option>)}
         </select>
         <label>Costume 1 color</label>
-        <ColorButton color={c.aura.color} disabled={!tint} onChange={(v) => { c.aura.color = v.slice(0, 7); edited() }} />
+        <ColorButton color={c.aura.color} alpha disabled={!tint} onChange={(v) => { c.aura.color = v; edited() }} />
         <label>Costume 2 color</label>
-        <ColorButton color={c.aura.alt_color} disabled={!tint} onChange={(v) => { c.aura.alt_color = v.slice(0, 7); edited() }} />
+        <ColorButton color={c.aura.alt_color} alpha disabled={!tint} onChange={(v) => { c.aura.alt_color = v; edited() }} />
       </div>
+      <Note>
+        Each color's opacity slider fades the recolored effects; at zero they do not show. They are still copied, so they use the same game memory as any tint.
+      </Note>
       <Note>
         The glow the game draws in power mode belongs to the base's cast name and cannot be recolored yet (its file has no reader); a tint changes the effects around it.
       </Note>

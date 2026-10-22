@@ -94,6 +94,12 @@ export function hexRgb(color: string): [number, number, number] {
   return [parseInt(c.slice(0, 2), 16), parseInt(c.slice(2, 4), 16), parseInt(c.slice(4, 6), 16)]
 }
 
+// The opacity of #RRGGBBAA, 0-255 (255 when there is no AA).
+export function hexAlpha(color: string): number {
+  const c = color.replace(/^#+/, '')
+  return c.length >= 8 ? parseInt(c.slice(6, 8), 16) : 255
+}
+
 export function tint(rgb: number[], target: number[]): [number, number, number] {
   const [, l] = rgbToHls(...(rgb.map((c) => Math.max(0.0, Math.min(255.0, c)) / 255.0) as [number, number, number]))
   const [th, , ts] = rgbToHls(...(target.map((c) => c / 255.0) as [number, number, number]))
@@ -185,6 +191,8 @@ export class Effects {
       names.set(b.name.toLowerCase(), next)
     }
     const target = hexRgb(color)
+    // The color's opacity scales every alpha the effect has; at 0 the recolored effects are invisible.
+    const alpha = hexAlpha(color), opacity = alpha / 255
     const copies: nfxtool.Block[] = []
     for (const b of blocks) {
       const lines = [`${nfxtool.TYPES[b.type]} ${names.get(b.name.toLowerCase())}`]
@@ -198,21 +206,21 @@ export class Effects {
           const vals = nfxtool.scanFloats(t[1], 4)
           if (vals.length === 4) {
             const [r, g, bl] = tint(vals.slice(1), target)
-            line = `${t[0]} (${num(vals[0])},${roundHalfEven(r)},${roundHalfEven(g)},${roundHalfEven(bl)})`
+            line = `${t[0]} (${num(vals[0] * opacity)},${roundHalfEven(r)},${roundHalfEven(g)},${roundHalfEven(bl)})`
             colored = true
           }
         } else if (HEX_KEYS.includes(key) && t.length >= 2) {
           const v = nfxtool.scanHex(t[1])
           if (v) {
             const [r, g, bl] = tint([(v >>> 16) & 255, (v >>> 8) & 255, v & 255], target)
-            const out = (v >>> 24) * 0x1000000 + roundHalfEven(r) * 0x10000 + roundHalfEven(g) * 0x100 + roundHalfEven(bl)
+            const out = roundHalfEven((v >>> 24) * opacity) * 0x1000000 + roundHalfEven(r) * 0x10000 + roundHalfEven(g) * 0x100 + roundHalfEven(bl)
             line = `${t[0]} 0x${out.toString(16).padStart(8, '0')}`
             colored = true
           }
         }
         lines.push(line)
       }
-      if (!colored && PARTICLES.includes(nfxtool.TYPES[b.type])) lines.push(`endcol (255,${target[0]},${target[1]},${target[2]})`)
+      if (!colored && PARTICLES.includes(nfxtool.TYPES[b.type])) lines.push(`endcol (${alpha},${target[0]},${target[1]},${target[2]})`)
       lines.push('end')
       copies.push(new nfxtool.Block(b.type, names.get(b.name.toLowerCase())!, lines, true))
     }

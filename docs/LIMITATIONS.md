@@ -11,6 +11,7 @@ Large custom models and the aura tint (below) both use that memory.
 ## Aura tint
 
 - **The power-mode glow keeps the base's color.** It belongs to the base's cast name, and its data has no reader yet.
+- **A transparent tint is still a tint.** A color with opacity `00` hides the aura (tested in Dolphin), but the copies are still made and take the same effect memory as any other color.
 - **Effect memory.** Every effect is loaded into a 300,000-byte cache, 290,971 bytes of it used by the game. When a tint's copies don't fit the rest, the patch grows the cache in `main.dol` by what they need plus 2 KB, and that memory comes out of what a match has to load into.
 - **A full tint (`all`) may grow it by at most 8,224 bytes**; a base whose full tint needs more is built with only its idle and power-up effects (`power`), which fits every base without growing it. Currently only affects Iron Man.
   Tested with custom models:

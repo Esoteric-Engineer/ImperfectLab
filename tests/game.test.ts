@@ -172,6 +172,22 @@ describe.skipIf(!ISO)('game', () => {
     expect(cols.every((c) => ((c >>> 16) & 255) > (c & 255))).toBe(true)
   })
 
+  it('scales the alpha of a tint by its color\'s opacity', () => {
+    const alphas = (color: string) => {
+      const fx = new effects.Effects(src().entry('Misc/game.nfx'))
+      const names = fx.tinted(['jOhmStand'], color, 'testfx')
+      const copies = new Set([...names.values()].map((n) => n.toLowerCase()))
+      return nfxtool.blocks(nfxtool.readNfx(fx.build())).filter((b) => copies.has(b.name.toLowerCase()))
+        .flatMap((b) => b.lines.slice(1).map(nfxtool.tokens).filter((t) => t.length >= 2 && ['startcol', 'endcol'].includes(t[0].toLowerCase())))
+        .map((t) => nfxtool.scanFloats(t[1], 4)[0])
+    }
+    const full = alphas('#FF2020'), half = alphas('#FF202080'), none = alphas('#FF202000')
+    expect(full.length).toBeGreaterThan(0)
+    expect(alphas('#FF2020FF')).toEqual(full)
+    expect(none.every((a) => a === 0)).toBe(true)
+    expect(half.every((a, i) => Math.abs(a - full[i] * 128 / 255) < 0.01)).toBe(true)
+  })
+
   it('builds a synthetic character', () => {
     const c = imperfect.newCharacter()
     c.internalName = 'Synth'
