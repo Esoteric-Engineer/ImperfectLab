@@ -1,4 +1,4 @@
-// Select-screen and loading-screen portraits for select-screen id 18. Johnny Ohm's portrait movies (id 4) are the template regardless of base due to their sizing.
+// Select-screen and loading-screen portraits for a new select-screen id (18, or 19 for a second character). Johnny Ohm's portrait movies (id 4) are the template regardless of base due to their sizing.
 import { f32be } from '../bytes'
 import { LabError } from '../errors'
 import { gaussianBlurL } from '../image/filters'
@@ -175,7 +175,7 @@ export class SelectLayout {
     return canvas
   }
 
-  build(poses: Map<string, [RgbaImage, number, [number, number], Rgba | null]>, fade = FADE): Uint8Array {
+  build(poses: Map<string, [RgbaImage, number, [number, number], Rgba | null]>, fade = FADE, id = NEW_ID): Uint8Array {
     const bank = gshtool.readGsh(fileMap(this.files).get(this.src + '.gsh')!)
     this.records.forEach((pieces, i) => {
       const pose = this.poseOf(pieces)
@@ -193,7 +193,7 @@ export class SelectLayout {
     })
     const out: nbig.ArchiveFile[] = this.files.map(([n, b]) => [n, n.toLowerCase().endsWith('.gsh') ? gshtool.buildGsh(bank) : b])
     // rename the archive's files to the new select-screen id
-    const name = `c${NEW_ID}_p0`
+    const name = `c${id}_p0`
     return nbig.save(out.map(([n, b]) => [name + n.slice(this.src.length), b]), true, this.files.tag)
   }
 }
@@ -230,7 +230,7 @@ export function stripCrop(source: GameSource, picture: RgbaImage, anchor: [numbe
   return out
 }
 
-export function loadingArchive(source: GameSource, strips: RgbaImage[], alt = false): Uint8Array {
+export function loadingArchive(source: GameSource, strips: RgbaImage[], alt = false, id = NEW_ID): Uint8Array {
   const [files, bank, src] = stripBank(source, alt)
   const names = [...bank.names].sort((a, b) => new gshtool.Picture(bank.record(b)).width - new gshtool.Picture(bank.record(a)).width)
   names.forEach((n, i) => {
@@ -242,17 +242,17 @@ export function loadingArchive(source: GameSource, strips: RgbaImage[], alt = fa
   })
   // strips are redrawn in place, then the archive is renamed to the new select-screen id
   const out: nbig.ArchiveFile[] = files.map(([n, b]) => [n, n.toLowerCase().endsWith('.gsh') ? gshtool.buildGsh(bank) : b])
-  const name = `cvs${NEW_ID}${alt ? '_alt' : ''}`
+  const name = `cvs${id}${alt ? '_alt' : ''}`
   return nbig.save(out.map(([n, b]) => [name + n.slice(src.length), b]), true, files.tag)
 }
 
 // the base's own portrait archives, untouched but renamed to the new select-screen id
-export function renamed(source: GameSource, selectId: number): Map<string, Uint8Array> {
+export function renamed(source: GameSource, selectId: number, id = NEW_ID): Map<string, Uint8Array> {
   const out = new Map<string, Uint8Array>()
   for (const [kind, alt, old] of [['c', false, `c${selectId}_p0`], ['cvs', false, `cvs${selectId}`], ['cvs', true, `cvs${selectId}_alt`]] as ['c' | 'cvs', boolean, string][]) {
     const data = source.entry(archiveName(kind, selectId, alt))
-    const next = kind === 'c' ? `c${NEW_ID}_p0` : `cvs${NEW_ID}${alt ? '_alt' : ''}`
-    out.set(archiveName(kind, NEW_ID, alt), renameArchive(data, old, next))
+    const next = kind === 'c' ? `c${id}_p0` : `cvs${id}${alt ? '_alt' : ''}`
+    out.set(archiveName(kind, id, alt), renameArchive(data, old, next))
   }
   return out
 }

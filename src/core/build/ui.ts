@@ -1,4 +1,5 @@
-// The versus character-select UI for select-screen id 18: the select screen's lists and grid, the tile, the hero name and color, and the in-match HUD portraits.
+// The versus character-select UI for a new select-screen id (18, then 19): the select screen's lists and grid, the tile, the hero name and color, and the in-match HUD portraits.
+// Each edit takes the lists as they are for that id, so a second character is added on top of the first.
 import { f32be, i32be, putF32be, putU32be } from '../bytes'
 import { LabError } from '../errors'
 import type { RgbaImage } from '../image/rgba'
@@ -45,46 +46,51 @@ function openMovie(data: Uint8Array): [Archive, Map<string, nbig.ArchiveFile>, A
 const last = (v: ConstValue[]) => v[v.length - 1]
 const same = (a: ConstValue[], b: ConstValue[]) => a.length === b.length && a.every((x, i) => x === b[i])
 
-export function patchCharselect(data: Uint8Array, voice: number | null = null): Uint8Array {
+export function patchCharselect(data: Uint8Array, voice: number | null = null, id = NEW_ID): Uint8Array {
   const [files, , apt] = openMovie(data)
   const block = apt.frameActions(apt.aptOff, 0)[0]
 
-  let at = apt.findPush(block, (v) => v[0] === 'aObject' && last(v) === 18 && v.includes('thumb17'))
+  let at = apt.findPush(block, (v) => v[0] === 'aObject' && last(v) === id && v.includes(`thumb${id - 1}`))
   let items = apt.getPush(at)
-  const thumb = apt.pushStr(block, `thumb${NEW_ID}`)
-  apt.setPush(at, [items[0], thumb, ...items.slice(1, -1), apt.constInt(NEW_ID + 1)])
+  const thumb = apt.pushStr(block, `thumb${id}`)
+  apt.setPush(at, [items[0], thumb, ...items.slice(1, -1), apt.constInt(id + 1)])
 
-  at = apt.findPush(block, (v) => v[0] === 'aCharObject' && last(v) === 18)
+  // the grid is 9 wide: 27 slots make a third row
+  at = apt.findPush(block, (v) => v[0] === 'aCharObject' && (last(v) === 18 || last(v) === 27))
   items = apt.getPush(at)
   apt.setPush(at, [items[0], ...new Array(27).fill(items[1]), apt.constInt(27)])
 
-  at = apt.findPush(block, (v) => v[0] === 'g_aCharacterOrder' && last(v) === 18 && v[1] === 17)
+  at = apt.findPush(block, (v) => v[0] === 'g_aCharacterOrder' && last(v) === id && v[1] === id - 1)
   items = apt.getPush(at)
-  apt.setPush(at, [items[0], apt.constInt(NEW_ID), ...items.slice(1, -1), apt.constInt(NEW_ID + 1)])
+  apt.setPush(at, [items[0], apt.constInt(id), ...items.slice(1, -1), apt.constInt(id + 1)])
 
-  if (voice !== null) addVoice(apt, block, voice)
+  if (voice !== null) addVoice(apt, block, voice, id)
   const [a, c] = apt.build()
   return rebuild(files, a, c)
 }
 
-function addVoice(apt: Apt, block: number, voice: number) {
+function addVoice(apt: Apt, block: number, voice: number, id: number) {
   const pool = apt.pool(block)
   const ops = apt.walk(block)
   const vals = (at: number) => apt.getPush(at).map((i) => apt.constValue(i, pool))
-  const start = ops.findIndex(([at, op]) => op === 0x96 && same(vals(at), ['g_aCharacterAudio', '_global']))
+  const start = ops.findIndex(([at, op]) => {
+    if (op !== 0x96) return false
+    const v = vals(at)
+    return v[0] === 'g_aCharacterAudio' && last(v) === '_global' && v.slice(1, -1).every((x) => typeof x === 'number')
+  })
   if (start < 0) throw new LabError("the select screen's voice list was not found")
   let count = -1
   for (let k = start; k < Math.min(ops.length - 1, start + 120); k++) {
-    if (ops[k][1] === 0x96 && ops[k + 1][1] === 0x42 && same(vals(ops[k][0]), [18])) {
+    if (ops[k][1] === 0x96 && ops[k + 1][1] === 0x42 && same(vals(ops[k][0]), [id])) {
       count = k
       break
     }
   }
-  if (count < 0) throw new LabError("the select screen's voice list has an unexpected shape")
+  if (count < 0) throw new LabError(`the select screen's voice list does not reach id ${id - 1}`)
   const at = ops[start][0]
   const items = apt.getPush(at)
-  apt.setPush(at, [items[0], apt.constInt(voice), items[1]])
-  apt.setPush(ops[count][0], [apt.constInt(NEW_ID + 1)])
+  apt.setPush(at, [items[0], apt.constInt(voice), ...items.slice(1)])
+  apt.setPush(ops[count][0], [apt.constInt(id + 1)])
 }
 
 export function sfxValues(mainData: Uint8Array): Map<string, number> {
@@ -107,7 +113,7 @@ export function sfxValues(mainData: Uint8Array): Map<string, number> {
   return out
 }
 
-export function patchThumbs(data: Uint8Array, aliasId: number, pics: [RgbaImage, RgbaImage] | null = null): Uint8Array {
+export function patchThumbs(data: Uint8Array, aliasId: number, pics: [RgbaImage, RgbaImage] | null = null, id = NEW_ID): Uint8Array {
   const [files, d, apt] = openMovie(data)
   const exports = new Map(apt.exports())
   let holder: number | null = null
@@ -119,31 +125,31 @@ export function patchThumbs(data: Uint8Array, aliasId: number, pics: [RgbaImage,
   const places = new Map<string, number>()
   for (const [it, nm] of apt.framePlaces(holder, 0)) if (nm) places.set(nm, it)
 
-  const src0 = places.get('thumb0')!, src9 = places.get('thumb9')!
+  const src0 = places.get('thumb0')!, src9 = places.get('thumb9')!, above = places.get(`thumb${id - 9}`)!
   const y0 = f32be(apt.d, src0 + 36), y9 = f32be(apt.d, src9 + 36)
-  const rec = apt.slice(src9, src9 + 64)
+  const rec = apt.slice(above, above + 64)
   putF32be(rec, 36, y9 + (y9 - y0))
   const depths = apt.framePlaces(holder, 0).map(([it]) => i32be(apt.d, it + 8))
   putU32be(rec, 8, (Math.max(...depths) + 2) >>> 0)
-  putU32be(rec, 52, apt.appendStr(`thumb${NEW_ID}`))
+  putU32be(rec, 52, apt.appendStr(`thumb${id}`))
   apt.addFrameItem(holder, 0, apt.append(rec))
 
   for (const block of apt.frameActions(holder, 0)) {
     const pool = apt.pool(block)
     for (const [at, op] of apt.walk(block)) {
-      if (op === 0x96 && same(apt.getPush(at).map((i) => apt.constValue(i, pool)), [18])) apt.setPush(at, [apt.constInt(NEW_ID + 1)])
+      if (op === 0x96 && same(apt.getPush(at).map((i) => apt.constValue(i, pool)), [id])) apt.setPush(at, [apt.constInt(id + 1)])
     }
   }
 
   let replaced: Record<string, Uint8Array> = {}
   if (pics) {
     const [sprite, geo, gsh] = addTile(apt, exports.get(`char${TILE_TEMPLATE}`)!, d.get('geo')![1], d.get('gsh')![1], pics)
-    apt.addExport(`char${NEW_ID}`, sprite)
+    apt.addExport(`char${id}`, sprite)
     replaced = { geo, gsh }
   } else {
     const alias = exports.get(`char${aliasId}`)
     if (alias === undefined) throw new LabError(`the select screen has no tile char${aliasId}`)
-    apt.addExport(`char${NEW_ID}`, alias)
+    apt.addExport(`char${id}`, alias)
   }
   const [a, c] = apt.build()
   return rebuild(files, a, c, replaced)
@@ -269,7 +275,8 @@ export function geoTexture(records: gshtool.GeoRecord[], rid: number): number {
   throw new LabError(`no .geo record ${rid}`)
 }
 
-export function patchMain(data: Uint8Array, name: string, color = 0xffffff): Uint8Array {
+// The name and color lists are pushed last element first
+export function patchMain(data: Uint8Array, name: string, color = 0xffffff, id = NEW_ID): Uint8Array {
   const [files, , apt] = openMovie(data)
   const movie = apt.aptOff
   const done = new Set<string>()
@@ -282,14 +289,15 @@ export function patchMain(data: Uint8Array, name: string, color = 0xffffff): Uin
         const items = apt.getPush(at)
         const vals = items.map((i) => apt.constValue(i, pool))
         const n = vals.length
-        if (n >= 19 && vals[n - 1] === 18 && vals[n - 2] === '~kT_THING' && vals[n - 19] === '~kT_VANROEKEL') {
-          apt.setPush(at, [...items.slice(0, -19), apt.pushStr(block, name), ...items.slice(-19, -1), apt.constInt(19)])
+        const below = n - 1 - id
+        if (n >= id + 1 && vals[n - 1] === id && vals[n - 2] === '~kT_THING' && vals[n - 19] === '~kT_VANROEKEL') {
+          apt.setPush(at, [...items.slice(0, below), apt.pushStr(block, name), ...items.slice(below, -1), apt.constInt(id + 1)])
           done.add('names')
-        } else if (n >= 19 && vals[n - 1] === 18 && vals[n - 2] === 11897431 && vals[n - 19] === 9484461) {
-          apt.setPush(at, [...items.slice(0, -19), apt.constInt(color), ...items.slice(-19, -1), apt.constInt(19)])
+        } else if (n >= id + 1 && vals[n - 1] === id && vals[n - 2] === 11897431 && vals[n - 19] === 9484461) {
+          apt.setPush(at, [...items.slice(0, below), apt.constInt(color), ...items.slice(below, -1), apt.constInt(id + 1)])
           done.add('colors')
-        } else if (n >= 2 && vals[n - 2] === 'kGlobal_Max_NumChar' && vals[n - 1] === 18) {
-          apt.setPush(at, [...items.slice(0, -1), apt.constInt(NEW_ID + 1)])
+        } else if (n >= 2 && vals[n - 2] === 'kGlobal_Max_NumChar' && vals[n - 1] === id) {
+          apt.setPush(at, [...items.slice(0, -1), apt.constInt(id + 1)])
           done.add('max')
         }
       }

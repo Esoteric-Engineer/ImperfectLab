@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as effects from '../src/core/build/effects'
-import { Builder } from '../src/core/build/patch'
+import { buildPair } from '../src/core/build/pair'
+import { Builder, report } from '../src/core/build/patch'
 import * as templates from '../src/core/build/templates'
 import * as tuning from '../src/core/build/tuning'
 import * as ui from '../src/core/build/ui'
@@ -230,6 +231,55 @@ describe.skipIf(!ISO)('game', () => {
     const r = new Builder(src(), tinted('ironman')).build()
     expect(D.readEffectCache(r.dol!)).toBe(nfxtool.CACHE_SIZE)
     expect(r.notes.some((n) => n.includes('idle and power-up effects are tinted'))).toBe(true)
+  })
+
+  it('builds two characters, the second on the first', () => {
+    const a = tinted('johnnyohm')
+    const b = { ...tinted('humantorch'), internalName: 'Other', displayName: 'OTHER' }
+    b.ui = { ...b.ui, ready_voice: 'FE_SFX_TORCH' }
+    b.files = new Map([...b.files, ['ui/select_ready.png', pngBytes(200, 400)], ['ui/tile.png', pngBytes(64, 32)]])
+    const r = buildPair(src(), [a, b])
+    const [normal, alt] = D.tables(r.dol!)
+    expect(D.readRecord(r.dol!, normal, 19).name).toBe('plr_synth')
+    expect(D.readRecord(r.dol!, alt, 20)).toMatchObject({ name: 'plr_altOther', key: 'OTHER' })
+    for (const name of ['Bundles/synth.ngm', 'Bundles/other_alt.tpl', 'Misc/PLAYER_Synth.nvb', 'Misc/PLAYER_Other.nvb']) expect(r.adds.has(name), name).toBe(true)
+    // the base's portraits under both ids: 18 had placeholders to replace, 19 is new
+    expect(r.sets.has(ui.P + 'portraits/c18_p0.big')).toBe(true)
+    for (const n of ['c19_p0', 'cvs19', 'cvs19_alt', 'cvs18_alt']) expect(r.adds.has(`${ui.P}portraits/${n}.big`), n).toBe(true)
+    const t = new R.Templates(r.sets.get('Misc/Global.not')!)
+    expect(t.has('plr_Synth') && t.has('plr_altOther')).toBe(true)
+    expect(latin1(r.sets.get('Misc/nvblist.txt')!).endsWith('PLAYER Synth\r\nPLAYER Other\r\n')).toBe(true)
+    // both tints in full would grow the effect cache by 16 KB: they are cut back to fit what one may
+    expect(r.cache === null || r.cache - nfxtool.CACHE_SIZE <= effects.TINT_ALL_LIMIT).toBe(true)
+    expect(r.notes.some((n) => n.startsWith('OTHER: aura tint') && n.includes('idle and power-up'))).toBe(true)
+    expect(r.notes.some((n) => n.includes("uses Johnny Ohm's (FE_SFX_OHM)"))).toBe(true)
+
+    const movie = (name: string) => {
+      const files = ui.loadArchive(r.sets.get(ui.P + name)!)
+      const get = (ext: string) => files.find(([n]) => n.toLowerCase().endsWith(ext))![1]
+      return new Apt(get('.apt'), get('.const'))
+    }
+    const pushes = (apt: Apt) => apt.frameActions(apt.aptOff, 0).flatMap((block) => {
+      const pool = apt.pool(block)
+      return apt.walk(block).filter(([, op]) => op === 0x96).map(([at]) => apt.getPush(at).map((i) => apt.constValue(i, pool)))
+    })
+    const select = pushes(movie('screens/clashCharSelect.big'))
+    const values = ui.sfxValues(src().entry(ui.P + 'main.big'))
+    expect(select).toContainEqual(['g_aCharacterAudio', values.get('FE_SFX_TORCH'), values.get('FE_SFX_OHM'), '_global'])
+    expect(select.find((v) => v[0] === 'aObject')!.slice(0, 3)).toEqual(['aObject', 'thumb19', 'thumb18'])
+    expect(select.find((v) => v[0] === 'g_aCharacterOrder')!.slice(0, 3)).toEqual(['g_aCharacterOrder', 19, 18])
+    const main = pushes(movie('main.big'))
+    const names = main.find((v) => v.includes('~kT_VANROEKEL'))!
+    expect(names.slice(-21)).toEqual(['OTHER', 'SYNTH', ...names.slice(-19, -1), 20])
+    expect(names[names.length - 19]).toBe('~kT_VANROEKEL')
+    expect(main.find((v) => v.includes('kGlobal_Max_NumChar'))!.slice(-1)).toEqual([20])
+    const thumbs = new Map(movie('screens/clashCharSelect_thumbs.big').exports())
+    expect(thumbs.has('char18') && thumbs.has('char19')).toBe(true)
+    expect(report([a, b], r)).toContain('roster records 19 and 20')
+  })
+
+  it('refuses two characters with the same internal name', () => {
+    expect(() => buildPair(src(), [tinted('johnnyohm'), tinted('storm')])).toThrow(LabError)
   })
 
   it('refuses a name the game uses', () => {

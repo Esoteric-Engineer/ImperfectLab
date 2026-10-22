@@ -69,6 +69,18 @@ export function tintPlans(source: GameSource, base: BaseCharacter): Record<strin
   }))
 }
 
+// How much several characters' tints grow the cache together (they share it), measured the same way. A null level tints nothing.
+export function sharedExtra(source: GameSource, tints: [BaseCharacter, string | null][]): number {
+  const fx = new Effects(source.entry('Misc/game.nfx'))
+  tints.forEach(([base, level], i) => {
+    if (level === null) return
+    const [normal, alt] = roots(fx, new tuning.Tuning(source, base), base, level)
+    fx.tinted(normal, '#808080', copyPrefix(`x${i}`, false))
+    fx.tinted(alt, '#808080', copyPrefix(`x${i}`, true))
+  })
+  return cacheSize(fx.used()) - nfxtool.CACHE_SIZE
+}
+
 export function tintLevel(plans: Record<string, TintPlan>, level: string): string {
   return level === 'all' && plans.all && plans.all.extra > TINT_ALL_LIMIT ? 'power' : level
 }
