@@ -93,7 +93,10 @@ function App() {
     <div className="app">
       <header>
         <div className="header-left">
-          <span className="brand">ImperfectLab</span>
+          <span className="brand">
+            <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" />
+            ImperfectLab
+          </span>
           <MenuBar menus={menus} />
         </div>
         <span className="file">{s.fileName ?? `${s.character.displayName} (unsaved)`}{s.dirty ? ' *' : ''}</span>
