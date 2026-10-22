@@ -140,3 +140,26 @@ export class GameSource {
     if (toHex(h.digest()) !== SHA1['CLASH.BIG']) throw new LabError('CLASH.BIG is not the original GVLE69 one: the disc is already patched or modified')
   }
 }
+
+export class LayeredSource extends GameSource {
+  files: Map<string, [string, Uint8Array]>
+
+  constructor(under: GameSource, files: Map<string, Uint8Array>) {
+    super(under.disc)
+    this.files = new Map([...files].map(([k, v]) => [k.toLowerCase(), [k, v]]))
+  }
+
+  has(name: string): boolean {
+    return this.files.has(name.toLowerCase()) || super.has(name)
+  }
+
+  names(prefix = '', suffix = ''): string[] {
+    const p = prefix.toLowerCase(), s = suffix.toLowerCase()
+    const added = [...this.files.values()].map(([n]) => n).filter((n) => !super.has(n) && n.toLowerCase().startsWith(p) && n.toLowerCase().endsWith(s))
+    return [...super.names(prefix, suffix), ...added]
+  }
+
+  entry(name: string): Uint8Array {
+    return this.files.get(name.toLowerCase())?.[1] ?? super.entry(name)
+  }
+}

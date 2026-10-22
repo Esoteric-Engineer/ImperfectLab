@@ -35,6 +35,8 @@ export type Progress = (stage: string, done?: number, total?: number) => void
 
 export class Result {
   dol: Uint8Array | null = null
+  // the effect cache main.dol needs, when a tint outgrows the game's
+  cache: number | null = null
   sets = new Map<string, Uint8Array>()
   adds = new Map<string, Uint8Array>()
   notes: string[] = []
@@ -60,6 +62,8 @@ export class Builder {
   uiAdds = new Map<string, Uint8Array>()
   fit: Fit | null = null
   model: Model | null
+  selectId = ui.NEW_ID
+  tint: string | null = null
 
   constructor(source: GameSource, character: Character, progress?: Progress, model?: Model) {
     this.src = source
@@ -94,6 +98,13 @@ export class Builder {
     const c = this.c
     this.progress('Roster')
     this.r.dol = D.patch(this.src.dol, c.internalName, c.displayName, c.stats.normal, c.stats.alt)
+    this.buildFiles()
+    if (this.r.cache !== null) this.r.dol = D.growEffectCache(this.r.dol, this.r.cache)
+    return this.r
+  }
+
+  // Every file but main.dol.
+  buildFiles(): Result {
     this.progress('Model')
     const materials = this.buildModel()
     this.progress('Templates, materials and tuning')
@@ -224,15 +235,15 @@ export class Builder {
     if (c.aura.mode !== 'tint') return [null, null, []]
     const fx = new effects.Effects(this.src.entry('Misc/game.nfx'))
     const tun = new tuning.Tuning(this.src, base)
-    const level = c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, base), 'all') : c.aura.tint
-    if (level !== c.aura.tint) this.note(`aura tint: ${base.label}'s full tint needs more memory than a match can spare; its idle and power-up effects are tinted`)
+    const level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, base), 'all') : c.aura.tint)
+    if (this.tint === null && level !== c.aura.tint) this.note(`aura tint: ${base.label}'s full tint needs more memory than a match can spare; its idle and power-up effects are tinted`)
     const [rootsN, rootsA] = effects.roots(fx, tun, base, level)
     if (!rootsN.length && !rootsA.length) throw new LabError(`${base.label} has no effects to tint; use the Base or Swap aura`)
     const mn = fx.tinted(rootsN, c.aura.color, effects.copyPrefix(c.internalName, false))
     const ma = fx.tinted(rootsA, c.aura.alt_color, effects.copyPrefix(c.internalName, true))
     this.r.sets.set('Misc/game.nfx', fx.build())
     const size = effects.cacheSize(fx.used())
-    if (size > nfxtool.CACHE_SIZE) this.r.dol = D.growEffectCache(this.r.dol!, size)
+    if (size > nfxtool.CACHE_SIZE) this.r.cache = size
     this.note(`aura tint: ${mn.size + ma.size} effect blocks copied, ${fx.used()} of ${size} bytes of effect cache used`)
     const pick = (m: Map<string, string>, name: string | null) => m.get((name ?? '').toLowerCase()) ?? name!
     const effect1: [string, string] | null = base.effect1 ? [pick(mn, base.effect1), pick(ma, base.altEffect1)] : null
@@ -315,22 +326,23 @@ export class Builder {
       if (!values.has(c.ui.ready_voice)) throw new LabError(`the game has no select-screen voice ${c.ui.ready_voice}`)
       voice = values.get(c.ui.ready_voice)!
     }
-    sets.set(P + 'screens/clashCharSelect.big', ui.patchCharselect(src.entry(P + 'screens/clashCharSelect.big'), voice))
+    const id = this.selectId
+    sets.set(P + 'screens/clashCharSelect.big', ui.patchCharselect(src.entry(P + 'screens/clashCharSelect.big'), voice, id))
     const tiles = [this.picture('tile'), this.picture('tile_selected')]
     if (tiles[0] && !tiles[1]) tiles[1] = tiles[0]
     const thumbs = src.entry(P + 'screens/clashCharSelect_thumbs.big')
-    sets.set(P + 'screens/clashCharSelect_thumbs.big', ui.patchThumbs(thumbs, base.selectId, tiles[0] ? [tiles[0], tiles[1]!] : null))
-    for (const name of ['main.big', 'mainBE.big']) sets.set(P + name, ui.patchMain(src.entry(P + name), c.displayName, colorInt(c.nameColor)))
+    sets.set(P + 'screens/clashCharSelect_thumbs.big', ui.patchThumbs(thumbs, base.selectId, tiles[0] ? [tiles[0], tiles[1]!] : null, id))
+    for (const name of ['main.big', 'mainBE.big']) sets.set(P + name, ui.patchMain(src.entry(P + name), c.displayName, colorInt(c.nameColor), id))
     this.hud()
     const ready = this.picture('select_ready')
     if (ready === null) {
-      for (const [name, data] of portraits.renamed(src, base.selectId)) (src.has(name) ? sets : adds).set(name, data)
+      for (const [name, data] of portraits.renamed(src, base.selectId, id)) (src.has(name) ? sets : adds).set(name, data)
       this.note(`no select-screen portrait: ${base.label}'s portraits are used`)
     } else {
-      for (const [k, v] of this.selectPortrait(ready)) sets.set(k, v)
+      for (const [k, v] of this.selectPortrait(ready)) (src.has(k) ? sets : adds).set(k, v)
       for (const alt of [false, true]) {
-        const name = portraits.archiveName('cvs', ui.NEW_ID, alt)
-        ;(src.has(name) ? sets : adds).set(name, portraits.loadingArchive(src, this.strips(ready, alt), alt))
+        const name = portraits.archiveName('cvs', id, alt)
+        ;(src.has(name) ? sets : adds).set(name, portraits.loadingArchive(src, this.strips(ready, alt), alt, id))
       }
     }
     this.uiAdds = adds
@@ -348,7 +360,7 @@ export class Builder {
       const p = sel[pose] ?? (pose !== 'rest' || rest === null ? def : defaultPlacement(pictures.rest))
       poses.set(pose, [pictures[pose], p.scale, p.anchor, p.glow ? glowRgba(p.glow) : null])
     }
-    return new Map([[portraits.archiveName('c', ui.NEW_ID), layout.build(poses, c.ui.fade ?? portraits.FADE)]])
+    return new Map([[portraits.archiveName('c', this.selectId), layout.build(poses, c.ui.fade ?? portraits.FADE, this.selectId)]])
   }
 
   strips(ready: RgbaImage, alt: boolean): RgbaImage[] {
@@ -422,12 +434,16 @@ export interface PatchOutput {
 }
 
 export async function patch(source: GameSource, character: Character, out: PatchOutput, progress: Progress = () => {}, isVerified = false, model?: Model): Promise<Result> {
+  return write(source, out, progress, isVerified, () => new Builder(source, character, progress, model).build())
+}
+
+export async function write(source: GameSource, out: PatchOutput, progress: Progress, isVerified: boolean, build: () => Result): Promise<Result> {
   if (out.freeSpace !== undefined && out.freeSpace < GC_DISC_SIZE + (64 << 20)) throw new LabError('not enough free space (a patched disc takes 1.4 GB)')
   if (!isVerified) {
     progress('Checking the source disc')
     source.verify((done, total) => progress('Checking the source disc', done, total))
   }
-  const r = new Builder(source, character, progress, model).build()
+  const r = build()
   const repack = planRepack(source, r.sets, r.adds)
   let bigTotal = 0
   for (const [, , size] of repack.plan) bigTotal += size
@@ -440,19 +456,25 @@ export async function patch(source: GameSource, character: Character, out: Patch
   return r
 }
 
-export function report(character: Character, result: Result): string {
-  const lines = ['ImperfectLab patch report', '', `Character: ${character.displayName} (${character.internalName}), base ${R.label(character.base)}`, '']
-  lines.push('main.dol: roster record 19, select-screen limits 18 -> 19')
+export function report(characters: Character | Character[], result: Result): string {
+  const chars = Array.isArray(characters) ? characters : [characters]
+  const lines = ['ImperfectLab patch report', '']
+  for (const c of chars) lines.push(`Character: ${c.displayName} (${c.internalName}), base ${R.label(c.base)}`)
+  lines.push('')
+  if (chars.length === 1) lines.push('main.dol: roster record 19, select-screen limits 18 -> 19')
+  else lines.push('main.dol: roster records 19 and 20 in a new data section, select-screen limits 18 -> 20', `main.dol: arena starts at 0x${D.arenaLo(result.dol!).toString(16).toUpperCase()}`)
   const cache = result.dol ? D.readEffectCache(result.dol) : null
   if (cache && cache !== nfxtool.CACHE_SIZE) lines.push(`main.dol: effect cache ${nfxtool.CACHE_SIZE} -> ${cache} bytes`)
   const sorted = (m: Map<string, Uint8Array>) => [...m].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
   for (const [k, v] of sorted(result.sets)) lines.push(`changed: ${k} (${v.length} bytes)`)
   for (const [k, v] of sorted(result.adds)) lines.push(`added:   ${k} (${v.length} bytes)`)
   lines.push('', ...result.notes)
-  const credits = character.credits
-  if (credits.author || credits.assets.length) {
-    lines.push('', `Credits: ${credits.author}`)
-    for (const a of credits.assets) lines.push(`  ${a.what} by ${a.by} (${a.license}) ${a.url}`)
+  for (const c of chars) {
+    const credits = c.credits
+    if (credits.author || credits.assets.length) {
+      lines.push('', `Credits${chars.length > 1 ? ` (${c.displayName})` : ''}: ${credits.author}`)
+      for (const a of credits.assets) lines.push(`  ${a.what} by ${a.by} (${a.license}) ${a.url}`)
+    }
   }
   return lines.join('\n') + '\n'
 }

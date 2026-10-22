@@ -2,16 +2,14 @@ import { useMemo, useState } from 'react'
 import * as effects from '../../core/build/effects'
 import * as mapping from '../../core/model/mapping'
 import { copyCharacter, problems as characterProblems } from '../../core/package/imperfect'
-import { canSaveInPlace, chooseIsoOutput, download, downloadBlob, freeSpace, opfsFile, removeOpfs } from '../../io/files'
-import type { CheckResult, PatchTarget } from '../../worker/protocol'
+import { canSaveInPlace, download, downloadBlob, opfsFile, removeOpfs } from '../../io/files'
+import type { CheckResult } from '../../worker/protocol'
 import { Note, ProblemList, Progress } from '../components/common'
 import { engine, errorText } from '../engine'
 import { store, useStore } from '../store'
 import { saveAs } from '../actions'
 import { titleCase } from '../format'
-
-const OPFS_NAME = 'imperfectlab-patched.iso'
-const GC_DISC_SIZE = 1459978240
+import { choosePatchTarget, OPFS_NAME } from '../target'
 
 export function ExportPage() {
   useStore()
@@ -72,20 +70,9 @@ export function ExportPage() {
       store.fail('Fix these first:\n' + errors.join('\n'))
       return
     }
-    let target: PatchTarget
-    const handle = await chooseIsoOutput(out)
-    if (handle === 'cancel') return
-    if (handle) {
-      target = { kind: 'handle', handle }
-    } else {
-      await removeOpfs(OPFS_NAME)
-      const free = await freeSpace()
-      if (free !== null && free < GC_DISC_SIZE + (64 << 20)) {
-        store.fail('Not enough free space in the browser\'s storage for the patched disc (it takes 1.4 GB).')
-        return
-      }
-      target = { kind: 'opfs', name: OPFS_NAME }
-    }
+    const chosen = await choosePatchTarget(out)
+    if (!chosen) return
+    const [target, savedAs] = chosen
     setLog('')
     setReportText(null)
     setOpfsReady(null)
@@ -99,7 +86,7 @@ export function ExportPage() {
         setOpfsReady(out)
         downloadBlob(await opfsFile(OPFS_NAME), out)
       }
-      store.message(`Done: ${handle ? handle.name : out}`)
+      store.message(`Done: ${savedAs}`)
     } catch (e) {
       setLog('✖ Patching failed:\n' + errorText(e))
     }

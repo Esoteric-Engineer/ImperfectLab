@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as effects from '../src/core/build/effects'
-import { Builder } from '../src/core/build/patch'
+import { buildPair, checkPair } from '../src/core/build/pair'
+import { Builder, report } from '../src/core/build/patch'
 import * as templates from '../src/core/build/templates'
 import * as tuning from '../src/core/build/tuning'
 import * as ui from '../src/core/build/ui'
@@ -61,6 +62,30 @@ describe.skipIf(!ISO)('main.dol', () => {
 
   it('reads every base record', () => {
     for (const key of R.keys()) expect(D.readRecord(gameSource().dol, D.NORMAL_TABLE, R.BASES[key][2]).name.toLowerCase().startsWith('plr_')).toBe(true)
+  })
+
+  it('moves the roster into a new data section for two characters', () => {
+    const dol = gameSource().dol
+    expect(D.tables(dol)).toEqual([D.NORMAL_TABLE, D.ALT_TABLE, 0x4c80fc])
+    expect(D.arenaLo(dol)).toBe(D.ARENA_LO)
+    const out = D.patchTwo(dol, [
+      { internal: 'DoctorDoom', display: 'DOCTOR DOOM', stats: [7, 4, 3, 6, 5, 4], altStats: [7, 4, 3, 6, 5, 4] },
+      { internal: 'CaptainAmerica', display: 'CAPTAIN AMERICA', stats: [3, 4, 2, 3, 1, 6], altStats: [3, 4, 2, 3, 1, 6] },
+    ])
+    const [normal, alt, order] = D.tables(out)
+    expect(normal).toBe(dol.length)
+    expect(D.fileOffset(out, D.ARENA_LO)).toBe(normal)
+    expect(D.arenaLo(out)).toBeGreaterThanOrEqual(D.ARENA_LO + 21 * (2 * 0x4c + 4))
+    expect(D.arenaLo(out) % 32).toBe(0)
+    for (let i = 0; i < 19; i++) expect(D.readRecord(out, normal, i)).toEqual(D.readRecord(dol, D.NORMAL_TABLE, i))
+    for (let i = 0; i < 19; i++) expect(D.readRecord(out, alt, i)).toEqual(D.readRecord(dol, D.ALT_TABLE, i))
+    expect(D.readRecord(out, normal, 19)).toEqual({ name: 'plr_doctordoom', key: 'DOCTOR DOOM', stats: [7, 4, 3, 6, 5, 4], unlocked: 1 })
+    expect(D.readRecord(out, alt, 20)).toEqual({ name: 'plr_altCaptainamerica', key: 'CAPTAIN AMERICA', stats: [3, 4, 2, 3, 1, 6], unlocked: 1 })
+    expect(Array.from({ length: 21 }, (_, i) => out[order + 4 * i + 3])).toEqual([0, 10, 2, 15, 6, 14, 3, 9, 7, 13, 4, 16, 8, 1, 17, 5, 12, 11, 18, 19, 20])
+    expect(D.readEffectCache(D.growEffectCache(out, 0x4a400))).toBe(0x4a400)
+    const c = { internal: 'A', display: 'B', stats: [1, 1, 1, 1, 1, 1], altStats: [1, 1, 1, 1, 1, 1] }
+    expect(() => D.patchTwo(out, [c, c])).toThrow(LabError)
+    expect(() => D.patch(out, 'A', 'B', c.stats, c.altStats)).toThrow(LabError)
   })
 })
 
@@ -206,6 +231,79 @@ describe.skipIf(!ISO)('game', () => {
     const r = new Builder(src(), tinted('ironman')).build()
     expect(D.readEffectCache(r.dol!)).toBe(nfxtool.CACHE_SIZE)
     expect(r.notes.some((n) => n.includes('idle and power-up effects are tinted'))).toBe(true)
+  })
+
+  it('builds two characters, the second on the first', () => {
+    const a = tinted('johnnyohm')
+    const b = { ...tinted('humantorch'), internalName: 'Other', displayName: 'OTHER' }
+    b.ui = { ...b.ui, ready_voice: 'FE_SFX_TORCH' }
+    b.files = new Map([...b.files, ['ui/select_ready.png', pngBytes(200, 400)], ['ui/tile.png', pngBytes(64, 32)]])
+    const r = buildPair(src(), [a, b])
+    const [normal, alt] = D.tables(r.dol!)
+    expect(D.readRecord(r.dol!, normal, 19).name).toBe('plr_synth')
+    expect(D.readRecord(r.dol!, alt, 20)).toMatchObject({ name: 'plr_altOther', key: 'OTHER' })
+    for (const name of ['Bundles/synth.ngm', 'Bundles/other_alt.tpl', 'Misc/PLAYER_Synth.nvb', 'Misc/PLAYER_Other.nvb']) expect(r.adds.has(name), name).toBe(true)
+    // the base's portraits under both ids: 18 had placeholders to replace, 19 is new
+    expect(r.sets.has(ui.P + 'portraits/c18_p0.big')).toBe(true)
+    for (const n of ['c19_p0', 'cvs19', 'cvs19_alt', 'cvs18_alt']) expect(r.adds.has(`${ui.P}portraits/${n}.big`), n).toBe(true)
+    const t = new R.Templates(r.sets.get('Misc/Global.not')!)
+    expect(t.has('plr_Synth') && t.has('plr_altOther')).toBe(true)
+    expect(latin1(r.sets.get('Misc/nvblist.txt')!).endsWith('PLAYER Synth\r\nPLAYER Other\r\n')).toBe(true)
+    // both tints in full would grow the effect cache by 16 KB: they are cut back to fit what one may
+    expect(r.cache === null || r.cache - nfxtool.CACHE_SIZE <= effects.TINT_ALL_LIMIT).toBe(true)
+    expect(r.notes.some((n) => n.startsWith('OTHER: aura tint') && n.includes('idle and power-up'))).toBe(true)
+    expect(r.notes.some((n) => n.includes("uses Johnny Ohm's (FE_SFX_OHM)"))).toBe(true)
+
+    const movie = (name: string) => {
+      const files = ui.loadArchive(r.sets.get(ui.P + name)!)
+      const get = (ext: string) => files.find(([n]) => n.toLowerCase().endsWith(ext))![1]
+      return new Apt(get('.apt'), get('.const'))
+    }
+    const pushes = (apt: Apt) => apt.frameActions(apt.aptOff, 0).flatMap((block) => {
+      const pool = apt.pool(block)
+      return apt.walk(block).filter(([, op]) => op === 0x96).map(([at]) => apt.getPush(at).map((i) => apt.constValue(i, pool)))
+    })
+    const select = pushes(movie('screens/clashCharSelect.big'))
+    const values = ui.sfxValues(src().entry(ui.P + 'main.big'))
+    expect(select).toContainEqual(['g_aCharacterAudio', values.get('FE_SFX_TORCH'), values.get('FE_SFX_OHM'), '_global'])
+    expect(select.find((v) => v[0] === 'aObject')!.slice(0, 3)).toEqual(['aObject', 'thumb19', 'thumb18'])
+    expect(select.find((v) => v[0] === 'g_aCharacterOrder')!.slice(0, 3)).toEqual(['g_aCharacterOrder', 19, 18])
+    const main = pushes(movie('main.big'))
+    const names = main.find((v) => v.includes('~kT_VANROEKEL'))!
+    expect(names.slice(-21)).toEqual(['OTHER', 'SYNTH', ...names.slice(-19, -1), 20])
+    expect(names[names.length - 19]).toBe('~kT_VANROEKEL')
+    expect(main.find((v) => v.includes('kGlobal_Max_NumChar'))!.slice(-1)).toEqual([20])
+    const thumbs = new Map(movie('screens/clashCharSelect_thumbs.big').exports())
+    expect(thumbs.has('char18') && thumbs.has('char19')).toBe(true)
+    expect(report([a, b], r)).toContain('roster records 19 and 20')
+  })
+
+  it('checks a pair before building it', () => {
+    const a = tinted('johnnyohm')
+    const b = { ...tinted('humantorch'), internalName: 'Other', displayName: 'OTHER' }
+    b.ui = { ...b.ui, ready_voice: 'FE_SFX_TORCH' }
+    const [check, r] = checkPair(src(), [a, b])
+    expect(check.problems.filter(([l]) => l === 'error')).toEqual([])
+    expect(check.problems.some(([l, m]) => l === 'warning' && m.startsWith('20th (OTHER)') && m.includes('idle and power-up'))).toBe(true)
+    expect(check.problems.some(([, m]) => m.includes('FE_SFX_OHM'))).toBe(true)
+    expect(r).not.toBeNull()
+    expect(check.cacheExtra).toBeLessThanOrEqual(effects.TINT_ALL_LIMIT)
+    expect(check.largest).toBe(420153)
+    expect(check.models.map(([n]) => n)).toEqual(['19th (SYNTH)', '20th (OTHER)'])
+    expect(check.models.every(([, size]) => size > 0 && size < check.largest)).toBe(true)
+  })
+
+  it('finds names two characters would both add', () => {
+    const a = { ...tinted('johnnyohm'), internalName: 'Foo' }
+    const [same] = checkPair(src(), [a, { ...tinted('storm'), internalName: 'foo' }])
+    expect(same.problems.some(([l, m]) => l === 'error' && m.includes('internal name'))).toBe(true)
+    const [overlap, r] = checkPair(src(), [a, { ...tinted('storm'), internalName: 'altFoo' }])
+    expect(overlap.problems).toContainEqual(['error', 'both would add plr_altfoo, plr_altfoo_rage to the game: change one internal name'])
+    expect(r).toBeNull()
+  })
+
+  it('refuses two characters with the same internal name', () => {
+    expect(() => buildPair(src(), [tinted('johnnyohm'), tinted('storm')])).toThrow(LabError)
   })
 
   it('refuses a name the game uses', () => {
