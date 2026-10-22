@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react'
 import type { Joint, JointModel } from '../core/model/glb'
 import { Skeleton } from '../core/model/skeleton'
 import { type Character, newCharacter } from '../core/package/imperfect'
-import type { BaseDetails, BaseInfo, ModelInfo, PairCheckResult } from '../worker/protocol'
+import type { BaseDetails, BaseInfo, BatchCheckResult, ModelInfo } from '../worker/protocol'
 import { engine, errorText } from './engine'
 
 export class ModelView implements JointModel {
@@ -42,8 +42,8 @@ export interface Game {
 
 export type Change = 'character' | 'model' | 'mapping' | 'game'
 
-// A character chosen for a two-character patch, and where it came from.
-export interface PairSlot {
+// A character chosen for a patch of several, and where it came from.
+export interface BatchSlot {
   source: string
   character: Character
 }
@@ -60,8 +60,8 @@ class Store {
   error: string | null = null
   credits: string | null = null
   busy = 0
-  pair: [PairSlot | null, PairSlot | null] = [null, null]
-  pairCheck: PairCheckResult | null = null
+  batch: BatchSlot[] = []
+  batchCheck: BatchCheckResult | null = null
   versions: Record<Change, number> = { character: 0, model: 0, mapping: 0, game: 0 }
   private version = 0
   private listeners = new Set<() => void>()
@@ -128,21 +128,36 @@ class Store {
     }
   }
 
-  setPair(i: number, slot: PairSlot | null) {
-    this.pair[i] = slot
-    this.pairCheck = null
+  // Every change makes a new array, so a check started on the old one can tell.
+  private changeBatch(next: BatchSlot[]) {
+    this.batch = next
+    this.batchCheck = null
     this.emit()
   }
 
-  swapPair() {
-    this.pair = [this.pair[1], this.pair[0]]
-    this.pairCheck = null
-    this.emit()
+  addToBatch(slot: BatchSlot) {
+    this.changeBatch([...this.batch, slot])
+  }
+
+  setBatch(i: number, slot: BatchSlot) {
+    this.changeBatch(this.batch.map((s, k) => (k === i ? slot : s)))
+  }
+
+  removeFromBatch(i: number) {
+    this.changeBatch(this.batch.filter((_, k) => k !== i))
+  }
+
+  moveInBatch(i: number, delta: number) {
+    const j = i + delta
+    if (j < 0 || j >= this.batch.length) return
+    const next = [...this.batch]
+    ;[next[i], next[j]] = [next[j], next[i]]
+    this.changeBatch(next)
   }
 
   setGame(game: Game | null) {
     this.game = game
-    this.pairCheck = null
+    this.batchCheck = null
     this.skeletons.clear()
     this.details.clear()
     this.touch('game', false)

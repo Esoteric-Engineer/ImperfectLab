@@ -124,8 +124,7 @@ A base whose full tint needs more memory than a match can spare is built as `pow
 - `fade`: rows faded in at the top of the select-screen portrait.
 - `strip_scale`: the loading-screen strips' crop scale when no strip pictures are given (`null`: three times
   the READY scale).
-- `ready_voice` (experimental): `null` (no voice when picked) or one of the game's select-screen voices,
-  `FE_SFX_<NAME>` (`FE_SFX_OHM`, `FE_SFX_DAREDEVIL`, ...).
+- `ready_voice`: `null` (no sound effect when selected) or one of the game's select-screen sounds, `FE_SFX_<NAME>` (`FE_SFX_OHM`, `FE_SFX_DAREDEVIL`, ...).
 - `banner`: use `ui/banner.png` as the in-match name banner.
 
 Picture slots, all optional:

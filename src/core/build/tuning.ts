@@ -114,17 +114,30 @@ export class Tuning {
 
   listed(internal: string): Uint8Array {
     let text = latin1(this.list)
-    let used = 0
-    for (const line of text.split('\n')) {
-      if (line.startsWith(' ') || line.startsWith('/')) continue
-      const t = line.split(/[ \t\r\n/;]+/).filter(Boolean)
-      if (t.length >= 2) {
-        used += t[0].length + t[1].length + 2
-        if (t[0].toUpperCase() === 'PLAYER' && t[1].toLowerCase() === internal.toLowerCase()) throw new LabError(`nvblist.txt already lists PLAYER ${internal}`)
-      }
+    for (const [a, b] of listPairs(this.list)) {
+      if (a.toUpperCase() === 'PLAYER' && b.toLowerCase() === internal.toLowerCase()) throw new LabError(`nvblist.txt already lists PLAYER ${internal}`)
     }
-    if (used + 'PLAYER'.length + internal.length + 2 >= LIST_BUFFER) throw new LabError('Misc/nvblist.txt has no room for another tuning file')
+    if (listCost(internal) > listRoom(this.list)) throw new LabError('Misc/nvblist.txt has no room for another tuning file')
     if (!text.endsWith('\r\n')) text += '\r\n'
     return encodeLatin1(text + `PLAYER ${internal}\r\n`)
   }
+}
+
+// fn_801B3C4C reads the first two names of each line not starting with a space or '/'.
+function listPairs(list: Uint8Array): [string, string][] {
+  const out: [string, string][] = []
+  for (const line of latin1(list).split('\n')) {
+    if (line.startsWith(' ') || line.startsWith('/')) continue
+    const t = line.split(/[ \t\r\n/;]+/).filter(Boolean)
+    if (t.length >= 2) out.push([t[0], t[1]])
+  }
+  return out
+}
+
+export function listCost(internal: string): number {
+  return 'PLAYER'.length + internal.length + 2
+}
+
+export function listRoom(list: Uint8Array): number {
+  return LIST_BUFFER - 1 - listPairs(list).reduce((n, [a, b]) => n + a.length + b.length + 2, 0)
 }

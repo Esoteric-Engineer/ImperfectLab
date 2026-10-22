@@ -1,4 +1,4 @@
-// Select-screen and loading-screen portraits for a new select-screen id (18, or 19 for a second character). Johnny Ohm's portrait movies (id 4) are the template regardless of base due to their sizing.
+// Select-screen and loading-screen portraits for a new select-screen id (18 to 26, one per new character). Johnny Ohm's portrait movies (id 4) are the template regardless of base due to their sizing.
 import { f32be } from '../bytes'
 import { LabError } from '../errors'
 import { gaussianBlurL } from '../image/filters'

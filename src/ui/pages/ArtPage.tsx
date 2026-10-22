@@ -74,13 +74,15 @@ export function ArtPage() {
       <h3>Portraits, tile and HUD</h3>
       <Note>Art is optional, defaulting to the base character's art when unset. Exact-size pictures open a crop box when they don't fit.</Note>
       <div className="row">
-        <button disabled={!s.game || !c.files.has('ui/select_ready.png')} onClick={() => setPlacing(true)}>Place the portrait...</button>
+        <button disabled={!s.game || !c.files.has('ui/select_ready.png')} onClick={() => setPlacing(true)}>
+          {!s.game ? 'Select a disc image first to allow portrait placement' : 'Place the portrait...'}
+        </button>
         <label className="check"><input type="checkbox" checked={c.ui.banner ?? true} onChange={(e) => { c.ui.banner = e.target.checked; store.touch('character') }} /> Use the name banner picture in matches (experimental)</label>
       </div>
       <div className="row">
-        <label>Voice when picked (experimental):</label>
+        <label>Sound effect when selected:</label>
         <select value={c.ui.ready_voice ?? ''} onChange={(e) => { c.ui.ready_voice = e.target.value || null; store.touch('character') }}>
-          <option value="">none (no voice)</option>
+          <option value="">none (no sound effect)</option>
           {R.keys().map((k) => <option key={k} value={R.VOICES[k]}>{R.label(k)}'s</option>)}
         </select>
       </div>
@@ -135,7 +137,7 @@ function SlotCard({ slot, title, kind, size, onLoad, onRecrop, onClear }: {
       return null
     }
   }, [body])
-  const sizeText = kind === 'free' ? 'any size; placed with "Place the portrait..."' : size ? `${size[0]} x ${size[1]} pixels` : 'size unknown until the game disc is chosen'
+  const sizeText = kind === 'free' ? 'any size' : size ? `${size[0]} x ${size[1]} pixels` : 'size unknown until the game disc is chosen'
   return (
     <div className="card slot">
       <h4>{title}</h4>

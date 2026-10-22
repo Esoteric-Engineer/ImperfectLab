@@ -285,7 +285,7 @@ export class Builder {
 
   tuning(power: Map<number, string[]> | null): string | null {
     const c = this.c
-    const fields = Object.fromEntries(Object.entries(c.gameplay).filter(([k]) => k in tuning.FIELDS || k === 'damage_taken'))
+    const fields = tuningFields(c)
     if (!Object.keys(fields).length && !(power && power.size)) return null
     const tun = new tuning.Tuning(this.src, this.base)
     const [name, nvb, listed] = tun.build(c.internalName, fields, power)
@@ -413,6 +413,11 @@ export class Builder {
   }
 }
 
+// The gameplay fields that go in the character's own tuning file.
+export function tuningFields(c: Character): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(c.gameplay).filter(([k]) => k in tuning.FIELDS || k === 'damage_taken'))
+}
+
 export function defaultPlacement(picture: RgbaImage): Placement {
   const bbox = picture.bbox() ?? [0, 0, picture.width, picture.height]
   const scale = 330.0 / Math.max(1, bbox[3] - bbox[1])
@@ -462,7 +467,7 @@ export function report(characters: Character | Character[], result: Result): str
   for (const c of chars) lines.push(`Character: ${c.displayName} (${c.internalName}), base ${R.label(c.base)}`)
   lines.push('')
   if (chars.length === 1) lines.push('main.dol: roster record 19, select-screen limits 18 -> 19')
-  else lines.push('main.dol: roster records 19 and 20 in a new data section, select-screen limits 18 -> 20', `main.dol: arena starts at 0x${D.arenaLo(result.dol!).toString(16).toUpperCase()}`)
+  else lines.push(`main.dol: roster records 19 to ${18 + chars.length} in a new data section, select-screen limits 18 -> ${18 + chars.length}`, `main.dol: arena starts at 0x${D.arenaLo(result.dol!).toString(16).toUpperCase()}`)
   const cache = result.dol ? D.readEffectCache(result.dol) : null
   if (cache && cache !== nfxtool.CACHE_SIZE) lines.push(`main.dol: effect cache ${nfxtool.CACHE_SIZE} -> ${cache} bytes`)
   const sorted = (m: Map<string, Uint8Array>) => [...m].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))

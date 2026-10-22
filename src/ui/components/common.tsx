@@ -35,18 +35,39 @@ export function ImageView({ image, side, zoom, checker = true, className }: { im
 }
 
 export function ColorButton({ color, alpha = false, onChange, disabled }: { color: string; alpha?: boolean; onChange: (c: string) => void; disabled?: boolean }) {
-  const rgb = color.slice(0, 7)
+  const rgb = color.slice(0, 7).toUpperCase()
   const a = color.length === 9 ? parseInt(color.slice(7, 9), 16) : 255
   const hex = (v: number) => v.toString(16).padStart(2, '0').toUpperCase()
+  const emit = (r: string, alp: number) => onChange(r + (alpha ? hex(alp) : ''))
+  const [draft, setDraft] = useState<string | null>(null)
+  const commitDraft = (text: string) => {
+    const m = /^#?([0-9a-f]{6})$/i.exec(text.trim())
+    if (m) emit('#' + m[1].toUpperCase(), a)
+    setDraft(null)
+  }
+  const css = `rgb(${parseInt(rgb.slice(1, 3), 16)} ${parseInt(rgb.slice(3, 5), 16)} ${parseInt(rgb.slice(5, 7), 16)}`
   return (
-    <span className="color-button">
-      <input type="color" value={rgb.toLowerCase()} disabled={disabled}
-        onChange={(e) => onChange(e.target.value.toUpperCase() + (alpha ? hex(a) : ''))} />
+    <span className={`color-button ${disabled ? 'disabled' : ''}`}>
+      <label className="swatch checker-bg" title="Pick a color">
+        <span style={{ background: `${css} / ${(a / 255).toFixed(3)})` }} />
+        <input type="color" value={rgb.toLowerCase()} disabled={disabled} onChange={(e) => emit(e.target.value.toUpperCase(), a)} />
+      </label>
+      <input type="text" className="hex" value={draft ?? rgb} maxLength={7} spellCheck={false} disabled={disabled} title="Color"
+        onChange={(e) => setDraft(e.target.value)} onBlur={(e) => commitDraft(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') commitDraft(e.currentTarget.value) }} />
       {alpha && (
-        <input type="range" min={0} max={255} value={a} disabled={disabled} title="Opacity"
-          onChange={(e) => onChange(rgb.toUpperCase() + hex(Number(e.target.value)))} />
+        <>
+          <span className="alpha-track checker-bg">
+            <input type="range" min={0} max={255} value={a} disabled={disabled} title="Opacity" aria-label="Opacity"
+              style={{ backgroundImage: `linear-gradient(to right, ${css} / 0), ${css} / 1))` }}
+              onChange={(e) => emit(rgb, Number(e.target.value))} />
+          </span>
+          <span className="alpha-value">
+            <NumberInput min={0} max={100} step={1} value={Math.round((a * 100) / 255)} disabled={disabled}
+              onChange={(v) => emit(rgb, Math.round((v * 255) / 100))} />%
+          </span>
+        </>
       )}
-      <code>{color.toUpperCase()}</code>
     </span>
   )
 }
@@ -71,6 +92,15 @@ export function Modal({ title, children, onClose, wide }: { title: string; child
 
 export function Note({ children }: { children: ReactNode }) {
   return <p className="note">{children}</p>
+}
+
+export function Warning({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="callout-warn" role="note">
+      <strong>⚠ {title}</strong>
+      {children}
+    </div>
+  )
 }
 
 export function Progress({ done, total }: { done: number; total: number }) {

@@ -4,12 +4,12 @@ import * as actions from './ui/actions'
 import { Modal } from './ui/components/common'
 import { ArtPage } from './ui/pages/ArtPage'
 import { AuraPage } from './ui/pages/AuraPage'
+import { BatchPage } from './ui/pages/BatchPage'
 import { CharacterPage } from './ui/pages/CharacterPage'
 import { ExportPage } from './ui/pages/ExportPage'
 import { GamePage } from './ui/pages/GamePage'
 import { MaterialsPage } from './ui/pages/MaterialsPage'
 import { ModelPage } from './ui/pages/ModelPage'
-import { PairPage } from './ui/pages/PairPage'
 import { StatsPage } from './ui/pages/StatsPage'
 import { store, useStore } from './ui/store'
 import './App.css'
@@ -25,7 +25,7 @@ const STEPS: [string, () => React.JSX.Element][] = [
   ['8. Save & patch', ExportPage],
 ]
 // After the steps, separate section.
-const PAGES: [string, () => React.JSX.Element][] = [...STEPS, ['Patch two characters', PairPage]]
+const PAGES: [string, () => React.JSX.Element][] = [...STEPS, ['Multi-Character Patch', BatchPage]]
 
 function App() {
   useStore()

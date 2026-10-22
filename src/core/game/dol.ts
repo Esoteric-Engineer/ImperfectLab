@@ -1,5 +1,5 @@
 // Same-size edits to main.dol that turn the filler roster record 19 into a playable character, and grow the effect cache for a tint.
-// Two characters need a 21st record, which the tables have no room for: patchTwo moves them into a new data section.
+// More characters (up to 9, the select grid's third row) need records past the 20th, which the tables have no room for: patchMany moves them into a new data section.
 // The roster tables (Game/unlockables.c in the decomp) hold 0x4C-byte records.
 import { cstring, encodeLatin1, equal, fromHex, i32be, i8, putU32be, u32be } from '../bytes'
 import { LabError } from '../errors'
@@ -18,11 +18,14 @@ const LIMITS: [number, string, string][] = [
   [0x101788, '2c000012', '2c000013'],
   [0x101790, '38000012', '38000013'],
 ]
-// The same limits for two (20), and fn_8044F070's search of the order table, which only needs raising once it has a 21st entry.
-const TWO_LIMITS: [number, string, string][] = [
-  ...LIMITS.map(([off, old, next]): [number, string, string] => [off, old, next.slice(0, 6) + '14']),
-  [0x44c09c, '2c0a0013', '2c0a0014'],
+// The same limits for n characters (18 + n), and fn_8044F070's search of the order table, which only needs raising once it has a 21st entry.
+const byte = (v: number) => v.toString(16).padStart(2, '0')
+const manyLimits = (n: number): [number, string, string][] => [
+  ...LIMITS.map(([off, old, next]): [number, string, string] => [off, old, next.slice(0, 6) + byte(0x12 + n)]),
+  [0x44c09c, '2c0a0013', '2c0a00' + byte(Math.max(0x13, 0x12 + n))],
 ]
+// The select grid is 9 wide and 3 rows deep: 27 characters, 9 of them new.
+export const MAX_NEW = 9
 const FILLER: Record<number, string> = { [NORMAL_TABLE]: 'plr_thing', [ALT_TABLE]: 'plr_altThing' }
 // fn_803A38DC allocates 300,000 bytes and its allocator fn_803A3460 checks the same limit.
 const EFFECT_CACHE_SIZE: [number, string][] = [[0x3a048c, '3d200004612993e0'], [0x3a092c, '3c600004606393e0']]
@@ -35,8 +38,7 @@ const TABLE_REFS: [number, number, number][] = [
 // Only these two pairs change, the stack itself stays.
 export const ARENA_LO = 0x806809c0
 const ARENA_REFS: [number, number, number][] = [[0x177bc4, 0x177bc8, ARENA_LO], [0x177bfc, 0x177c00, 0x806809a0]]
-const TWO_RECORDS = RECORDS + 1
-const SECTION_SIZE = (2 * RECORD * TWO_RECORDS + 4 * TWO_RECORDS + 0x1f) & ~0x1f
+const sectionSize = (records: number) => (2 * RECORD * records + 4 * records + 0x1f) & ~0x1f
 
 export interface NewCharacter {
   internal: string
@@ -155,19 +157,22 @@ export function arenaLo(dol: Uint8Array): number {
   return address(dol, ARENA_REFS[0][0], ARENA_REFS[0][1])
 }
 
-export function patchTwo(dol: Uint8Array, chars: [NewCharacter, NewCharacter]): Uint8Array {
+export function patchMany(dol: Uint8Array, chars: NewCharacter[]): Uint8Array {
+  if (chars.length < 2 || chars.length > MAX_NEW) throw new LabError(`the roster section holds 2 to ${MAX_NEW} new characters, not ${chars.length}`)
+  const records = RECORDS + chars.length - 1
+  const size = sectionSize(records)
   const slot = (() => {
     for (let i = 7; i < 18; i++) if (!u32be(dol, 0x90 + 4 * i)) return i
     throw new LabError('main.dol has no free data section')
   })()
   const at = (dol.length + 0x1f) & ~0x1f
-  const out = new Uint8Array(at + SECTION_SIZE)
+  const out = new Uint8Array(at + size)
   out.set(dol)
-  for (const [off, old, next] of TWO_LIMITS) put(out, off, fromHex(old), fromHex(next))
+  for (const [off, old, next] of manyLimits(chars.length)) put(out, off, fromHex(old), fromHex(next))
 
   const section = out.subarray(at)
   for (const [k, table] of [NORMAL_TABLE, ALT_TABLE].entries()) {
-    const base = RECORD * TWO_RECORDS * k
+    const base = RECORD * records * k
     const filler = recordOffset(table, SLOT)
     put(out, filler, field(FILLER[table]), field(FILLER[table]))
     section.set(dol.subarray(table, table + RECORD * RECORDS), base)
@@ -181,17 +186,16 @@ export function patchTwo(dol: Uint8Array, chars: [NewCharacter, NewCharacter]): 
       putU32be(section, o + 0x48, 1)
     })
   }
-  const order = 2 * RECORD * TWO_RECORDS
+  const order = 2 * RECORD * records
   put(out, ORDER_TABLE + 4 * SLOT, new Uint8Array(4), new Uint8Array(4))
   section.set(dol.subarray(ORDER_TABLE, ORDER_TABLE + 4 * RECORDS), order)
-  putU32be(section, order + 4 * SLOT, SLOT)
-  putU32be(section, order + 4 * (SLOT + 1), SLOT + 1)
+  chars.forEach((_, i) => putU32be(section, order + 4 * (SLOT + i), SLOT + i))
 
   putU32be(out, 4 * slot, at)
   putU32be(out, 0x48 + 4 * slot, ARENA_LO)
-  putU32be(out, 0x90 + 4 * slot, SECTION_SIZE)
-  const moved = [ARENA_LO, ARENA_LO + RECORD * TWO_RECORDS, ARENA_LO + order]
+  putU32be(out, 0x90 + 4 * slot, size)
+  const moved = [ARENA_LO, ARENA_LO + RECORD * records, ARENA_LO + order]
   TABLE_REFS.forEach(([lis, addi, old], i) => retarget(out, lis, addi, old, moved[Math.min(i, 2)]))
-  for (const [lis, addi, old] of ARENA_REFS) retarget(out, lis, addi, old, ARENA_LO + SECTION_SIZE)
+  for (const [lis, addi, old] of ARENA_REFS) retarget(out, lis, addi, old, ARENA_LO + size)
   return out
 }
