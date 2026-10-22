@@ -12,6 +12,9 @@ import { resizeLanczos } from '../image/resample'
 import { RgbaImage } from '../image/rgba'
 import * as gshtool from '../mnroi/gshtool'
 import * as gxtex from '../mnroi/gxtex'
+import * as nfxtool from '../mnroi/nfxtool'
+import * as nottool from '../mnroi/nottool'
+import * as nvbtool from '../mnroi/nvbtool'
 import * as ngmtool from '../mnroi/ngmtool'
 import * as bundle from '../model/bundle'
 import { Fit, type MaterialSlots } from '../model/fit'
@@ -94,9 +97,9 @@ export class Builder {
     this.progress('Model')
     const materials = this.buildModel()
     this.progress('Templates, materials and tuning')
-    const [effect1, power] = this.effects()
+    const [effect1, power, projectiles] = this.effects()
     const description = this.tuning(power)
-    this.templates(effect1, description)
+    this.templates(effect1, description, projectiles)
     this.r.sets.set('Materials/Shaders/shaders.nsa', shaders.build(this.src.entry('Materials/Shaders/shaders.nsa'), materials, this.texture2))
     this.progress('Select screen, portraits and HUD')
     this.ui()
@@ -216,32 +219,60 @@ export class Builder {
     return allMaterials
   }
 
-  effects(): [[string, string] | null, Map<number, [string, string]> | null] {
+  effects(): [[string, string] | null, Map<number, string[]> | null, nottool.Template[]] {
     const c = this.c, base = this.base
-    if (c.aura.mode !== 'tint') return [null, null]
+    if (c.aura.mode !== 'tint') return [null, null, []]
     const fx = new effects.Effects(this.src.entry('Misc/game.nfx'))
     const tun = new tuning.Tuning(this.src, base)
-    const powerN = tuning.POWER_EFFECTS.map((fid) => tun.value(fid) as string)
-    const powerA = tuning.POWER_EFFECTS.map((fid) => tun.value(fid, 5) as string)
-    const rootsN = [base.effect1, ...powerN].filter((r) => fx.has(r))
-    const rootsA = [base.altEffect1, ...powerA].filter((r) => fx.has(r))
+    const level = c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, base), 'all') : c.aura.tint
+    if (level !== c.aura.tint) this.note(`aura tint: ${base.label}'s full tint needs more memory than a match can spare; its idle and power-up effects are tinted`)
+    const [rootsN, rootsA] = effects.roots(fx, tun, base, level)
     if (!rootsN.length && !rootsA.length) throw new LabError(`${base.label} has no effects to tint; use the Base or Swap aura`)
-    const prefix = c.internalName.slice(0, 8).toLowerCase()
-    const mn = fx.tinted(rootsN, c.aura.color, prefix + 'fx')
-    const ma = fx.tinted(rootsA, c.aura.alt_color, prefix + 'ax')
+    const mn = fx.tinted(rootsN, c.aura.color, effects.copyPrefix(c.internalName, false))
+    const ma = fx.tinted(rootsA, c.aura.alt_color, effects.copyPrefix(c.internalName, true))
     this.r.sets.set('Misc/game.nfx', fx.build())
-    this.note(`aura tint: ${mn.size + ma.size} effect blocks copied, ${fx.free()} bytes of effect cache left`)
+    const size = effects.cacheSize(fx.used())
+    if (size > nfxtool.CACHE_SIZE) this.r.dol = D.growEffectCache(this.r.dol!, size)
+    this.note(`aura tint: ${mn.size + ma.size} effect blocks copied, ${fx.used()} of ${size} bytes of effect cache used`)
     const pick = (m: Map<string, string>, name: string | null) => m.get((name ?? '').toLowerCase()) ?? name!
     const effect1: [string, string] | null = base.effect1 ? [pick(mn, base.effect1), pick(ma, base.altEffect1)] : null
-    const power = new Map<number, [string, string]>()
-    tuning.POWER_EFFECTS.forEach((fid, i) => {
-      const n = powerN[i], a = powerA[i]
-      if (mn.has((n ?? '').toLowerCase()) || ma.has((a ?? '').toLowerCase())) power.set(fid, [pick(mn, n), pick(ma, a)])
-    })
-    return [effect1, power]
+    // Every effect field naming a tinted block follows it.
+    const power = new Map<number, string[]>()
+    const slotsOf = (fid: number) => Array.from({ length: tuning.SLOTS }, (_, s) => tun.value(fid, s) as string)
+    for (const fid of tun.fieldsOf(nvbtool.T_EFFECT)) {
+      const vals = slotsOf(fid)
+      const next = vals.map((v, s) => pick(s === tuning.SLOTS - 1 ? ma : mn, v))
+      if (next.some((v, s) => v !== vals[s])) power.set(fid, next)
+    }
+    // A projectile's effects are named by its templates: those are copied too.
+    const extra: nottool.Template[] = []
+    const copies = [new Map<string, string>(), new Map<string, string>()]
+    const taken = new Set<string>()
+    let k = 0
+    const newName = (old: string) => {
+      let n: string
+      do n = `${old.split('_')[0]}_${c.internalName}${k++}`
+      while (base.t.has(n) || taken.has(n.toLowerCase()))
+      taken.add(n.toLowerCase())
+      return n
+    }
+    for (const fid of tun.fieldsOf(nvbtool.T_TEMPLATE)) {
+      const vals = slotsOf(fid)
+      const next = vals.map((v, s) => {
+        const alt = s === tuning.SLOTS - 1 ? 1 : 0
+        if (!copies[alt].has(v.toLowerCase())) {
+          const r = templates.retarget(base.t, v, alt ? ma : mn, newName)
+          if (r) extra.push(...r[1])
+          copies[alt].set(v.toLowerCase(), r ? r[0] : v)
+        }
+        return copies[alt].get(v.toLowerCase())!
+      })
+      if (next.some((v, s) => v !== vals[s])) power.set(fid, next)
+    }
+    return [effect1, power, extra]
   }
 
-  tuning(power: Map<number, [string, string]> | null): string | null {
+  tuning(power: Map<number, string[]> | null): string | null {
     const c = this.c
     const fields = Object.fromEntries(Object.entries(c.gameplay).filter(([k]) => k in tuning.FIELDS || k === 'damage_taken'))
     if (!Object.keys(fields).length && !(power && power.size)) return null
@@ -252,7 +283,7 @@ export class Builder {
     return c.internalName
   }
 
-  templates(effect1: [string, string] | null, description: string | null) {
+  templates(effect1: [string, string] | null, description: string | null, extra: nottool.Template[]) {
     const c = this.c, gp = c.gameplay
     let on = 0, off = 0
     if (gp.lift) {
@@ -266,7 +297,7 @@ export class Builder {
     }
     const mode = c.aura.mode === 'swap' ? 'swap' : 'base'
     this.r.sets.set('Misc/Global.not', templates.build(this.src.entry('Misc/Global.not'), this.base, c.internalName, mode, effect1, description,
-      on || off ? [on, off] : null, gp.health ?? null))
+      on || off ? [on, off] : null, gp.health ?? null, extra))
   }
 
   picture(slot: string): RgbaImage | null {
@@ -412,6 +443,8 @@ export async function patch(source: GameSource, character: Character, out: Patch
 export function report(character: Character, result: Result): string {
   const lines = ['ImperfectLab patch report', '', `Character: ${character.displayName} (${character.internalName}), base ${R.label(character.base)}`, '']
   lines.push('main.dol: roster record 19, select-screen limits 18 -> 19')
+  const cache = result.dol ? D.readEffectCache(result.dol) : null
+  if (cache && cache !== nfxtool.CACHE_SIZE) lines.push(`main.dol: effect cache ${nfxtool.CACHE_SIZE} -> ${cache} bytes`)
   const sorted = (m: Map<string, Uint8Array>) => [...m].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
   for (const [k, v] of sorted(result.sets)) lines.push(`changed: ${k} (${v.length} bytes)`)
   for (const [k, v] of sorted(result.adds)) lines.push(`added:   ${k} (${v.length} bytes)`)

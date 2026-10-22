@@ -177,9 +177,9 @@ export class Service {
       if (!(e instanceof LabError)) throw e
     }
     const ab = b.abilities
-    let tint: [string[], string[], number, number] = [[], [], 0, 0]
+    let tint: Record<string, effects.TintPlan> = {}
     try {
-      tint = effects.tintRoots(src, b)
+      tint = effects.tintPlans(src, b)
     } catch (e) {
       if (!(e instanceof LabError)) throw e
     }

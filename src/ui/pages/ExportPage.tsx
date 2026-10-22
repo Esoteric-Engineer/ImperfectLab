@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import * as effects from '../../core/build/effects'
 import * as mapping from '../../core/model/mapping'
 import { copyCharacter, problems as characterProblems } from '../../core/package/imperfect'
 import { canSaveInPlace, chooseIsoOutput, download, downloadBlob, freeSpace, opfsFile, removeOpfs } from '../../io/files'
@@ -35,8 +36,13 @@ export function ExportPage() {
     if (!g) p.push(['warning', 'choose the game disc to check the mapping and to patch'])
     else if (!sk) p.push(['error', `${s.base()?.label}'s skeleton is not supported yet: pick another base`])
     else if (s.model) p.push(...mapping.check(s.model, sk, c.mapping, c.overrides))
-    if (g && c.aura.mode === 'tint' && details && !details.tint[0].length && !details.tint[1].length) {
+    const level = details ? effects.tintLevel(details.tint, c.aura.tint) : c.aura.tint
+    const plan = details?.tint[level]
+    if (g && c.aura.mode === 'tint' && plan && !plan.roots.length && !plan.alt.length) {
       p.push(['error', `${s.base()?.label} has no effects to tint: choose another aura in the Aura step`])
+    }
+    if (g && c.aura.mode === 'tint' && level !== c.aura.tint) {
+      p.push(['warning', `${s.base()?.label}'s full tint needs more memory than a match can spare: only its idle and power-up effects are tinted`])
     }
     return p
     // eslint-disable-next-line react-hooks/exhaustive-deps

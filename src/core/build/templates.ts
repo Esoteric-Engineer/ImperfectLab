@@ -20,11 +20,47 @@ function clone(src: nottool.Template, newName: string, parent?: string): nottool
   return t
 }
 
+// A template and every template its props name (projectile and explosion).
+export function chain(T: R.Templates, name: string | null): nottool.Template[] {
+  const out: nottool.Template[] = []
+  const todo = name ? [name] : []
+  const seen = new Set<string>()
+  while (todo.length) {
+    const n = todo.shift()!
+    if (!T.has(n) || seen.has(n.toLowerCase())) continue
+    seen.add(n.toLowerCase())
+    const t = T.get(n)
+    out.push(t)
+    for (const [pid, v] of t.props) {
+      const s = R.text(v)
+      if (pid !== 0x00 && s && T.has(s)) todo.push(s)
+    }
+  }
+  return out
+}
+
+export function retarget(T: R.Templates, name: string, effects: Map<string, string>, newName: (old: string) => string): [string, nottool.Template[]] | null {
+  const ts = chain(T, name)
+  const names = (t: nottool.Template) => t.props.map(([, v]) => (R.text(v) ?? '').toLowerCase())
+  if (!ts.some((t) => names(t).some((s) => effects.has(s)))) return null
+  const renamed = new Map(ts.map((t) => [t.name.toLowerCase(), newName(t.name)]))
+  const copies = ts.map((t) => {
+    const c = clone(t, renamed.get(t.name.toLowerCase())!)
+    for (const [pid, v] of c.props) {
+      const s = (R.text(v) ?? '').toLowerCase()
+      const next = pid === 0x00 ? undefined : (renamed.get(s) ?? effects.get(s))
+      if (next) c.set(pid, nottool.vStr(next))
+    }
+    return c
+  })
+  return [renamed.get(name.toLowerCase())!, copies]
+}
+
 export function build(data: Uint8Array, base: R.BaseCharacter, internal: string, aura = 'base', effect1: [string, string] | null = null,
-  description: string | null = null, abilities: [number, number] | null = null, health: number | null = null): Uint8Array {
+  description: string | null = null, abilities: [number, number] | null = null, health: number | null = null, extra: nottool.Template[] = []): Uint8Array {
   const T = new R.Templates(data)
   const [actN, plrN, altN] = templateNames(internal)
-  for (const n of [actN, plrN, altN]) if (T.has(n)) throw new LabError(`Global.not already has a template ${n}`)
+  for (const n of [actN, plrN, altN, ...extra.map((t) => t.name)]) if (T.has(n)) throw new LabError(`Global.not already has a template ${n}`)
   const act = clone(T.get(base.act), actN)
   const plr = clone(T.get(base.plr), plrN, actN)
   const alt = clone(T.get(base.alt), altN, actN)
@@ -65,5 +101,5 @@ export function build(data: Uint8Array, base: R.BaseCharacter, internal: string,
     act.set(R.P_HEALTH, nottool.vInt(roundHalfEven(health)))
     act.set(R.P_MAXHEALTH, nottool.vInt(roundHalfEven(health)))
   }
-  return nottool.build([...T.list, act, plr, alt])
+  return nottool.build([...T.list, act, plr, alt, ...extra])
 }

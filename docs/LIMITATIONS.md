@@ -1,0 +1,42 @@
+# Limitations
+
+Game limits that shape what ImperfectLab builds, found on GVLE69 in Dolphin.<br />
+The decomp's [`docs/characters.md`](https://github.com/Esoteric-Engineer/mnroi/blob/main/docs/characters.md) has the code behind them.
+
+## Memory when a match loads
+
+A match loads the two characters' models into whatever memory is left after boot. When it runs out, the game crashes on the versus loading screen and Dolphin reports `Invalid write to 0x0000000c, PC = 0x8023f35c`.
+Large custom models and the aura tint (below) both use that memory.
+
+## Aura tint
+
+- **The power-mode glow keeps the base's color.** It belongs to the base's cast name, and its data has no reader yet.
+- **Effect memory.** Every effect is loaded into a 300,000-byte cache, 290,971 bytes of it used by the game. When a tint's copies don't fit the rest, the patch grows the cache in `main.dol` by what they need plus 2 KB, and that memory comes out of what a match has to load into.
+- **A full tint (`all`) may grow it by at most 8,224 bytes**; a base whose full tint needs more is built with only its idle and power-up effects (`power`), which fits every base without growing it. Currently only affects Iron Man.
+  Tested with custom models:
+
+  | Base | Tint | Cache grown by | Match | Result |
+  |---|---|---|---|---|
+  | Johnny Ohm | all | 8,224 | mirror | loaded |
+  | Human Torch | all | 8,224 | mirror | loaded |
+  | Johnny Ohm | all | 11,296 | mirror | loaded |
+  | Iron Man | all | 10,272 | vs Wolverine | crashed |
+  | Iron Man | power | 0 | mirror | loaded |
+
+  Johnny Ohm loaded at 11,296 where Iron Man crashed at 10,272: the models matter as much as the tint, so a very large model can still need `power` on another base.
+
+What each base's full tint needs:
+
+| Base | Full tint grows the cache by |
+|---|---|
+| Iron Man | 10,272 (falls back to `power`) |
+| Johnny Ohm, Human Torch | 8,224 |
+| Heatwave, Roekel | 7,200 |
+| Aftershock, Biohazard, Storm | 5,152 |
+| Defcon, Megalith | 4,128 |
+| Daredevil, Elektra, Magneto, Paradox, Spider-Man, Venom, Wolverine | 0 |
+| Thing | nothing to tint |
+
+## Tuning
+
+Every character with changed stats or a tint gets its own tuning file. Each one listed in `Misc/nvblist.txt` takes 12,354 bytes when the game boots, and the list itself has room for about 53 more bytes (a line costs its two names plus 2).

@@ -26,6 +26,7 @@ const DISPLAY = /^[A-Z0-9 .'&!-]{1,16}$/
 const SUFFIX = /^(_[A-Za-z0-9]{1,7})?$/
 const COLOR = /^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$/
 export const AURA_MODES = ['base', 'swap', 'tint']
+export const AURA_TINTS = ['all', 'power']
 export const LIFT = ['light', 'medium', 'heavy']
 export const GAMEPLAY: Record<string, [number, number, boolean]> = {
   damage_taken: [0.1, 3.0, false], health: [10, 1000, true], run_speed: [1.0, 30.0, false],
@@ -75,7 +76,7 @@ export interface Character {
   overrides: Map<string, number>
   fit: { scale: number | null; torso_squash: boolean; flip: boolean | null }
   materials: Material[]
-  aura: { mode: string; color: string; alt_color: string }
+  aura: { mode: string; tint: string; color: string; alt_color: string }
   stats: { normal: number[]; alt: number[] }
   gameplay: Gameplay
   ui: { select: Partial<Record<Pose, Placement>>; fade: number; strip_scale: number | null; ready_voice: string | null; banner: boolean }
@@ -102,7 +103,7 @@ export function newCharacter(): Character {
     overrides: new Map(),
     fit: { scale: null, torso_squash: true, flip: null },
     materials: [],
-    aura: { mode: 'base', color: '#40A0FF', alt_color: '#50FF50' },
+    aura: { mode: 'base', tint: 'all', color: '#40A0FF', alt_color: '#50FF50' },
     stats: defaultStats(),
     gameplay: {},
     ui: { select: {}, fade: 36, strip_scale: null, ready_voice: null, banner: true },
@@ -266,9 +267,10 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
       bind: num(d.bind, 'material bind', 0, 255, true, true),
     })
   }
-  const au = keys(m.aura ?? {}, ['mode', 'color', 'alt_color'], 'aura')
-  c.aura = { mode: str(au.mode ?? 'base', 'aura.mode', 8)!, color: color(au.color ?? '#40A0FF', 'aura.color'), alt_color: color(au.alt_color ?? '#50FF50', 'aura.alt_color') }
+  const au = keys(m.aura ?? {}, ['mode', 'tint', 'color', 'alt_color'], 'aura')
+  c.aura = { mode: str(au.mode ?? 'base', 'aura.mode', 8)!, tint: str(au.tint ?? 'all', 'aura.tint', 8)!, color: color(au.color ?? '#40A0FF', 'aura.color'), alt_color: color(au.alt_color ?? '#50FF50', 'aura.alt_color') }
   if (!AURA_MODES.includes(c.aura.mode)) throw new LabError('manifest: unknown aura mode')
+  if (!AURA_TINTS.includes(c.aura.tint)) throw new LabError('manifest: unknown aura tint')
   const st = keys(m.stats ?? {}, ['display', 'gameplay'], 'stats')
   const disp = keys(st.display ?? defaultStats(), ['normal', 'alt'], 'stats.display')
   for (const k of ['normal', 'alt'] as const) {

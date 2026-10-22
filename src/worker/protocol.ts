@@ -1,3 +1,4 @@
+import type { TintPlan } from '../core/build/effects'
 import type { RgbaImage } from '../core/image/rgba'
 import type { Material, Pose } from '../core/package/imperfect'
 import type { BoneLine, MeshData } from '../core/preview'
@@ -32,7 +33,7 @@ export interface BaseDetails {
   wireSwing: string
   hasWire: boolean
   health: number
-  tint: [string[], string[], number, number]
+  tint: Record<string, TintPlan>
   sizes: Record<string, [number, number]>
 }
 
