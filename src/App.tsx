@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { VERSION } from './core/version'
 import * as actions from './ui/actions'
 import { Modal } from './ui/components/common'
+import { type Menu, MenuBar } from './ui/components/MenuBar'
 import { ArtPage } from './ui/pages/ArtPage'
 import { AuraPage } from './ui/pages/AuraPage'
 import { BatchPage } from './ui/pages/BatchPage'
@@ -62,22 +63,40 @@ function App() {
     }
   }, [])
 
+  const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'
+  const menus: Menu[] = [
+    {
+      label: 'File',
+      items: [
+        { label: 'New character', onSelect: async () => (await actions.newCharacter()) && setStep(1) },
+        { label: 'Open...', shortcut: `${mod}O`, onSelect: async () => (await actions.open()) && setStep(store.game ? 7 : 0) },
+        { separator: true },
+        { label: 'Save', shortcut: `${mod}S`, onSelect: () => actions.save() },
+        { label: 'Save as...', shortcut: `${mod}${mod === '⌘' ? '⇧' : 'Shift+'}S`, onSelect: () => actions.saveAs() },
+      ],
+    },
+    {
+      label: 'View',
+      items: [
+        { heading: 'Theme' },
+        ...THEMES.map((t) => ({ label: t.label, checked: t.id === theme, onSelect: () => setTheme(t.id) })),
+      ],
+    },
+    {
+      label: 'Help',
+      items: [{ label: 'About ImperfectLab', onSelect: () => setAbout(true) }],
+    },
+  ]
+
   const Page = PAGES[step][1]
   return (
     <div className="app">
       <header>
-        <span className="brand">ImperfectLab</span>
-        <nav>
-          <button onClick={async () => (await actions.newCharacter()) && setStep(1)}>New character</button>
-          <button onClick={async () => (await actions.open()) && setStep(store.game ? 7 : 0)}>Open...</button>
-          <button onClick={() => actions.save()}>Save</button>
-          <button onClick={() => actions.saveAs()}>Save as...</button>
-          <button onClick={() => setAbout(true)}>About</button>
-        </nav>
+        <div className="header-left">
+          <span className="brand">ImperfectLab</span>
+          <MenuBar menus={menus} />
+        </div>
         <span className="file">{s.fileName ?? `${s.character.displayName} (unsaved)`}{s.dirty ? ' *' : ''}</span>
-        <select aria-label="Theme" value={theme} onChange={(e) => setTheme(e.target.value)}>
-          {THEMES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-        </select>
       </header>
       <aside>
         {PAGES.map(([title], i) => (
