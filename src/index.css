@@ -1,0 +1,66 @@
+:root {
+  color-scheme: dark;
+  --bg: #1f2126;
+  --panel: #272a31;
+  --panel2: #2f333b;
+  --line: #41464f;
+  --text: #e4e6ea;
+  --muted: #9aa0aa;
+  --accent: #d8b23a;
+  --accent2: #3b8fd9;
+  --good: #66c37a;
+  --bad: #e5655c;
+  --warn: #e3b341;
+  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+}
+
+button, input, select, textarea {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+button {
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent2);
+}
+
+button:disabled, input:disabled, select:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+input, select, textarea {
+  padding: 4px 6px;
+}
+
+input[type='checkbox'], input[type='radio'] {
+  accent-color: var(--accent2);
+}
+
+a {
+  color: var(--accent2);
+}
+
+code {
+  font-family: ui-monospace, monospace;
+}
