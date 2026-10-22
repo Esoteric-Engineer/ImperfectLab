@@ -80,10 +80,7 @@ export function AuraPage() {
         <ColorButton color={c.aura.alt_color} alpha disabled={!tint} onChange={(v) => { c.aura.alt_color = v; edited() }} />
       </div>
       <Note>
-        Each color's opacity slider fades the recolored effects; at zero they do not show. They are still copied, so they use the same game memory as any tint.
-      </Note>
-      <Note>
-        The glow the game draws in power mode belongs to the base's cast name and cannot be recolored yet (its file has no reader); a tint changes the effects around it.
+        Note that transparent tints still use the same amount of memory as any other tint.
       </Note>
       <p>{cost}</p>
     </div>
