@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react'
 import type { Joint, JointModel } from '../core/model/glb'
 import { Skeleton } from '../core/model/skeleton'
 import { type Character, newCharacter } from '../core/package/imperfect'
-import type { BaseDetails, BaseInfo, ModelInfo } from '../worker/protocol'
+import type { BaseDetails, BaseInfo, ModelInfo, PairCheckResult } from '../worker/protocol'
 import { engine, errorText } from './engine'
 
 export class ModelView implements JointModel {
@@ -42,6 +42,12 @@ export interface Game {
 
 export type Change = 'character' | 'model' | 'mapping' | 'game'
 
+// A character chosen for a two-character patch, and where it came from.
+export interface PairSlot {
+  source: string
+  character: Character
+}
+
 class Store {
   character: Character = newCharacter()
   fileName: string | null = null
@@ -54,6 +60,8 @@ class Store {
   error: string | null = null
   credits: string | null = null
   busy = 0
+  pair: [PairSlot | null, PairSlot | null] = [null, null]
+  pairCheck: PairCheckResult | null = null
   versions: Record<Change, number> = { character: 0, model: 0, mapping: 0, game: 0 }
   private version = 0
   private listeners = new Set<() => void>()
@@ -120,8 +128,21 @@ class Store {
     }
   }
 
+  setPair(i: number, slot: PairSlot | null) {
+    this.pair[i] = slot
+    this.pairCheck = null
+    this.emit()
+  }
+
+  swapPair() {
+    this.pair = [this.pair[1], this.pair[0]]
+    this.pairCheck = null
+    this.emit()
+  }
+
   setGame(game: Game | null) {
     this.game = game
+    this.pairCheck = null
     this.skeletons.clear()
     this.details.clear()
     this.touch('game', false)

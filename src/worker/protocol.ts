@@ -1,4 +1,5 @@
 import type { TintPlan } from '../core/build/effects'
+import type { PairCheck } from '../core/build/pair'
 import type { RgbaImage } from '../core/image/rgba'
 import type { Material, Pose } from '../core/package/imperfect'
 import type { BoneLine, MeshData } from '../core/preview'
@@ -79,6 +80,10 @@ export interface CheckResult {
   notes: string[]
   sets: string[]
   adds: string[]
+}
+
+export interface PairCheckResult extends PairCheck {
+  token: number | null
 }
 
 export type PatchTarget = { kind: 'handle'; handle: FileSystemFileHandle } | { kind: 'opfs'; name: string }

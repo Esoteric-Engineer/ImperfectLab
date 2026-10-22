@@ -4,10 +4,14 @@ import { LabError } from '../errors'
 import * as D from '../game/dol'
 import * as R from '../game/roster'
 import { type GameSource, LayeredSource } from '../game/source'
-import type { Model } from '../model/glb'
-import type { Character } from '../package/imperfect'
+import * as nfxtool from '../mnroi/nfxtool'
+import { Model } from '../model/glb'
+import * as mapping from '../model/mapping'
+import { Skeleton } from '../model/skeleton'
+import { type Character, problems as characterProblems, type Problem } from '../package/imperfect'
 import * as effects from './effects'
 import { Builder, type PatchOutput, type Progress, Result, write } from './patch'
+import { templateNames } from './templates'
 import * as ui from './ui'
 
 export type Pair = [Character, Character]
@@ -91,3 +95,102 @@ export function buildPair(source: GameSource, chars: Pair, progress: Progress = 
 export async function patchPair(source: GameSource, chars: Pair, out: PatchOutput, progress: Progress = () => {}, isVerified = false, models: [Model?, Model?] = []): Promise<Result> {
   return write(source, out, progress, isVerified, () => buildPair(source, chars, progress, models))
 }
+
+export interface PairCheck {
+  problems: Problem[]
+  // each one's model bundle (.ngm and .tpl, the larger costume), and the largest of the game's own
+  models: [string, number][]
+  largest: number
+  // how much the effect cache grows by, over the game's 300,000 bytes
+  cacheExtra: number
+  notes: string[]
+}
+
+// The names a character adds to the game's files, lowercased.
+function claims(c: Character): Set<string> {
+  const n = c.internalName.toLowerCase()
+  return new Set([
+    ...templateNames(c.internalName).map((t) => t.toLowerCase()),
+    `bundles/${n}`, `bundles/${n}_alt`, `misc/player_${n}.nvb`,
+    `plr_${n}_rage`, `plr_alt${n}_rage`, ...R.LANGS.map((l) => `ovr_${n}${l.toLowerCase()}`),
+  ])
+}
+
+const gameBundle = (source: GameSource, name: string) => ['ngm', 'tpl'].reduce((n, ext) => n + (source.index.byName.get(`bundles/${name}.${ext}`)?.size ?? 0), 0)
+const builtBundle = (adds: Map<string, Uint8Array>, name: string) => ['ngm', 'tpl'].reduce((n, ext) => n + (adds.get(`Bundles/${name}.${ext}`)?.length ?? 0), 0)
+
+// Everything that would stop the pair or that a match might not survive, cheapest first; the build is only tried when nothing simpler is wrong.
+export function checkPair(source: GameSource, chars: Pair, progress: Progress = () => {}, models: [Model?, Model?] = []): [PairCheck, Result | null] {
+  const out: PairCheck = { problems: [], models: [], largest: 0, cacheExtra: 0, notes: [] }
+  const add = (level: Problem[0], text: string) => out.problems.push([level, text])
+  const errors = () => out.problems.some(([l]) => l === 'error')
+  const named = chars.map((c, i) => `${i === 0 ? '19th' : '20th'} (${c.displayName})`)
+
+  chars.forEach((c, i) => {
+    for (const [level, msg] of characterProblems(c)) add(level, `${named[i]}: ${msg}`)
+    if (!c.glb || !(c.base in R.BASES)) return
+    try {
+      const sk = Skeleton.ofBase(new R.BaseCharacter(source, c.base))
+      for (const [level, msg] of mapping.check(models[i] ?? new Model(c.glb), sk, c.mapping, c.overrides)) add(level, `${named[i]}: ${msg}`)
+    } catch (e) {
+      if (!(e instanceof LabError)) throw e
+      add('error', `${named[i]}: ${e.message}`)
+    }
+  })
+  if (errors()) return [out, null]
+
+  chars.forEach((c, i) => {
+    try {
+      new Builder(source, c).checkNames()
+    } catch (e) {
+      if (!(e instanceof LabError)) throw e
+      add('error', `${named[i]}: ${e.message}`)
+    }
+  })
+  if (chars[0].internalName.toLowerCase() === chars[1].internalName.toLowerCase()) {
+    add('error', `both have the internal name ${chars[0].internalName}: one of them needs another`)
+  } else {
+    const both = [...claims(chars[0])].filter((n) => claims(chars[1]).has(n))
+    if (both.length) add('error', `both would add ${both.join(', ')} to the game: change one internal name`)
+  }
+  if (errors()) return [out, null]
+
+  const [pair, voiceNotes] = withVoices(chars)
+  for (const n of voiceNotes) add('warning', n)
+  const [tints, extra] = pairTints(source, pair)
+  pair.forEach((c, i) => {
+    if (c.aura.mode === 'tint' && tints[i] !== c.aura.tint) {
+      add('warning', `${named[i]}: both tints together need more effect memory than a match can spare (the patch can grow it by ${effects.TINT_ALL_LIMIT.toLocaleString('en-US')} bytes), so only its idle and power-up effects are tinted`)
+    }
+  })
+  if (extra > effects.TINT_ALL_LIMIT) add('warning', `even cut back, the two tints grow the effect cache by ${extra.toLocaleString('en-US')} bytes, more than has been tested`)
+
+  let r: Result
+  try {
+    r = buildPair(source, chars, progress, models)
+  } catch (e) {
+    if (!(e instanceof LabError)) throw e
+    add('error', `the patch cannot be built: ${e.message}`)
+    return [out, null]
+  }
+  out.notes = r.notes
+  out.cacheExtra = (r.cache ?? nfxtool.CACHE_SIZE) - nfxtool.CACHE_SIZE
+  for (const key of R.keys()) {
+    const b = new R.BaseCharacter(source, key)
+    out.largest = Math.max(out.largest, gameBundle(source, b.bundle), gameBundle(source, b.altBundle))
+  }
+  out.models = chars.map((c, i) => {
+    const n = c.internalName.toLowerCase()
+    return [named[i], Math.max(builtBundle(r.adds, n), builtBundle(r.adds, n + '_alt'))]
+  })
+  out.models.forEach(([name, size]) => {
+    if (size > out.largest) add('warning', `${name}: its model takes ${kb(size)}, more than any of the game's own (${kb(out.largest)}): a match may run out of memory and crash on the loading screen`)
+  })
+  const total = out.models[0][1] + out.models[1][1]
+  if (total > 2 * out.largest && out.models.every(([, size]) => size <= out.largest)) {
+    add('warning', `the two models together take ${kb(total)}, more than any two of the game's own: a match between them may run out of memory`)
+  }
+  return [out, r]
+}
+
+const kb = (n: number) => `${Math.round(n / 1024).toLocaleString('en-US')} KB`

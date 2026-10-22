@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as effects from '../src/core/build/effects'
-import { buildPair } from '../src/core/build/pair'
+import { buildPair, checkPair } from '../src/core/build/pair'
 import { Builder, report } from '../src/core/build/patch'
 import * as templates from '../src/core/build/templates'
 import * as tuning from '../src/core/build/tuning'
@@ -276,6 +276,30 @@ describe.skipIf(!ISO)('game', () => {
     const thumbs = new Map(movie('screens/clashCharSelect_thumbs.big').exports())
     expect(thumbs.has('char18') && thumbs.has('char19')).toBe(true)
     expect(report([a, b], r)).toContain('roster records 19 and 20')
+  })
+
+  it('checks a pair before building it', () => {
+    const a = tinted('johnnyohm')
+    const b = { ...tinted('humantorch'), internalName: 'Other', displayName: 'OTHER' }
+    b.ui = { ...b.ui, ready_voice: 'FE_SFX_TORCH' }
+    const [check, r] = checkPair(src(), [a, b])
+    expect(check.problems.filter(([l]) => l === 'error')).toEqual([])
+    expect(check.problems.some(([l, m]) => l === 'warning' && m.startsWith('20th (OTHER)') && m.includes('idle and power-up'))).toBe(true)
+    expect(check.problems.some(([, m]) => m.includes('FE_SFX_OHM'))).toBe(true)
+    expect(r).not.toBeNull()
+    expect(check.cacheExtra).toBeLessThanOrEqual(effects.TINT_ALL_LIMIT)
+    expect(check.largest).toBe(420153)
+    expect(check.models.map(([n]) => n)).toEqual(['19th (SYNTH)', '20th (OTHER)'])
+    expect(check.models.every(([, size]) => size > 0 && size < check.largest)).toBe(true)
+  })
+
+  it('finds names two characters would both add', () => {
+    const a = { ...tinted('johnnyohm'), internalName: 'Foo' }
+    const [same] = checkPair(src(), [a, { ...tinted('storm'), internalName: 'foo' }])
+    expect(same.problems.some(([l, m]) => l === 'error' && m.includes('internal name'))).toBe(true)
+    const [overlap, r] = checkPair(src(), [a, { ...tinted('storm'), internalName: 'altFoo' }])
+    expect(overlap.problems).toContainEqual(['error', 'both would add plr_altfoo, plr_altfoo_rage to the game: change one internal name'])
+    expect(r).toBeNull()
   })
 
   it('refuses two characters with the same internal name', () => {

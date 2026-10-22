@@ -2,6 +2,7 @@
 import { LabError } from '../core/errors'
 import type { ReadAt, Sink } from '../core/game/disc'
 import { RgbaImage } from '../core/image/rgba'
+import type { Pair } from '../core/build/pair'
 import type { PatchTarget, Request, Response } from './protocol'
 import { Service } from './service'
 
@@ -44,6 +45,19 @@ async function openSink(target: PatchTarget): Promise<[Sink, () => Promise<void>
   ]
 }
 
+// Writes the patched disc into the target, and removes what was written when it fails.
+async function intoSink(target: PatchTarget, run: (sink: Sink) => Promise<string>): Promise<string> {
+  const [sink, close, abort] = await openSink(target)
+  try {
+    const text = await run(sink)
+    await close()
+    return text
+  } catch (e) {
+    await abort().catch(() => {})
+    throw e
+  }
+}
+
 function transfers(value: unknown, out: Set<ArrayBuffer>, seen = new Set<unknown>()) {
   if (value === null || typeof value !== 'object' || seen.has(value)) return
   seen.add(value)
@@ -70,17 +84,10 @@ const handlers: Record<string, (progress: (stage: string, done?: number, total?:
   setPictures: (_p, pictures: Record<string, Uint8Array>) => service.setPictures(pictures),
   compose: (_p, args, index: number) => service.compose(args, index),
   check: (p, c) => service.check(c, p),
-  patch: async (p, c, target: PatchTarget, verified: boolean) => {
-    const [sink, close, abort] = await openSink(target)
-    try {
-      const text = await service.patch(c, sink, verified, p)
-      await close()
-      return text
-    } catch (e) {
-      await abort().catch(() => {})
-      throw e
-    }
-  },
+  patch: (p, c, target: PatchTarget, verified: boolean) => intoSink(target, (sink) => service.patch(c, sink, verified, p)),
+  checkPair: (p, chars: Pair) => service.checkPair(chars, p),
+  patchPair: (p, chars: Pair, target: PatchTarget, verified: boolean, token: number | null) =>
+    intoSink(target, (sink) => service.patchPair(chars, sink, verified, token, p)),
 }
 
 self.onmessage = async (e: MessageEvent<Request>) => {

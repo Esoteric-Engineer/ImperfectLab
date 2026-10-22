@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { VERSION } from './core/version'
 import * as actions from './ui/actions'
 import { Modal } from './ui/components/common'
@@ -9,6 +9,7 @@ import { ExportPage } from './ui/pages/ExportPage'
 import { GamePage } from './ui/pages/GamePage'
 import { MaterialsPage } from './ui/pages/MaterialsPage'
 import { ModelPage } from './ui/pages/ModelPage'
+import { PairPage } from './ui/pages/PairPage'
 import { StatsPage } from './ui/pages/StatsPage'
 import { store, useStore } from './ui/store'
 import './App.css'
@@ -23,6 +24,8 @@ const STEPS: [string, () => React.JSX.Element][] = [
   ['7. Art', ArtPage],
   ['8. Save & patch', ExportPage],
 ]
+// After the steps, separate section.
+const PAGES: [string, () => React.JSX.Element][] = [...STEPS, ['Patch two characters', PairPage]]
 
 function App() {
   useStore()
@@ -57,7 +60,7 @@ function App() {
     }
   }, [])
 
-  const Page = STEPS[step][1]
+  const Page = PAGES[step][1]
   return (
     <div className="app">
       <header>
@@ -72,8 +75,11 @@ function App() {
         <span className="file">{s.fileName ?? `${s.character.displayName} (unsaved)`}{s.dirty ? ' *' : ''}</span>
       </header>
       <aside>
-        {STEPS.map(([title], i) => (
-          <button key={title} className={i === step ? 'active' : ''} onClick={() => setStep(i)}>{title}</button>
+        {PAGES.map(([title], i) => (
+          <Fragment key={title}>
+            {i === STEPS.length && <hr className="divider" />}
+            <button className={i === step ? 'active' : ''} onClick={() => setStep(i)}>{title}</button>
+          </Fragment>
         ))}
       </aside>
       <main><Page /></main>
