@@ -225,7 +225,7 @@ export function cacheUse(items: Item[]): [[Block, number][], number] {
   return [out, used]
 }
 
-export function problems(items: Item[]): [string[], string[]] {
+export function problems(items: Item[], cacheSize = CACHE_SIZE): [string[], string[]] {
   const out: string[] = []
   const dups: string[] = []
   const seen = new Map<string, number>()
@@ -244,6 +244,6 @@ export function problems(items: Item[]): [string[], string[]] {
     if (typeof it === 'string' && it.length > LINE_MAX - 1) out.push(`line longer than ${LINE_MAX - 1} bytes: ${it.slice(0, 40)}...`)
   }
   const total = cacheUse(items)[1]
-  if (total > CACHE_SIZE) out.push(`cache: ${total} bytes, over ${CACHE_SIZE}`)
+  if (total > cacheSize) out.push(`cache: ${total} bytes, over ${cacheSize}`)
   return [out, dups]
 }

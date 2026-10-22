@@ -44,6 +44,10 @@ export class Tuning {
     return this.value(fid, slot) as number
   }
 
+  fieldsOf(type: number): number[] {
+    return this.fields.flatMap(([typ], fid) => (typ === type ? [fid] : []))
+  }
+
   damageTaken(): number {
     return 1.0 - this.num(RESISTANCE[0])
   }
@@ -86,7 +90,7 @@ export class Tuning {
     return vals.map((v) => v * k)
   }
 
-  build(internal: string, gameplay: Record<string, unknown>, powerEffects: Map<number, [string, string]> | null = null): [string, Uint8Array, Uint8Array] {
+  build(internal: string, gameplay: Record<string, unknown>, effects: Map<number, string[]> | null = null): [string, Uint8Array, Uint8Array] {
     const nvb = nvbtool.parseNvb(nvbtool.buildNvb(this.nvb))
     const raw = new Uint8Array(0x40)
     raw.set(encodeLatin1(internal))
@@ -104,7 +108,7 @@ export class Tuning {
         this.set(nvb, fid, taken.map((x) => 1.0 - (k !== null ? x * k : t)))
       }
     }
-    for (const [fid, [normal, alt]] of powerEffects ?? []) this.set(nvb, fid, [...new Array(SLOTS - 1).fill(normal), alt])
+    for (const [fid, names] of effects ?? []) this.set(nvb, fid, names)
     return [`Misc/PLAYER_${internal}.nvb`, nvbtool.buildNvb(nvb), this.listed(internal)]
   }
 

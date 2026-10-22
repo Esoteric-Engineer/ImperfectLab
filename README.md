@@ -29,7 +29,7 @@ npm test        # test
 ## Notes
 
 - Models rigged as 3ds Max Biped, Mixamo, Rigify, Unreal mannequin, VRM/VRoid and Unity Humanoid map automatically. Other types will work, but require manual mapping.
-- The `.imperfect` file format is documented at `docs/FORMAT.md`.
+- The `.imperfect` file format is documented at `docs/FORMAT.md`, and the game's limits that shape a build at `docs/LIMITATIONS.md`.
 
 ## Development
 

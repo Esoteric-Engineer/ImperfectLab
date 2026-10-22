@@ -17,7 +17,7 @@ function character(): imperfect.Character {
   c.overrides = new Map([['mixamorig:LeftHandMiddle1', 48]])
   c.stats = { normal: [1, 2, 3, 4, 5, 6], alt: [7, 6, 5, 4, 3, 2] }
   c.gameplay = { damage_taken: 0.8, lift: 'heavy', wire_swing: true, rage_duration: 15000 }
-  c.aura = { mode: 'tint', color: '#112233', alt_color: '#445566' }
+  c.aura = { mode: 'tint', tint: 'power', color: '#112233', alt_color: '#445566' }
   c.ui.select = { ready: { scale: 0.5, anchor: [10, 20], glow: '#11223344' } }
   c.credits = { author: 'me', description: 'a test', assets: [{ what: 'model', by: 'me', license: 'CC0', url: '' }] }
   return c
@@ -111,6 +111,7 @@ describe('hostile files', () => {
       (m) => (m.model.materials[0].size = [300, 300]),
       (m) => (m.model.materials[0].texture = '../../etc/passwd'),
       (m) => (m.aura.mode = 'rainbow'),
+      (m) => (m.aura.tint = 'most'),
       (m) => (m.model.mapping = { pelvis: 'x' }),
     ]
     for (const edit of cases) rejected(withManifest(files(), edit))

@@ -60,7 +60,7 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
       "bind": null
     }]
   },
-  "aura": {"mode": "swap", "color": "#40A0FF", "alt_color": "#50FF50"},
+  "aura": {"mode": "swap", "tint": "all", "color": "#40A0FF", "alt_color": "#50FF50"},
   "stats": {"display": {"normal": [7, 4, 3, 6, 5, 4], "alt": [7, 4, 3, 6, 5, 4]}, "gameplay": {"damage_taken": 0.7, "lift": "medium", "wire_swing": false}},
   "ui": {"select": {"ready": {"scale": 0.8, "anchor": [210, 75], "glow": "#3CFF5A6E"}}, "fade": 36, "strip_scale": null, "ready_voice": null, "banner": true},
   "moves": {},
@@ -96,8 +96,14 @@ Game bone numbers in `model` belong to the base's body class (male, female or br
 `mode`:
 - `base`: the base's aura and effects.
 - `swap`: the two costumes exchange the base's normal and alternate auras, effects and intro cutscenes.
-- `tint` (experimental): copies of the base's idle and power-up effects recolored to `color` (costume 1) and
-  `alt_color` (costume 2). The power-mode glow keeps the base's color.
+- `tint`: copies of the base's effects recolored to `color` (costume 1) and `alt_color` (costume 2).
+  The power-mode glow keeps the base's color.
+
+`tint` (optional, default `all`), what a `tint` copies:
+- `all`: the idle and power-up effects, and every effect and projectile the alternate costume has its own of.
+- `power`: the idle and power-up effects only.
+
+A base whose full tint needs more memory than a match can spare is built as `power` ([`LIMITATIONS.md`](LIMITATIONS.md)).
 
 ### `stats`
 - `display`: six integers 1-7 per costume: intel, strength, speed, durability, energy, skill. Shown on the

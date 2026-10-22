@@ -20,6 +20,21 @@ import { gameSource, ISO, makeGlb, pngBytes } from './helpers'
 const DOOM_EDITS: [number, string | number[]][] = [[0x4c7ac0, 'plr_doctordoom'], [0x4c7ae0, 'DOCTOR DOOM'], [0x4c7b00, [7, 4, 3, 6, 5, 4, 0, 0]],
   [0x4c80b0, 'plr_altDoctordoom'], [0x4c8148, [0, 0, 0, 0x13]]]
 
+function tinted(base: string): imperfect.Character {
+  const c = imperfect.newCharacter()
+  c.internalName = 'Synth'
+  c.displayName = 'SYNTH'
+  c.base = base
+  c.glb = makeGlb()
+  c.materials = [{ ...imperfect.newMaterial(0, 'skin', true, '', [64, 64]), texture: 'textures/skin.png' }]
+  c.files = new Map([['textures/skin.png', pngBytes()]])
+  const auto = mapping.autoMap(new Model(c.glb), Skeleton.ofBase(new R.BaseCharacter(gameSource(), c.base)))
+  c.mapping = auto.mapping
+  c.overrides = auto.overrides
+  c.aura = { mode: 'tint', tint: 'all', color: '#45FF42', alt_color: '#B109D3' }
+  return c
+}
+
 describe.skipIf(!ISO)('main.dol', () => {
   it('writes the Doctor Doom record as Doompatcher did', () => {
     const dol = gameSource().dol
@@ -29,6 +44,14 @@ describe.skipIf(!ISO)('main.dol', () => {
       const bytes = typeof want === 'string' ? [...want].map((c) => c.charCodeAt(0)) : want
       expect([...out.subarray(off, off + bytes.length)]).toEqual(bytes)
     }
+  })
+
+  it('grows the effect cache', () => {
+    const dol = gameSource().dol
+    expect(D.readEffectCache(dol)).toBe(nfxtool.CACHE_SIZE)
+    const out = D.growEffectCache(dol, 0x4a400)
+    expect(D.readEffectCache(out)).toBe(0x4a400)
+    expect(() => D.growEffectCache(out, 0x4a400)).toThrow(LabError)
   })
 
   it('refuses a patched main.dol', () => {
@@ -81,10 +104,11 @@ describe.skipIf(!ISO)('game', () => {
   })
 
   it('finds what a tint copies', () => {
-    const jo = effects.tintRoots(src(), new R.BaseCharacter(src(), 'johnnyohm'))
-    const thing = effects.tintRoots(src(), new R.BaseCharacter(src(), 'thing'))
-    expect(jo[0]).toContain('jOhmStand')
-    expect([thing[0], thing[1]]).toEqual([[], []])
+    const jo = effects.tintPlans(src(), new R.BaseCharacter(src(), 'johnnyohm'))
+    const thing = effects.tintPlans(src(), new R.BaseCharacter(src(), 'thing'))
+    expect(jo.power.roots).toEqual(['jOhmStand', 'jOhmPwrStand', 'jOhmPowerOn'])
+    expect(jo.all.roots).toContain('jOhmArcToSkyL')
+    expect([thing.all.roots, thing.all.alt]).toEqual([[], []])
   })
 
   it('swaps auras in the templates', () => {
@@ -140,6 +164,48 @@ describe.skipIf(!ISO)('game', () => {
     expect(r.adds.has('Bundles/synth_alt.tpl')).toBe(true)
     const t = new R.Templates(r.sets.get('Misc/Global.not')!)
     expect(R.u32(t.prop('plr_Synth', R.P_ABILITIES))! & 0x30).toBe(0x20)
+  })
+
+  it('points every field naming a tinted effect at its copy', () => {
+    const r = new Builder(src(), tinted('johnnyohm')).build()
+    const nvb = nvbtool.parseNvb(r.adds.get('Misc/PLAYER_Synth.nvb')!)
+    const fields = nvbtool.parseNdb(src().entry('Misc/defaults.ndb')).fields('PLAYER')
+    const names = (fid: number) => nvb.slots(fid, fields[fid][1])!.map((v) => latin1(v).split('\0')[0])
+    const fx = new Set(nfxtool.blocks(nfxtool.readNfx(r.sets.get('Misc/game.nfx')!)).map((b) => b.name))
+    for (const [event, power] of [[87, 98], [88, 99]]) expect(names(event)).toEqual(names(power))
+    for (const fid of [81, 98, 99, 101, 242, 243]) expect(names(fid).every((n) => /^sy[fa][0-9a-z]+$/.test(n) && fx.has(n))).toBe(true)
+    expect(names(67)).toEqual(new Array(6).fill('stdHitTrailLH'))
+    const used = nfxtool.cacheUse(nfxtool.readNfx(r.sets.get('Misc/game.nfx')!))[1]
+    expect(D.readEffectCache(r.dol!)).toBe(effects.cacheSize(used))
+    expect(D.readEffectCache(r.dol!)! - used).toBeLessThan(0x800 + 0x400)
+    // A projectile, its explosion and the zap the explosion leaves on the victim are copies too.
+    const T = new R.Templates(r.sets.get('Misc/Global.not')!)
+    for (const fid of [90, 91, 92]) {
+      for (const proj of names(fid)) {
+        const chain = templates.chain(T, proj)
+        expect(chain.map((t) => t.name.split('_')[0])).toEqual(['proj', 'exp'])
+        const fxNames = chain.flatMap((t) => t.props.map(([, v]) => R.text(v)).filter((s) => s && fx.has(s)))
+        expect(fxNames.length).toBeGreaterThan(0)
+        expect(fxNames.every((n) => /^sy[fa][0-9a-z]+$/.test(n!))).toBe(true)
+      }
+    }
+  })
+
+  it('fits every base\'s tint in the effect cache', () => {
+    const over: string[] = []
+    for (const key of R.keys()) {
+      const plans = effects.tintPlans(src(), new R.BaseCharacter(src(), key))
+      expect(plans.power.extra, key).toBe(0)
+      expect(nfxtool.CACHE_SIZE + plans.all.extra, key).toBeLessThanOrEqual(effects.CACHE_MAX)
+      if (effects.tintLevel(plans, 'all') !== 'all') over.push(key)
+    }
+    expect(over).toEqual(['ironman'])
+  })
+
+  it('tints only the idle and power-up effects when a full tint needs too much memory', () => {
+    const r = new Builder(src(), tinted('ironman')).build()
+    expect(D.readEffectCache(r.dol!)).toBe(nfxtool.CACHE_SIZE)
+    expect(r.notes.some((n) => n.includes('idle and power-up effects are tinted'))).toBe(true)
   })
 
   it('refuses a name the game uses', () => {
