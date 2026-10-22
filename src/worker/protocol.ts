@@ -1,5 +1,5 @@
 import type { TintPlan } from '../core/build/effects'
-import type { PairCheck } from '../core/build/pair'
+import type { BatchCheck } from '../core/build/batch'
 import type { RgbaImage } from '../core/image/rgba'
 import type { Material, Pose } from '../core/package/imperfect'
 import type { BoneLine, MeshData } from '../core/preview'
@@ -82,7 +82,7 @@ export interface CheckResult {
   adds: string[]
 }
 
-export interface PairCheckResult extends PairCheck {
+export interface BatchCheckResult extends BatchCheck {
   token: number | null
 }
 

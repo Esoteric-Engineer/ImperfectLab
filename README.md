@@ -7,7 +7,7 @@ ImperfectLab runs entirely in the browser: files are never uploaded to a server,
 
 A character is a model of your own (`.glb`) on top of one of the game's 18 characters. Pick the base character, map a new model's skeleton onto theirs, set the names, stats, aura and pictures, and save.
 Anyone with their own copy of the game and this patcher can then open the file and patch the character in as the 19th character.
-Two saved characters can also go in together, as the 19th and 20th, from the **Patch two characters** page, which checks them against each other and the disc first.
+Up to nine `.imperfect` characters can also be patched into a single ISO via the **Multi-Character Patch** page, which checks them against each other and the disc first.
 
 <b>No game files are included.</b> A `.imperfect` file holds only the author's model, pictures and settings; everything taken from the game is read from your own disc when the character is patched in.
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as effects from '../src/core/build/effects'
-import { buildPair, checkPair } from '../src/core/build/pair'
+import { buildBatch, checkBatch, ordinal } from '../src/core/build/batch'
 import { Builder, report } from '../src/core/build/patch'
 import * as templates from '../src/core/build/templates'
 import * as tuning from '../src/core/build/tuning'
@@ -68,7 +68,7 @@ describe.skipIf(!ISO)('main.dol', () => {
     const dol = gameSource().dol
     expect(D.tables(dol)).toEqual([D.NORMAL_TABLE, D.ALT_TABLE, 0x4c80fc])
     expect(D.arenaLo(dol)).toBe(D.ARENA_LO)
-    const out = D.patchTwo(dol, [
+    const out = D.patchMany(dol, [
       { internal: 'DoctorDoom', display: 'DOCTOR DOOM', stats: [7, 4, 3, 6, 5, 4], altStats: [7, 4, 3, 6, 5, 4] },
       { internal: 'CaptainAmerica', display: 'CAPTAIN AMERICA', stats: [3, 4, 2, 3, 1, 6], altStats: [3, 4, 2, 3, 1, 6] },
     ])
@@ -84,8 +84,29 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(Array.from({ length: 21 }, (_, i) => out[order + 4 * i + 3])).toEqual([0, 10, 2, 15, 6, 14, 3, 9, 7, 13, 4, 16, 8, 1, 17, 5, 12, 11, 18, 19, 20])
     expect(D.readEffectCache(D.growEffectCache(out, 0x4a400))).toBe(0x4a400)
     const c = { internal: 'A', display: 'B', stats: [1, 1, 1, 1, 1, 1], altStats: [1, 1, 1, 1, 1, 1] }
-    expect(() => D.patchTwo(out, [c, c])).toThrow(LabError)
+    expect(() => D.patchMany(out, [c, c])).toThrow(LabError)
     expect(() => D.patch(out, 'A', 'B', c.stats, c.altStats)).toThrow(LabError)
+  })
+
+  it('fills the select grid with nine characters', () => {
+    const dol = gameSource().dol
+    const chars = Array.from({ length: 9 }, (_, i) => ({ internal: `Hero${i}`, display: `HERO ${i}`, stats: [i, 1, 2, 3, 4, 5], altStats: [5, 4, 3, 2, 1, i] }))
+    const out = D.patchMany(dol, chars)
+    const [normal, alt, order] = D.tables(out)
+    expect(normal).toBe(dol.length)
+    expect(D.arenaLo(out)).toBeGreaterThanOrEqual(D.ARENA_LO + 28 * (2 * 0x4c + 4))
+    expect(D.arenaLo(out) % 32).toBe(0)
+    for (let i = 0; i < 19; i++) expect(D.readRecord(out, normal, i)).toEqual(D.readRecord(dol, D.NORMAL_TABLE, i))
+    chars.forEach((c, i) => {
+      expect(D.readRecord(out, normal, 19 + i)).toEqual({ name: `plr_hero${i}`, key: c.display, stats: c.stats, unlocked: 1 })
+      expect(D.readRecord(out, alt, 19 + i)).toEqual({ name: `plr_altHero${i}`, key: c.display, stats: c.altStats, unlocked: 1 })
+    })
+    expect(Array.from({ length: 28 }, (_, i) => out[order + 4 * i + 3]).slice(18)).toEqual([18, 19, 20, 21, 22, 23, 24, 25, 26, 27])
+    // the select screen's limits and fn_8044F070's search of the order table
+    for (const off of [0x1007dc, 0x101758, 0x101760, 0x101788, 0x101790]) expect(out[off + 3]).toBe(27)
+    expect(out[0x44c09c + 3]).toBe(0x1b)
+    expect(() => D.patchMany(dol, [...chars, chars[0]])).toThrow(LabError)
+    expect(() => D.patchMany(dol, [chars[0]])).toThrow(LabError)
   })
 })
 
@@ -249,12 +270,16 @@ describe.skipIf(!ISO)('game', () => {
     expect(r.notes.some((n) => n.includes('idle and power-up effects are tinted'))).toBe(true)
   })
 
+  it('names the new fighters', () => {
+    expect(Array.from({ length: 9 }, (_, i) => ordinal(i))).toEqual(['19th', '20th', '21st', '22nd', '23rd', '24th', '25th', '26th', '27th'])
+  })
+
   it('builds two characters, the second on the first', () => {
     const a = tinted('johnnyohm')
     const b = { ...tinted('humantorch'), internalName: 'Other', displayName: 'OTHER' }
     b.ui = { ...b.ui, ready_voice: 'FE_SFX_TORCH' }
     b.files = new Map([...b.files, ['ui/select_ready.png', pngBytes(200, 400)], ['ui/tile.png', pngBytes(64, 32)]])
-    const r = buildPair(src(), [a, b])
+    const r = buildBatch(src(), [a, b])
     const [normal, alt] = D.tables(r.dol!)
     expect(D.readRecord(r.dol!, normal, 19).name).toBe('plr_synth')
     expect(D.readRecord(r.dol!, alt, 20)).toMatchObject({ name: 'plr_altOther', key: 'OTHER' })
@@ -291,14 +316,14 @@ describe.skipIf(!ISO)('game', () => {
     expect(main.find((v) => v.includes('kGlobal_Max_NumChar'))!.slice(-1)).toEqual([20])
     const thumbs = new Map(movie('screens/clashCharSelect_thumbs.big').exports())
     expect(thumbs.has('char18') && thumbs.has('char19')).toBe(true)
-    expect(report([a, b], r)).toContain('roster records 19 and 20')
+    expect(report([a, b], r)).toContain('roster records 19 to 20')
   })
 
   it('checks a pair before building it', () => {
     const a = tinted('johnnyohm')
     const b = { ...tinted('humantorch'), internalName: 'Other', displayName: 'OTHER' }
     b.ui = { ...b.ui, ready_voice: 'FE_SFX_TORCH' }
-    const [check, r] = checkPair(src(), [a, b])
+    const [check, r] = checkBatch(src(), [a, b])
     expect(check.problems.filter(([l]) => l === 'error')).toEqual([])
     expect(check.problems.some(([l, m]) => l === 'warning' && m.startsWith('20th (OTHER)') && m.includes('idle and power-up'))).toBe(true)
     expect(check.problems.some(([, m]) => m.includes('FE_SFX_OHM'))).toBe(true)
@@ -311,15 +336,75 @@ describe.skipIf(!ISO)('game', () => {
 
   it('finds names two characters would both add', () => {
     const a = { ...tinted('johnnyohm'), internalName: 'Foo' }
-    const [same] = checkPair(src(), [a, { ...tinted('storm'), internalName: 'foo' }])
+    const [same] = checkBatch(src(), [a, { ...tinted('storm'), internalName: 'foo' }])
     expect(same.problems.some(([l, m]) => l === 'error' && m.includes('internal name'))).toBe(true)
-    const [overlap, r] = checkPair(src(), [a, { ...tinted('storm'), internalName: 'altFoo' }])
-    expect(overlap.problems).toContainEqual(['error', 'both would add plr_altfoo, plr_altfoo_rage to the game: change one internal name'])
+    const [overlap, r] = checkBatch(src(), [a, { ...tinted('storm'), internalName: 'altFoo' }])
+    expect(overlap.problems).toContainEqual(['error', '19th (SYNTH) and 20th (SYNTH) both would add plr_altfoo, plr_altfoo_rage to the game: change one internal name'])
     expect(r).toBeNull()
   })
 
   it('refuses two characters with the same internal name', () => {
-    expect(() => buildPair(src(), [tinted('johnnyohm'), tinted('storm')])).toThrow(LabError)
+    expect(() => buildBatch(src(), [tinted('johnnyohm'), tinted('storm')])).toThrow(LabError)
+  })
+
+  it('gives a voice to one before a voiced one', () => {
+    const named = (base: string, name: string, voice: string | null) => {
+      const c = { ...tinted(base), internalName: name, displayName: name.toUpperCase(), aura: { ...tinted(base).aura, mode: 'base' as const } }
+      c.ui = { ...c.ui, ready_voice: voice }
+      return c
+    }
+    const chars = [named('johnnyohm', 'One', 'FE_SFX_OHM'), named('storm', 'Two', null), named('venom', 'Three', 'FE_SFX_VENOM')]
+    const r = buildBatch(src(), chars)
+    expect(r.notes.some((n) => n.includes("TWO: no ready voice") && n.includes("uses Storm's (FE_SFX_STORM)"))).toBe(true)
+    const files = ui.loadArchive(r.sets.get(ui.P + 'screens/clashCharSelect.big')!)
+    const get = (ext: string) => files.find(([n]) => n.toLowerCase().endsWith(ext))![1]
+    const apt = new Apt(get('.apt'), get('.const'))
+    const block = apt.frameActions(apt.aptOff, 0)[0]
+    const pool = apt.pool(block)
+    const audio = apt.walk(block).filter(([, op]) => op === 0x96).map(([at]) => apt.getPush(at).map((i) => apt.constValue(i, pool))).find((v) => v[0] === 'g_aCharacterAudio')!
+    const values = ui.sfxValues(src().entry(ui.P + 'main.big'))
+    expect(audio).toEqual(['g_aCharacterAudio', ...['FE_SFX_VENOM', 'FE_SFX_STORM', 'FE_SFX_OHM'].map((v) => values.get(v)), '_global'])
+  })
+
+  it('builds nine characters into the third row', () => {
+    const bases = ['thing', 'wolverine', 'paradox', 'elektra', 'johnnyohm', 'spiderman', 'daredevil', 'storm', 'venom']
+    const chars = bases.map((base, i) => ({ ...tinted(base), internalName: `Nine${i}`, displayName: `NINE ${i}`, aura: { ...tinted(base).aura, mode: 'base' as const } }))
+    const [check, r] = checkBatch(src(), chars)
+    expect(check.problems.filter(([l]) => l === 'error')).toEqual([])
+    expect(check.models.map(([n]) => n)).toEqual(chars.map((c, i) => `${ordinal(i)} (${c.displayName})`))
+    const [normal] = D.tables(r!.dol!)
+    expect(D.readRecord(r!.dol!, normal, 27)).toMatchObject({ name: 'plr_nine8', key: 'NINE 8' })
+    expect(r!.adds.has('Misc/PLAYER_Nine0.nvb')).toBe(false)
+    const movie = (name: string) => {
+      const files = ui.loadArchive(r!.sets.get(ui.P + name)!)
+      const get = (ext: string) => files.find(([n]) => n.toLowerCase().endsWith(ext))![1]
+      return new Apt(get('.apt'), get('.const'))
+    }
+    const pushes = (apt: Apt) => apt.frameActions(apt.aptOff, 0).flatMap((block) => {
+      const pool = apt.pool(block)
+      return apt.walk(block).filter(([, op]) => op === 0x96).map(([at]) => apt.getPush(at).map((i) => apt.constValue(i, pool)))
+    })
+    const select = pushes(movie('screens/clashCharSelect.big'))
+    expect(select.find((v) => v[0] === 'aObject')!.slice(0, 2)).toEqual(['aObject', 'thumb26'])
+    expect(select.find((v) => v[0] === 'g_aCharacterOrder')!.slice(-1)).toEqual([27])
+    const main = pushes(movie('main.big'))
+    const names = main.find((v) => v.includes('~kT_VANROEKEL'))!
+    expect(names.slice(-28, -19)).toEqual(chars.map((c) => c.displayName).reverse())
+    expect(names[names.length - 1]).toBe(27)
+    expect(main.find((v) => v.includes('kGlobal_Max_NumChar'))!.slice(-1)).toEqual([27])
+    const thumbs = new Map(movie('screens/clashCharSelect_thumbs.big').exports())
+    for (let id = 18; id < 27; id++) expect(thumbs.has(`char${id}`), `char${id}`).toBe(true)
+    for (let id = 18; id < 27; id++) expect(r!.sets.has(`${ui.P}portraits/c${id}_p0.big`) || r!.adds.has(`${ui.P}portraits/c${id}_p0.big`), `c${id}_p0`).toBe(true)
+    expect(report(chars, r!)).toContain('roster records 19 to 27')
+  })
+
+  it("keeps the tuned characters to what the game's tuning list holds", () => {
+    const chars = ['johnnyohm', 'storm', 'venom', 'heatwave', 'magneto'].map((base, i) => ({ ...tinted(base), internalName: `Tuned${i}`, displayName: `TUNED ${i}` }))
+    const [check, r] = checkBatch(src(), chars)
+    expect(r).toBeNull()
+    expect(check.problems.some(([l, m]) => l === 'error' && m.includes("tuning list take 70 bytes where it has 53 free"))).toBe(true)
+    const short = [{ ...tinted('johnnyohm'), internalName: 'A', displayName: 'A' }, { ...tinted('magneto'), internalName: 'B', displayName: 'B' }]
+    expect(checkBatch(src(), short)[0].problems.filter(([l]) => l === 'error')).toEqual([])
   })
 
   it('refuses a name the game uses', () => {

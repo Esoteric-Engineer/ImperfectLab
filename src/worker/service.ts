@@ -1,4 +1,4 @@
-import { buildPair, checkPair, type Pair } from '../core/build/pair'
+import { type Batch, buildBatch, checkBatch } from '../core/build/batch'
 import { Builder, glowRgba, patch, type Progress, report, type Result, WIRE, write } from '../core/build/patch'
 import * as effects from '../core/build/effects'
 import * as portraits from '../core/build/portraits'
@@ -20,7 +20,7 @@ import * as mapping from '../core/model/mapping'
 import { Skeleton } from '../core/model/skeleton'
 import * as imperfect from '../core/package/imperfect'
 import { baseMeshes, costumeImage, fittedMeshes, gameBones, materialImages, type MeshData, sourceBones, sourceMeshes } from '../core/preview'
-import type { BaseDetails, BaseInfo, CheckResult, ComposeArgs, DiscInfo, ImportedModel, LayoutInfo, ModelInfo, PairCheckResult, PreviewResult } from './protocol'
+import type { BaseDetails, BaseInfo, CheckResult, ComposeArgs, DiscInfo, ImportedModel, BatchCheckResult, LayoutInfo, ModelInfo, PreviewResult } from './protocol'
 
 const DEFAULT_SIZES: Record<string, [number, number]> = {
   tile0: [64, 32], tile1: [64, 32], hud: [64, 64], strip0: [128, 256], strip1: [32, 256], strip0_alt: [128, 256], strip1_alt: [32, 256],
@@ -79,14 +79,14 @@ export class Service {
   private modelBytes: Uint8Array | null = null
   private layoutCache: portraits.SelectLayout | null = null
   private pictures = new Map<string, RgbaImage>()
-  private pairBuild: { token: number; result: Result } | null = null
-  private pairTokens = 0
+  private batchBuild: { token: number; result: Result } | null = null
+  private batchTokens = 0
   decoder: ImageDecoder | null = null
 
   openDisc(disc: ImageDisc | FolderDisc): DiscInfo {
     const src = new GameSource(disc)
     this.source = src
-    this.pairBuild = null
+    this.batchBuild = null
     this.templates = null
     this.bases.clear()
     this.skeletons.clear()
@@ -351,7 +351,7 @@ export class Service {
   }
 
   // A model that cannot be read is left to the check, which reports it.
-  private async pairModels(chars: Pair): Promise<[Model?, Model?]> {
+  private async batchModels(chars: Batch): Promise<(Model | undefined)[]> {
     return Promise.all(chars.map(async (c) => {
       if (!c.glb) return undefined
       try {
@@ -362,21 +362,21 @@ export class Service {
         if (!(e instanceof LabError)) throw e
         return undefined
       }
-    })) as Promise<[Model?, Model?]>
+    }))
   }
 
-  async checkPair(chars: Pair, progress: Progress): Promise<PairCheckResult> {
-    this.pairBuild = null
-    const [check, r] = checkPair(this.src(), chars, progress, await this.pairModels(chars))
+  async checkBatch(chars: Batch, progress: Progress): Promise<BatchCheckResult> {
+    this.batchBuild = null
+    const [check, r] = checkBatch(this.src(), chars, progress, await this.batchModels(chars))
     if (!r) return { ...check, token: null }
-    this.pairBuild = { token: ++this.pairTokens, result: r }
-    return { ...check, token: this.pairBuild.token }
+    this.batchBuild = { token: ++this.batchTokens, result: r }
+    return { ...check, token: this.batchBuild.token }
   }
 
-  async patchPair(chars: Pair, sink: Sink, verified: boolean, token: number | null, progress: Progress): Promise<string> {
-    const built = this.pairBuild?.token === token ? this.pairBuild.result : null
-    const models = built ? [] as [] : await this.pairModels(chars)
-    const r = await write(this.src(), { sink }, progress, verified, () => built ?? buildPair(this.src(), chars, progress, models))
+  async patchBatch(chars: Batch, sink: Sink, verified: boolean, token: number | null, progress: Progress): Promise<string> {
+    const built = this.batchBuild?.token === token ? this.batchBuild.result : null
+    const models = built ? [] : await this.batchModels(chars)
+    const r = await write(this.src(), { sink }, progress, verified, () => built ?? buildBatch(this.src(), chars, progress, models))
     return report(chars, r)
   }
 

@@ -40,12 +40,16 @@ What each base's full tint needs:
 
 ## Tuning
 
-Every character with changed stats or a tint gets its own tuning file. Each one listed in `Misc/nvblist.txt` takes 12,354 bytes when the game boots, and the list itself has room for about 53 more bytes (a line costs its two names plus 2).
+Every character with changed stats or a tint gets its own tuning file. Each one listed in `Misc/nvblist.txt` takes 12,354 bytes when the game boots, and the list itself has room for about 53 more bytes (a line costs its two names plus 2, so `PLAYER <internal name>` costs the name's length plus 8).
 
-## A 20th character
+So a patch of several characters fits only a few that need tuning: two with 10-letter internal names, five with 2-letter ones. The check on the **Multi-Character Patch** page adds the lines up before building. Characters with the base's or a swapped aura and the base's gameplay need no line, so nine of those fit.
 
-The roster tables in `main.dol` hold 20 records, and the 19th character takes the last one (a filler copy of the Thing). For a 20th, the patch copies the three tables, grown to 21 records, into a new data section, and points their only four readers (`fn_80431CCC` and `fn_8044F070`) at the copies.
+## More characters
 
-- **The section takes 3,296 bytes from the memory a match loads into.** It sits where the arena used to start, `0x806809C0`, and the arena now starts after it. `OSInit` picks the arena start from `__ArenaLo`, or from `_stack_addr` when the disc's BI2 debug flag is below 2; Dolphin boots GVLE69 through the second, so both are moved.
+The roster tables in `main.dol` hold 20 records, and the 19th character takes the last one (a filler copy of the Thing). For a 20th and more, up to a 27th, the patch copies the three tables, grown to one record per character, into a new data section, and points their only four readers (`fn_80431CCC` and `fn_8044F070`) at the copies. `fn_8044F070` searches the order table up to a fixed index, which is raised with the count.
+
+- **27 is the most the select screen shows.** Its grid is 9 tiles wide and 3 rows deep; the new characters fill the third row, and a 4th row would be off the screen.
+- **The section takes 3,296 bytes (two characters) to 4,384 bytes (nine) from the memory a match loads into.** It sits where the arena used to start, `0x806809C0`, and the arena now starts after it. `OSInit` picks the arena start from `__ArenaLo`, or from `_stack_addr` when the disc's BI2 debug flag is below 2; Dolphin boots GVLE69 through the second, so both are moved.
 - **`main.dol` no longer fits before the FST** (the disc leaves 64 bytes), so the FST moves after it and `boot.bin` points to it.
-- Tested in Dolphin: the 18 original characters in a match, and the Doctor Doom and Captain America mod's disc picking both new characters with this `main.dol` in place of its compiled one. A loader that sets the boot info's arena start itself (`0x80000030`) would put the arena over the tables; Dolphin does not.
+- **Each character adds its four HUD portraits to every `HUD/hud<LANG>.1.gsh`** (and its name banner to `hud<LANG>.2.gsh`), which the game loads for a match.
+- Tested in Dolphin: the 18 original characters in a match, and the Doctor Doom and Captain America mod's disc picking both new characters with this `main.dol` in place of its compiled one. The same layout with 27 characters played in Dolphin, including matches against the 27th. A loader that sets the boot info's arena start itself (`0x80000030`) would put the arena over the tables; Dolphin does not.

@@ -2,7 +2,7 @@
 import { LabError } from '../core/errors'
 import type { ReadAt, Sink } from '../core/game/disc'
 import { RgbaImage } from '../core/image/rgba'
-import type { Pair } from '../core/build/pair'
+import type { Batch } from '../core/build/batch'
 import type { PatchTarget, Request, Response } from './protocol'
 import { Service } from './service'
 
@@ -85,9 +85,9 @@ const handlers: Record<string, (progress: (stage: string, done?: number, total?:
   compose: (_p, args, index: number) => service.compose(args, index),
   check: (p, c) => service.check(c, p),
   patch: (p, c, target: PatchTarget, verified: boolean) => intoSink(target, (sink) => service.patch(c, sink, verified, p)),
-  checkPair: (p, chars: Pair) => service.checkPair(chars, p),
-  patchPair: (p, chars: Pair, target: PatchTarget, verified: boolean, token: number | null) =>
-    intoSink(target, (sink) => service.patchPair(chars, sink, verified, token, p)),
+  checkBatch: (p, chars: Batch) => service.checkBatch(chars, p),
+  patchBatch: (p, chars: Batch, target: PatchTarget, verified: boolean, token: number | null) =>
+    intoSink(target, (sink) => service.patchBatch(chars, sink, verified, token, p)),
 }
 
 self.onmessage = async (e: MessageEvent<Request>) => {

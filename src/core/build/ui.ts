@@ -1,5 +1,5 @@
-// The versus character-select UI for a new select-screen id (18, then 19): the select screen's lists and grid, the tile, the hero name and color, and the in-match HUD portraits.
-// Each edit takes the lists as they are for that id, so a second character is added on top of the first.
+// The versus character-select UI for a new select-screen id (18 to 26): the select screen's lists and grid, the tile, the hero name and color, and the in-match HUD portraits.
+// Each edit takes the lists as they are for that id, so each new character is added on top of the ones before it.
 import { f32be, i32be, putF32be, putU32be } from '../bytes'
 import { LabError } from '../errors'
 import type { RgbaImage } from '../image/rgba'

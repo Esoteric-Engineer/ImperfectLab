@@ -1,16 +1,16 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
+import { MAX_BATCH, ordinal } from '../../core/build/batch'
 import { TINT_ALL_LIMIT } from '../../core/build/effects'
 import * as R from '../../core/game/roster'
 import { type Character, copyCharacter, load } from '../../core/package/imperfect'
 import { canSaveInPlace, download, downloadBlob, openCharacter, opfsFile, removeOpfs } from '../../io/files'
-import type { PairCheckResult } from '../../worker/protocol'
+import type { BatchCheckResult } from '../../worker/protocol'
 import { Note, ProblemList, Progress } from '../components/common'
 import { engine, errorText } from '../engine'
 import { titleCase } from '../format'
-import { type PairSlot, store, useStore } from '../store'
+import { type BatchSlot, store, useStore } from '../store'
 import { choosePatchTarget, OPFS_NAME } from '../target'
 
-const SLOTS = ['19th fighter', '20th fighter']
 const kb = (n: number) => `${Math.round(n / 1024).toLocaleString('en-US')} KB`
 
 function aura(c: Character): string {
@@ -18,46 +18,58 @@ function aura(c: Character): string {
   return c.aura.mode === 'swap' ? 'swapped' : "the base's"
 }
 
-function SlotCard({ index, slot, busy }: { index: number; slot: PairSlot | null; busy: boolean }) {
-  const choose = async () => {
-    try {
-      const opened = await openCharacter()
-      if (!opened) return
-      store.setPair(index, { source: opened.name, character: load(opened.bytes) })
-    } catch (e) {
-      store.fail(`The character could not be opened:\n${errorText(e)}`)
-    }
+async function chooseSlot(): Promise<BatchSlot | null> {
+  try {
+    const opened = await openCharacter()
+    return opened ? { source: opened.name, character: load(opened.bytes) } : null
+  } catch (e) {
+    store.fail(`The character could not be opened:\n${errorText(e)}`)
+    return null
   }
-  const useOpen = () => store.setPair(index, { source: `the editor${store.dirty ? ' (with unsaved changes)' : ''}`, character: copyCharacter(store.character) })
-  const c = slot?.character
+}
+
+const openSlot = (): BatchSlot => ({ source: `the editor${store.dirty ? ' (with unsaved changes)' : ''}`, character: copyCharacter(store.character) })
+
+function SlotCard({ index, slot, count, busy }: { index: number; slot: BatchSlot; count: number; busy: boolean }) {
+  const replace = async () => {
+    const next = await chooseSlot()
+    if (next) store.setBatch(index, next)
+  }
+  const c = slot.character
   return (
     <div className="card">
-      <h4>{SLOTS[index]}</h4>
-      {c ? (
-        <div className="form">
-          <label>Name:</label><span><b>{c.displayName}</b> <span className="swatch" style={{ background: c.nameColor }} title={`select-screen color ${c.nameColor}`} /></span>
-          <label>Internal name:</label><span>{c.internalName}</span>
-          <label>Base:</label><span>{c.base in R.BASES ? R.label(c.base) : c.base}</span>
-          <label>Aura:</label><span>{aura(c)}</span>
-          <label>Model file:</label><span>{c.glb ? kb(c.glb.length) : 'none'}</span>
-          <label>From:</label><span className="muted">{slot.source}</span>
-        </div>
-      ) : <p className="muted">No character chosen.</p>}
+      <h4>{ordinal(index)} fighter</h4>
+      <div className="form">
+        <label>Name:</label><span><b>{c.displayName}</b> <span className="swatch" style={{ background: c.nameColor }} title={`select-screen color ${c.nameColor}`} /></span>
+        <label>Internal name:</label><span>{c.internalName}</span>
+        <label>Base:</label><span>{c.base in R.BASES ? R.label(c.base) : c.base}</span>
+        <label>Aura:</label><span>{aura(c)}</span>
+        <label>Model file:</label><span>{c.glb ? kb(c.glb.length) : 'none'}</span>
+        <label>From:</label><span className="muted">{slot.source}</span>
+      </div>
       <div className="row">
-        <button onClick={choose} disabled={busy}>Choose .imperfect...</button>
-        <button onClick={useOpen} disabled={busy} title={`Use ${store.character.displayName}, the character open in the editor`}>Use the open character</button>
-        {slot && <button onClick={() => store.setPair(index, null)} disabled={busy}>Clear</button>}
+        <button onClick={replace} disabled={busy}>Replace...</button>
+        <button onClick={() => store.moveInBatch(index, -1)} disabled={busy || index === 0}>Move up</button>
+        <button onClick={() => store.moveInBatch(index, 1)} disabled={busy || index === count - 1}>Move down</button>
+        <button onClick={() => store.removeFromBatch(index)} disabled={busy}>Remove</button>
       </div>
     </div>
   )
 }
 
-export function PairPage() {
+function outputName(stem: string, names: string[]): string {
+  if (!names.length) return `${stem} (new characters).iso`
+  if (names.length > 3) return `${stem} (${names.length} characters).iso`
+  const t = names.map(titleCase)
+  return `${stem} (${t.length === 1 ? t[0] : `${t.slice(0, -1).join(', ')} & ${t[t.length - 1]}`}).iso`
+}
+
+export function BatchPage() {
   useStore()
   const s = store
-  const [a, b] = s.pair
+  const batch = s.batch
   const g = s.game
-  const check = s.pairCheck
+  const check = s.batchCheck
   const [busy, setBusy] = useState<string | null>(null)
   const [progress, setProgress] = useState<[number, number]>([0, 0])
   const [log, setLog] = useState('')
@@ -67,26 +79,32 @@ export function PairPage() {
   const checking = useRef<unknown>(null)
 
   const stem = g ? g.name.replace(/\.(iso|gcm|ciso)$/i, '') : ''
-  const out = outName ?? (a && b ? `${stem} (${titleCase(a.character.displayName)} & ${titleCase(b.character.displayName)}).iso` : `${stem} (two characters).iso`)
+  const out = outName ?? outputName(stem, batch.map((x) => x.character.displayName))
   const errors = check ? check.problems.filter(([l]) => l === 'error').length : 0
+  const full = batch.length >= MAX_BATCH
 
   const onProgress = (stage: string, done: number, total: number) => {
     setBusy(stage + '...')
     setProgress([done, total])
   }
 
-  // The check builds both characters in memory; a result for slots that have changed since is dropped.
+  const add = async () => {
+    const slot = await chooseSlot()
+    if (slot) store.addToBatch(slot)
+  }
+
+  // The check builds every character in memory; a result for a list that has changed since is dropped.
   const runCheck = async () => {
-    if (!a || !b || !g) return
+    if (!batch.length || !g) return
     const key = {}
     checking.current = key
     setBusy('Checking...')
     setProgress([0, 0])
     setLog('')
     try {
-      const r = await engine.call<PairCheckResult>('checkPair', [[a.character, b.character]], onProgress)
-      if (checking.current === key && store.pair[0] === a && store.pair[1] === b) {
-        store.pairCheck = r
+      const r = await engine.call<BatchCheckResult>('checkBatch', [batch.map((x) => x.character)], onProgress)
+      if (checking.current === key && store.batch === batch) {
+        store.batchCheck = r
         store.emit()
       }
     } catch (e) {
@@ -99,12 +117,12 @@ export function PairPage() {
   }
 
   useEffect(() => {
-    if (a && b && g && !check && checking.current === null) void runCheck()
+    if (batch.length && g && !check && checking.current === null) void runCheck()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [a, b, g, check])
+  }, [batch, g, check])
 
   const runPatch = async () => {
-    if (!a || !b || !check || check.token === null) return
+    if (!batch.length || !check || check.token === null) return
     const chosen = await choosePatchTarget(out)
     if (!chosen) return
     const [target, savedAs] = chosen
@@ -114,7 +132,7 @@ export function PairPage() {
     setBusy('Starting...')
     setProgress([0, 0])
     try {
-      const text = await engine.call<string>('patchPair', [[a.character, b.character], target, g?.verified ?? false, check.token], onProgress)
+      const text = await engine.call<string>('patchBatch', [batch.map((x) => x.character), target, g?.verified ?? false, check.token], onProgress)
       setLog(text)
       setReportText(text)
       if (target.kind === 'opfs') {
@@ -130,23 +148,31 @@ export function PairPage() {
 
   return (
     <div className="page">
-      <h3>Patch two characters</h3>
+      <h3>Multi-Character Patch</h3>
       <Note>
-        Puts two characters into the game at once, as the 19th and 20th fighters.
-        Choose a .imperfect file for each. Everything is checked against your disc before anything is written.
+        Puts up to {MAX_BATCH} characters into the game at once, as the 19th to the 27th fighters: the third row of the select screen.
+        Choose a .imperfect file for each, in the order they should appear. Everything is checked against your disc before anything is written.
+      </Note>
+      <Note>
+        Characters with a tinted aura or changed gameplay each need a line in the game's small tuning list, so only a few of them fit in one patch.
+        Characters with the base's or a swapped aura and the base's gameplay have no such limit.
       </Note>
       <div className="slots">
-        <SlotCard index={0} slot={a} busy={busy !== null} />
-        <SlotCard index={1} slot={b} busy={busy !== null} />
+        {batch.map((slot, i) => <SlotCard key={i} index={i} slot={slot} count={batch.length} busy={busy !== null} />)}
       </div>
-      <div className="row"><button onClick={() => store.swapPair()} disabled={busy !== null || (!a && !b)}>Swap the order</button></div>
+      {!batch.length && <p className="muted">No characters chosen.</p>}
+      <div className="row">
+        <button onClick={add} disabled={busy !== null || full}>Add a character...</button>
+        <button onClick={() => store.addToBatch(openSlot())} disabled={busy !== null || full} title={`Add ${store.character.displayName}, the character open in the editor`}>Add the open character</button>
+        <span className="muted">{batch.length} of {MAX_BATCH} slots</span>
+      </div>
 
       <h3>Check</h3>
       {!g ? <Note>Choose your game disc in the Game step first.</Note>
-        : !(a && b) ? <Note>Choose both characters to check them.</Note>
+        : !batch.length ? <Note>Add a character to check it.</Note>
         : check ? (
           <>
-            <ProblemList problems={check.problems} ok="No conflicts or size problems found: both characters build against this disc." />
+            <ProblemList problems={check.problems} ok={`No conflicts or size problems found: ${batch.length === 1 ? 'the character builds' : `all ${batch.length} characters build`} against this disc.`} />
             {check.token !== null && (
               <div className="form">
                 {check.models.map(([name, size]) => (
@@ -165,12 +191,12 @@ export function PairPage() {
                 <pre className="log">{check.notes.join('\n')}</pre>
               </details>
             )}
-            <div className="row"><button onClick={() => { store.pairCheck = null; store.emit() }} disabled={busy !== null}>Check again</button></div>
+            <div className="row"><button onClick={() => { store.batchCheck = null; store.emit() }} disabled={busy !== null}>Check again</button></div>
           </>
         ) : !busy && <div className="row"><button onClick={runCheck}>Check</button></div>}
 
       <h3>Patch the game</h3>
-      <Note>Writes a new disc image with both characters. Your disc is only read. It must be an unmodified dump: patch a fresh copy each time, not an image that was already patched.</Note>
+      <Note>Writes a new disc image with every character above. Your disc is only read. It must be an unmodified dump: patch a fresh copy each time, not an image that was already patched.</Note>
       <div className="form">
         <label>Your disc:</label>
         <span>{g ? g.name : 'choose it in the Game step'}</span>
