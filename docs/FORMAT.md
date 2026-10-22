@@ -96,7 +96,7 @@ Game bone numbers in `model` belong to the base's body class (male, female or br
 `mode`:
 - `base`: the base's aura and effects.
 - `swap`: the two costumes exchange the base's normal and alternate auras, effects and intro cutscenes.
-- `tint`: copies of the base's effects recolored to `color` (costume 1) and `alt_color` (costume 2).
+- `tint`: copies of the base's effects recolored to `color` (costume 1) and `alt_color` (costume 2), each `#RRGGBB` or `#RRGGBBAA`. The opacity (`AA`, default `FF`) scales the alpha of every recolored effect color, so `00` hides the aura.
   The power-mode glow keeps the base's color.
 
 `tint` (optional, default `all`), what a `tint` copies:
