@@ -1,11 +1,11 @@
 import * as effects from '../../core/build/effects'
-import { ColorButton, Note } from '../components/common'
+import { ColorButton, Note, Warning } from '../components/common'
 import { store, useStore } from '../store'
 
 const TEXTS: [string, string][] = [
-  ['base', "The normal base character's"],
+  ['base', "Base: The normal base character's"],
   ['swap', "Swapped: costume 1 gets the base's alternate aura and costume 2 the normal one"],
-  ['tint', "Tinted: the base's effects recolored"],
+  ['tint', "Tinted: the base's aura and effects are recolored"],
 ]
 
 const LEVELS: [string, string][] = [
@@ -55,6 +55,20 @@ export function AuraPage() {
             onChange={() => { c.aura.mode = mode; edited() }} /> {text}
         </label>
       ))}
+      {tint && (
+        <Warning title="Tinting the aura is memory-intensive">
+          <p>
+            A tint copies the base's effects into the game's effect memory.
+            When the copies don't fit, the patch enlarges that memory, taking memory from what the characters are loaded into.
+          </p>
+          <p>
+            A tint paired with a large custom model can easily run a match out of memory (in Dolphin, showing an error like "Invalid write to 0x0000000c"). If that happens, try switching to <b>Idle and power-up effects only</b>. Alternatively, just use the <b>Base</b> or <b>Swapped</b> options, as these don't take any additional memory.
+          </p>
+          <p>
+            Note that tinted auras also require their own tuning files, and only a few of those fit when several characters are patched into a single ISO together.
+          </p>
+        </Warning>
+      )}
       <div className="form">
         <label>Tinted effects</label>
         <select value={c.aura.tint} disabled={!tint} onChange={(e) => { c.aura.tint = e.target.value; edited() }}>
@@ -70,11 +84,6 @@ export function AuraPage() {
       </Note>
       <Note>
         The glow the game draws in power mode belongs to the base's cast name and cannot be recolored yet (its file has no reader); a tint changes the effects around it.
-      </Note>
-      <Note>
-        A tint's copies take room in the game's effect memory. When they don't fit, the patch enlarges it, and that memory comes out of what a match has to load into.
-        If a match crashes while loading (in Dolphin, "Invalid write to 0x0000000c"), choose Idle and power-up effects only, or the Base or Swap aura:
-        a full tint and large custom models together can run the game out of memory.
       </Note>
       <p>{cost}</p>
     </div>
