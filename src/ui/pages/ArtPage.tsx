@@ -4,6 +4,7 @@ import { decodePng, encodePng } from '../../core/image/png'
 import type { RgbaImage } from '../../core/image/rgba'
 import { decodePicture, pickFile } from '../../io/files'
 import { CropDialog } from '../components/CropDialog'
+import { GenerateArtDialog } from '../components/GenerateArtDialog'
 import { ImageView, Note } from '../components/common'
 import { PlacementDialog } from '../components/PlacementDialog'
 import type { Character } from '../../core/package/imperfect'
@@ -66,6 +67,7 @@ export function ArtPage() {
   const details = s.baseDetails()
   const sizes = s.game ? (details?.sizes ?? null) : null
   const [placing, setPlacing] = useState(false)
+  const [generating, setGenerating] = useState(false)
   const [crop, setCrop] = useState<{ slot: string; image: RgbaImage; size: [number, number]; title: string } | null>(null)
 
   const applyPicture = (slot: string, kind: string, title: string, im: RgbaImage, force = false) => {
@@ -86,6 +88,12 @@ export function ArtPage() {
     <div className="page">
       <h3>Portraits, tile and HUD</h3>
       <Note>Art is optional, defaulting to the base character's art when unset. Exact-size pictures open a crop box when they don't fit.</Note>
+      <div className="row">
+        <button disabled={!s.game} onClick={() => setGenerating(true)}>
+          {!s.game ? 'Select a disc image first to generate art' : 'Generate art from pictures...'}
+        </button>
+        <Note>Makes the loading screens, HUD portraits and select tiles from one full-body picture per costume.</Note>
+      </div>
       <div className="row">
         <button disabled={!s.game || !c.files.has('ui/select_ready.png')} onClick={() => setPlacing(true)}>
           {!s.game ? 'Select a disc image first to allow portrait placement' : 'Place the portrait...'}
@@ -125,6 +133,7 @@ export function ArtPage() {
         ))}
       </div>
       {placing && <PlacementDialog onClose={() => setPlacing(false)} />}
+      {generating && <GenerateArtDialog onClose={() => setGenerating(false)} />}
       {crop && <CropDialog image={crop.image} size={crop.size} title={crop.title} onDone={(im) => {
         const slot = crop.slot
         setCrop(null)

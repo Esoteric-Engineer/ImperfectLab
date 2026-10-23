@@ -726,6 +726,59 @@ table.credits input {
   user-select: none;
 }
 
+.artgen-pictures {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 8px;
+}
+
+.artgen-picture {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.artgen {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.artgen-editor canvas {
+  display: block;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.artgen-fields input[type='number'] {
+  width: 76px;
+}
+
+.artgen-side {
+  min-width: 300px;
+}
+
+.artgen-previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.artgen-previews figure {
+  margin: 0;
+}
+
+.artgen-previews figcaption {
+  color: var(--muted);
+  margin: 4px 0;
+}
+
+button.toggle.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .report {
   color: var(--text);
 }
