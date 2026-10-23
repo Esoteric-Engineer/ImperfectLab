@@ -10,6 +10,7 @@ export const SLOTS = nvbtool.SLOTS
 const RESISTANCE = [134, 135, 136, 137, 138]
 export const FIELDS: Record<string, number> = { run_speed: 104, sprint_speed: 157, rage_per_super: 189, rage_duration: 192 }
 export const POWER_EFFECTS = [98, 99]
+export const AIM_RANGE = 2
 const LIST_BUFFER = 0x200
 
 type Value = number | string
@@ -56,6 +57,7 @@ export class Tuning {
     const out: Record<string, number> = {}
     for (const [k, fid] of Object.entries(FIELDS)) out[k] = this.num(fid)
     out.damage_taken = this.damageTaken()
+    out.throw_reach = this.num(AIM_RANGE)
     return out
   }
 
@@ -108,6 +110,9 @@ export class Tuning {
         this.set(nvb, fid, taken.map((x) => 1.0 - (k !== null ? x * k : t)))
       }
     }
+
+    const reach = gameplay.throw_reach as number | undefined
+    if (reach !== null && reach !== undefined) this.set(nvb, AIM_RANGE, new Array(SLOTS).fill(reach))
     for (const [fid, names] of effects ?? []) this.set(nvb, fid, names)
     return [`Misc/PLAYER_${internal}.nvb`, nvbtool.buildNvb(nvb), this.listed(internal)]
   }

@@ -30,6 +30,13 @@ const FILLER: Record<number, string> = { [NORMAL_TABLE]: 'plr_thing', [ALT_TABLE
 // fn_803A38DC allocates 300,000 bytes and its allocator fn_803A3460 checks the same limit.
 const EFFECT_CACHE_SIZE: [number, string][] = [[0x3a048c, '3d200004612993e0'], [0x3a092c, '3c600004606393e0']]
 
+// fn_8019DB24 (an animation's time setter) rewritten in place, setting the time forward to an event 0x7E's frame mirrors it about that frame (build/basemoves.ts).
+const MIRROR_SKIP: [number, string, string] = [0x8019db24,
+  '9421ffe87c0802a6bfc100109001001c7c3f0b787c7e1b78d03f0008c01f0008d01e0004801e001c2c0000004082000848000028801e0024' +
+  '7c0903785520103a807e0020388000007c0503784bfd48a9480000084800000481610000800b00047c0803a6bbcbfff87d615b784e800020',
+  '8083001c2884000041860048c0030004fc0100004081003c80a4003c80c4004034a5ffff4180002ca0e600042807007e40820010c0460000' +
+  'fc0208004182000c38c6000c4bffffdcec410028ec21102ad02300044d86002080a3002454a5103a80630020388000004bfd488c60000000']
+
 const TABLE_REFS: [number, number, number][] = [
   [0x42ece4, 0x42ece8, 0x804ca51c], [0x42ecf8, 0x42ecfc, 0x804cab0c], [0x42ed0c, 0x42ed18, 0x804cb0fc], [0x44c0a8, 0x44c0b8, 0x804cb0fc],
 ]
@@ -102,6 +109,13 @@ export function growEffectCache(dol: Uint8Array, size: number): Uint8Array {
     next.set([(size >>> 8) & 255, size & 255], 6)
     put(out, off, fromHex(old), next)
   }
+  return out
+}
+
+export function mirrorSkip(dol: Uint8Array): Uint8Array {
+  const out = dol.slice()
+  const [va, old, next] = MIRROR_SKIP
+  put(out, fileOffset(out, va), fromHex(old), fromHex(next))
   return out
 }
 

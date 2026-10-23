@@ -32,6 +32,8 @@ export const GAMEPLAY: Record<string, [number, number, boolean]> = {
   damage_taken: [0.1, 3.0, false], health: [10, 1000, true], run_speed: [1.0, 30.0, false],
   sprint_speed: [1.0, 40.0, false], rage_per_super: [0.0, 100.0, false], rage_duration: [1000, 120000, true],
 }
+export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable'] }
+export const THROW_REACH: [number, number] = [8, 35]
 export const POSES = ['rest', 'ready', 'readyalt'] as const
 export type Pose = (typeof POSES)[number]
 
@@ -65,6 +67,11 @@ export type Gameplay = Partial<Record<'damage_taken' | 'health' | 'run_speed' | 
   wire_swing?: boolean
 }
 
+export interface BaseMoves {
+  throw_reach?: number
+  throw_cable?: boolean
+}
+
 export interface Character {
   internalName: string
   displayName: string
@@ -79,6 +86,7 @@ export interface Character {
   aura: { mode: string; tint: string; color: string; alt_color: string }
   stats: { normal: number[]; alt: number[] }
   gameplay: Gameplay
+  baseMoves: BaseMoves
   ui: { select: Partial<Record<Pose, Placement>>; fade: number; strip_scale: number | null; ready_voice: string | null; banner: boolean }
   files: Map<string, Uint8Array>
 }
@@ -106,6 +114,7 @@ export function newCharacter(): Character {
     aura: { mode: 'base', tint: 'all', color: '#40A0FF', alt_color: '#50FF50' },
     stats: defaultStats(),
     gameplay: {},
+    baseMoves: {},
     ui: { select: {}, fade: 36, strip_scale: null, ready_voice: null, banner: true },
     files: new Map(),
   }
@@ -145,6 +154,7 @@ export function manifest(c: Character): Json {
     aura: c.aura,
     stats: { display: c.stats, gameplay: c.gameplay },
     ui: c.ui,
+    base_moves: c.baseMoves,
     moves: {},
     files: Object.fromEntries([...files].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, v]) => [k, sha(v)])),
   }
@@ -162,8 +172,14 @@ export function problems(c: Character): Problem[] {
   const suffixes = c.materials.filter((m) => m.include).map((m) => m.suffix)
   if (new Set(suffixes).size !== suffixes.length) out.push(['error', 'two materials have the same game name suffix'])
   for (const m of c.materials) if (m.texture && !c.files.has(m.texture)) out.push(['error', `the texture of ${m.name} is missing`])
+  const unsupported = Object.keys(c.baseMoves).filter((k) => !(BASE_MOVES[c.base] ?? []).includes(k as keyof BaseMoves))
+  if (unsupported.length) out.push(['error', `${unsupported.join(', ')} only apply to a ${movesBases(unsupported[0])} base: untick them on the Stats page`])
   if (!c.files.get('ui/select_ready.png')) out.push(['warning', "no select-screen portrait: the base's portraits are used"])
   return out
+}
+
+function movesBases(key: string): string {
+  return Object.keys(BASE_MOVES).filter((b) => BASE_MOVES[b].includes(key as keyof BaseMoves)).map((b) => BASES[b][0]).join(' or ')
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -205,7 +221,7 @@ function upgrade(m: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Character {
-  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'stats', 'ui', 'moves', 'files'], 'the manifest')
+  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'stats', 'ui', 'base_moves', 'moves', 'files'], 'the manifest')
   if (m.format !== FORMAT) throw new LabError('not a .imperfect file')
   upgrade(m)
   if (m.game !== GAME) throw new LabError(`this file is for ${m.game}, not ${GAME}`)
@@ -307,7 +323,15 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
       glow: p.glow ? color(p.glow, 'glow') : null,
     }
   }
-  typed(m.moves ?? {}, 'object', 'moves')
+  const mv = keys(m.base_moves ?? {}, ['throw_reach', 'throw_cable'], 'base_moves')
+  c.baseMoves = {}
+  const reach = num(mv.throw_reach, 'base_moves.throw_reach', THROW_REACH[0], THROW_REACH[1])
+  if (reach !== null) c.baseMoves.throw_reach = reach
+  if (mv.throw_cable !== null && mv.throw_cable !== undefined) c.baseMoves.throw_cable = typed<boolean>(mv.throw_cable, 'boolean', 'base_moves.throw_cable')
+  for (const k of Object.keys(c.baseMoves)) {
+    if (!(BASE_MOVES[c.base] ?? []).includes(k as keyof BaseMoves)) throw new LabError(`manifest: base_moves.${k} only applies to a ${movesBases(k)} base`)
+  }
+  keys(m.moves ?? {}, [], 'moves')
   c.glb = files.get('model/model.glb') ?? null
   files.delete('model/model.glb')
   c.files = files

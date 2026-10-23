@@ -22,6 +22,7 @@ import { Model } from '../model/glb'
 import { Skeleton } from '../model/skeleton'
 import { type Character, image as readImage, type Material, problems, type Placement } from '../package/imperfect'
 import * as effects from './effects'
+import * as basemoves from './basemoves'
 import * as portraits from './portraits'
 import * as shaders from './shaders'
 import * as templates from './templates'
@@ -89,6 +90,11 @@ export class Builder {
       if (this.src.has(`Bundles/${n}${costume}.ngm`)) throw new LabError(`the game already has a model bundle ${n}${costume}: pick another internal name`)
     }
     if (this.src.has(`Misc/PLAYER_${c.internalName}.nvb`)) throw new LabError(`the game already has a tuning file for ${c.internalName}: pick another internal name`)
+    if (c.baseMoves.throw_reach !== undefined) {
+      for (const name of [`Motions/${basemoves.motionSetName(c.internalName)}`, `Bundles/${n}.ngb`]) {
+        if (this.src.has(name)) throw new LabError(`the game already has ${name}: pick another internal name`)
+      }
+    }
     const hud = gshtool.readGsh(this.src.entry('HUD/hudENG.1.gsh'))
     if (hud.records.has('plr_' + n) || hud.records.has('plr_alt' + n)) throw new LabError(`the game already has HUD portraits named plr_${n}: pick another internal name`)
   }
@@ -100,6 +106,7 @@ export class Builder {
     this.r.dol = D.patch(this.src.dol, c.internalName, c.displayName, c.stats.normal, c.stats.alt)
     this.buildFiles()
     if (this.r.cache !== null) this.r.dol = D.growEffectCache(this.r.dol, this.r.cache)
+    if (c.baseMoves.throw_reach !== undefined) this.r.dol = D.mirrorSkip(this.r.dol)
     return this.r
   }
 
@@ -110,7 +117,8 @@ export class Builder {
     this.progress('Templates, materials and tuning')
     const [effect1, power, projectiles] = this.effects()
     const description = this.tuning(power)
-    this.templates(effect1, description, projectiles)
+    const motionSet = this.baseMoves()
+    this.templates(effect1, description, projectiles, motionSet)
     this.r.sets.set('Materials/Shaders/shaders.nsa', shaders.build(this.src.entry('Materials/Shaders/shaders.nsa'), materials, this.texture2))
     this.progress('Select screen, portraits and HUD')
     this.ui()
@@ -207,6 +215,7 @@ export class Builder {
       const copy = new Map([...tris].map(([k, v]) => [k, [...v]]))
       const render = bundle.renderModel(renderBase, copy, normals, nm.MODEL, mats,
         renderBase.meshes.length ? renderBase.meshes[0][5] : [0, 0, 0], stats)
+      if (c.baseMoves.throw_reach !== undefined) basemoves.hitSegment(render)
       const [data] = bundle.buildNgm(ngm, render, renames)
       const otherNames = new Set(models.slice(1).map((m) => m.name.toLowerCase()))
       const missing = [...renames.keys()].filter((old) => !otherNames.has(old))
@@ -294,7 +303,17 @@ export class Builder {
     return c.internalName
   }
 
-  templates(effect1: [string, string] | null, description: string | null, extra: nottool.Template[]) {
+  // The character's own motion set, when a move changes an animation.
+  baseMoves(): string | null {
+    const reach = this.c.baseMoves.throw_reach
+    if (reach === undefined) return null
+    const m = basemoves.throwFiles(this.src, this.base, this.c.internalName, reach)
+    for (const [k, v] of m.files) this.r.adds.set(k, v)
+    this.note(`baton throw: reaches ${reach} m (${this.base.label}'s about 8)`)
+    return m.motionSet
+  }
+
+  templates(effect1: [string, string] | null, description: string | null, extra: nottool.Template[], motionSet: string | null = null) {
     const c = this.c, gp = c.gameplay
     let on = 0, off = 0
     if (gp.lift) {
@@ -308,7 +327,7 @@ export class Builder {
     }
     const mode = c.aura.mode === 'swap' ? 'swap' : 'base'
     this.r.sets.set('Misc/Global.not', templates.build(this.src.entry('Misc/Global.not'), this.base, c.internalName, mode, effect1, description,
-      on || off ? [on, off] : null, gp.health ?? null, extra))
+      on || off ? [on, off] : null, gp.health ?? null, extra, motionSet, c.baseMoves.throw_cable ?? true))
   }
 
   picture(slot: string): RgbaImage | null {
@@ -415,7 +434,9 @@ export class Builder {
 
 // The gameplay fields that go in the character's own tuning file.
 export function tuningFields(c: Character): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(c.gameplay).filter(([k]) => k in tuning.FIELDS || k === 'damage_taken'))
+  const out: Record<string, unknown> = Object.fromEntries(Object.entries(c.gameplay).filter(([k]) => k in tuning.FIELDS || k === 'damage_taken'))
+  if (c.baseMoves.throw_reach !== undefined) out.throw_reach = c.baseMoves.throw_reach
+  return out
 }
 
 export function defaultPlacement(picture: RgbaImage): Placement {
@@ -468,6 +489,7 @@ export function report(characters: Character | Character[], result: Result): str
   lines.push('')
   if (chars.length === 1) lines.push('main.dol: roster record 19, select-screen limits 18 -> 19')
   else lines.push(`main.dol: roster records 19 to ${18 + chars.length} in a new data section, select-screen limits 18 -> ${18 + chars.length}`, `main.dol: arena starts at 0x${D.arenaLo(result.dol!).toString(16).toUpperCase()}`)
+  if (chars.some((c) => c.baseMoves.throw_reach !== undefined)) lines.push('main.dol: fn_8019DB24 mirrors a long baton throw\'s return on a hit')
   const cache = result.dol ? D.readEffectCache(result.dol) : null
   if (cache && cache !== nfxtool.CACHE_SIZE) lines.push(`main.dol: effect cache ${nfxtool.CACHE_SIZE} -> ${cache} bytes`)
   const sorted = (m: Map<string, Uint8Array>) => [...m].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))

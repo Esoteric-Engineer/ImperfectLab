@@ -113,6 +113,7 @@ export function buildBatch(source: GameSource, chars: Batch, progress: Progress 
     r.cache = Math.max(...caches)
     r.dol = D.growEffectCache(r.dol, r.cache)
   }
+  if (batch.some((c) => c.baseMoves.throw_reach !== undefined)) r.dol = D.mirrorSkip(r.dol)
   r.notes = [...notes, ...results.flatMap((x, i) => x.notes.map((n) => `${batch[i].displayName}: ${n}`))]
   return r
 }

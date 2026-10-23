@@ -54,6 +54,22 @@ describe('round trip', () => {
     expect(msgs).toContain('display name')
   })
 
+  it('saves and loads base moves', () => {
+    const c = character()
+    c.base = 'daredevil'
+    c.baseMoves = { throw_reach: 35, throw_cable: false }
+    const d = imperfect.load(imperfect.save(c))
+    expect(d.baseMoves).toEqual({ throw_reach: 35, throw_cable: false })
+  })
+
+  it('keeps base moves to the bases that have them', () => {
+    const c = character()
+    c.baseMoves = { throw_reach: 20 }
+    expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes('Daredevil'))).toBe(true)
+    c.base = 'daredevil'
+    expect(imperfect.problems(c).filter(([l]) => l === 'error')).toEqual([])
+  })
+
   it('slims a GLB', () => {
     const raw = makeGlb(undefined, undefined, pngBytes())
     const slim = imperfect.slimGlb(raw, new Set())
@@ -113,6 +129,11 @@ describe('hostile files', () => {
       (m) => (m.aura.mode = 'rainbow'),
       (m) => (m.aura.tint = 'most'),
       (m) => (m.model.mapping = { pelvis: 'x' }),
+      (m) => (m.base_moves = { throw_reach: 20 }),
+      (m) => ((m.base = 'daredevil'), (m.moves = { throw_reach: 20 })),
+      (m) => ((m.base = 'daredevil'), (m.base_moves = { throw_reach: 100 })),
+      (m) => ((m.base = 'daredevil'), (m.base_moves = { throw_cable: 'no' })),
+      (m) => ((m.base = 'daredevil'), (m.base_moves = { grab: 'thing' })),
     ]
     for (const edit of cases) rejected(withManifest(files(), edit))
   })

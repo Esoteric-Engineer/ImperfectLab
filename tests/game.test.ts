@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as effects from '../src/core/build/effects'
+import * as basemoves from '../src/core/build/basemoves'
 import { buildBatch, checkBatch, ordinal } from '../src/core/build/batch'
 import { Builder, report } from '../src/core/build/patch'
 import * as templates from '../src/core/build/templates'
@@ -11,6 +12,8 @@ import * as D from '../src/core/game/dol'
 import * as R from '../src/core/game/roster'
 import { Apt } from '../src/core/mnroi/apt'
 import * as nfxtool from '../src/core/mnroi/nfxtool'
+import * as ngbtool from '../src/core/mnroi/ngbtool'
+import * as ngmtool from '../src/core/mnroi/ngmtool'
 import * as nvbtool from '../src/core/mnroi/nvbtool'
 import { Model } from '../src/core/model/glb'
 import * as mapping from '../src/core/model/mapping'
@@ -53,6 +56,16 @@ describe.skipIf(!ISO)('main.dol', () => {
     const out = D.growEffectCache(dol, 0x4a400)
     expect(D.readEffectCache(out)).toBe(0x4a400)
     expect(() => D.growEffectCache(out, 0x4a400)).toThrow(LabError)
+  })
+
+  it('rewrites only the animation time setter for a long throw', () => {
+    const dol = gameSource().dol
+    const out = D.mirrorSkip(dol)
+    const at = D.fileOffset(dol, 0x8019db24)
+    const changed = [...out].flatMap((b, i) => (b !== dol[i] ? [i] : []))
+    expect(changed.length).toBeGreaterThan(0)
+    expect(changed.every((i) => i >= at && i < at + 0x70)).toBe(true)
+    expect(() => D.mirrorSkip(out)).toThrow(LabError)
   })
 
   it('refuses a patched main.dol', () => {
@@ -415,5 +428,70 @@ describe.skipIf(!ISO)('game', () => {
     c.materials = [{ ...imperfect.newMaterial(0, 'skin', true, '', [64, 64]), texture: 'textures/skin.png' }]
     c.files = new Map([['textures/skin.png', pngBytes()]])
     expect(() => new Builder(src(), c).build()).toThrow(LabError)
+  })
+})
+
+describe.skipIf(!ISO)('base moves', () => {
+  const src = () => gameSource()
+  const daredevil = () => {
+    const c = tinted('daredevil')
+    c.aura = { ...c.aura, mode: 'base' }
+    return c
+  }
+
+  it('reads and writes animation bundles byte for byte', () => {
+    for (const name of ['daredevil', 'daredevil-t0', 'daredevil-t1', 'daredevil-t2', 'thing']) {
+      const data = src().entry(`Bundles/${name}.ngb`)
+      expect(ngbtool.build(ngbtool.parse(data))).toEqual(data)
+    }
+  })
+
+  it('flies the club straight out to the reach and back', () => {
+    const [, models] = ngmtool.read(src().entry('Bundles/daredevil.ngm'))
+    const rec = ngbtool.parse(src().entry('Bundles/daredevil.ngb')).find((r) => r.name === 'Daredevil_RangedAttack.nad')!
+    const out = basemoves.longThrow(rec, models[0], 35)
+    const at = (t: number) => ngbtool.pose(models[0], out, t)[basemoves.CLUB][1]
+    const start = at(13), turn = at(13 + 18)
+    expect(out.length).toBe(rec.length + 25)
+    expect(turn[1] - start[1]).toBeCloseTo(35, 1)
+    expect(Math.abs(turn[0] - start[0])).toBeLessThan(0.2)
+    expect(Math.abs(turn[2] - start[2])).toBeLessThan(0.2)
+    expect(out.events.filter(([, t]) => t === 0x53 || t === basemoves.MIRROR_EVENT).map(([f, t]) => [f, t])).toEqual([[31, 0x53], [31, basemoves.MIRROR_EVENT]])
+    // mirrored about the turn, the return passes where the way out did
+    for (const i of [3, 9, 15]) expect(at(31 + i)[1]).toBeCloseTo(at(31 - i)[1], 1)
+    // the rest of the body only moves in time
+    const other = (r: ngbtool.Record) => r.tracks.filter(([b]) => b !== basemoves.CLUB).map(([, , k]) => k.map(([, v]) => v))
+    expect(other(out)).toEqual(other(rec))
+  })
+
+  it('builds a long baton throw', () => {
+    const c = daredevil()
+    c.baseMoves = { throw_reach: 30, throw_cable: false }
+    const r = new Builder(src(), c).build()
+    expect(r.adds.has('Motions/Synth.nms')).toBe(true)
+    for (const n of ['synth', 'synth-t0', 'synth-t1', 'synth-t2']) expect(r.adds.has(`Bundles/${n}.ngb`)).toBe(true)
+    const t = new R.Templates(r.sets.get('Misc/Global.not')!)
+    expect(R.text(t.prop('plr_Synth', R.P_MOTIONSET))).toBe('Synth.nms')
+    expect(R.text(t.prop('plr_altSynth', R.P_MOTIONSET))).toBe('Synth.nms')
+    expect(t.prop('plr_Synth', R.P_EFFECT1)).toBeNull()
+    expect(t.prop('plr_altSynth', R.P_EFFECT1)).toBeNull()
+    expect(R.text(t.prop('plr_Daredevil', R.P_MOTIONSET))).toBe('Daredevil.nms')
+    const nvb = nvbtool.parseNvb(r.adds.get('Misc/PLAYER_Synth.nvb')!)
+    const fields = nvbtool.parseNdb(src().entry('Misc/defaults.ndb')).fields('PLAYER')
+    expect(nvb.slots(tuning.AIM_RANGE, fields[tuning.AIM_RANGE][1])!.map((v) => new DataView(v.buffer, v.byteOffset).getFloat32(0, true))).toEqual(new Array(tuning.SLOTS).fill(30))
+    for (const costume of ['', '_alt']) {
+      const [, base] = ngmtool.read(src().entry(`Bundles/daredevil${costume}.ngm`))
+      const [, built] = ngmtool.read(r.adds.get(`Bundles/synth${costume}.ngm`)!)
+      const end = (m: ngmtool.Model, kind: number) => m.attachments.find(([n, k]) => n === basemoves.CLUB && k === kind)![3][12]
+      expect(end(built[0], 43) - end(base[0], 43)).toBeCloseTo(basemoves.HIT_REACH, 5)
+      expect(end(built[0], 44) - end(base[0], 44)).toBeCloseTo(-basemoves.HIT_REACH, 5)
+    }
+  })
+
+  it('keeps the cable unless asked', () => {
+    const c = daredevil()
+    c.baseMoves = { throw_reach: 20 }
+    const t = new R.Templates(new Builder(src(), c).build().sets.get('Misc/Global.not')!)
+    expect(R.text(t.prop('plr_Synth', R.P_EFFECT1))).toBe(R.text(t.prop('plr_Daredevil', R.P_EFFECT1)))
   })
 })
