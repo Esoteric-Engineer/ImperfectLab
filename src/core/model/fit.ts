@@ -140,7 +140,7 @@ export class Fit {
   private wfn = new Map<string, (v: Vec3) => Weights>()
 
   constructor(model: Model, skeleton: Skeleton, mapping: Mapping, overrides: Overrides = new Map(), scale: number | null = null,
-    torsoSquash = true, flip: boolean | null = null) {
+    torsoSquash = true, flip: boolean | null = null, floorFromMesh = false) {
     this.model = model
     this.sk = skeleton
     this.mapping = new Map(mapping)
@@ -162,7 +162,7 @@ export class Fit {
     this.target = effective(model, this.mapping, this.overrides)
     for (const [node, joint] of [...this.mapping].sort((a, b) => a[0] - b[0])) if (!this.direct.has(joint)) this.direct.set(joint, node)
     for (const [j, n] of this.overrides) if (n !== null && n !== undefined) this.direct.set(j, n)
-    this.build(scale, torsoSquash)
+    this.build(scale, torsoSquash, floorFromMesh)
   }
 
   private node(role: string): number {
@@ -175,7 +175,14 @@ export class Fit {
     return v
   }
 
-  private build(scale: number | null, torsoSquash: boolean) {
+  // the model's lowest point (its up axis is y)
+  private lowest(): number {
+    let low = Infinity
+    for (const prim of this.model.prims) for (const p of prim.pos) low = Math.min(low, p[1])
+    return Number.isFinite(low) ? low : 0
+  }
+
+  private build(scale: number | null, torsoSquash: boolean, floorFromMesh: boolean) {
     const J = this.J, R = this.roleJoint, maps = this.maps
     const avg = (role: string) => mul(add(this.d(R.get('L.' + role)!), this.d(R.get('R.' + role)!)), 0.5)
     // one scale: the model's thigh-to-foot height becomes the base's
@@ -186,7 +193,8 @@ export class Fit {
     // torso squash: kzUp lands the shoulders on the base's shoulder height, kzDown does the same for the pelvis above the ankles
     const pelvis = this.d(R.get('pelvis')!)
     const zSh = avg('upper_arm')[2]
-    const ankleZ = S * avg('foot')[2]
+    // the ankle's height is measured from z = 0, or from the model's lowest point for a model whose origin isn't on its floor
+    const ankleZ = S * (avg('foot')[2] - (floorFromMesh ? this.lowest() : 0))
     let kzUp = (J[this.node('R.upper_arm')][2] - J[this.node('pelvis')][2]) / (S * (zSh - pelvis[2]))
     let kzDown = (J[this.node('pelvis')][2] - ankleZ) / (S * (pelvis[2] - avg('foot')[2]))
     if (!torsoSquash) kzUp = kzDown = 1.0

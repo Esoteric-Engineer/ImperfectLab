@@ -357,6 +357,8 @@ function FitOptions({ report }: { report: string }) {
       </div>
       <label>Torso</label>
       <label className="check"><input type="checkbox" checked={f.torso_squash} onChange={(e) => { f.torso_squash = e.target.checked; edited() }} /> Fit the torso to the base's shoulder height</label>
+      <label>Floor</label>
+      <label className="check"><input type="checkbox" checked={!!f.floor_from_mesh} onChange={(e) => { f.floor_from_mesh = e.target.checked; edited() }} /> Stand the model on its lowest point (for a model whose origin isn't at its feet)</label>
       <label>Facing</label>
       <select value={f.flip === null ? 0 : f.flip ? 2 : 1} onChange={(e) => { f.flip = [null, false, true][Number(e.target.value)]; edited() }}>
         <option value={0}>Detect from the arms</option>

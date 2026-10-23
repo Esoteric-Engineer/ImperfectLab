@@ -44,6 +44,17 @@ describe('round trip', () => {
     expect(imperfect.save(d)).toEqual(data)
   })
 
+  it('writes fit.floor_from_mesh only when it is on', () => {
+    const c = character()
+    expect((imperfect.manifest(c).model as Json).fit).toEqual({ scale: null, torso_squash: true, flip: null })
+    expect(imperfect.load(imperfect.save(c)).fit.floor_from_mesh).toBe(false)
+    c.fit.floor_from_mesh = true
+    expect((imperfect.manifest(c).model as Json).fit).toEqual({ scale: null, torso_squash: true, flip: null, floor_from_mesh: true })
+    const d = imperfect.load(imperfect.save(c))
+    expect(d.fit.floor_from_mesh).toBe(true)
+    expect(imperfect.save(d)).toEqual(imperfect.save(c))
+  })
+
   it('finds problems', () => {
     const c = character()
     expect(imperfect.problems(c).filter((p) => p[0] === 'error')).toEqual([])

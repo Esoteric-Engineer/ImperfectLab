@@ -75,6 +75,22 @@ describe('fitting', () => {
   it('fits a model', () => expect(checkFit(MIXAMO).flip).toBe(false))
   it('turns a backwards model', () => expect(checkFit(MIXAMO.map(([j, p, v]) => [j, p, [-v[0], v[1], -v[2]]])).flip).toBe(true))
 
+  it('stands a model whose origin is not on its floor', () => {
+    const footDistance = (lift: number, floorFromMesh: boolean) => {
+      const joints: JointSpec[] = MIXAMO.map(([j, p, v]) => [j, p, [v[0], v[1] + lift, v[2]]])
+      const sk = fakeSkeleton()
+      const model = new Model(makeGlb(joints))
+      const auto = mapping.autoMap(model, sk)
+      const f = new Fit(model, sk, auto.mapping, auto.overrides, null, true, null, floorFromMesh)
+      const k = 3 * joints.findIndex(([j]) => j === 'RightFoot')
+      const [q] = f.vertex(model.prims[0].pos[k], model.prims[0].nrm[k], model.prims[0].skin[k])
+      return dist(q, sk.positions()[sk.node('R.foot')!])
+    }
+    expect(footDistance(-1.5, false)).toBeGreaterThan(1)
+    expect(footDistance(-1.5, true)).toBeLessThan(0.15)
+    expect(footDistance(0.7, true)).toBeLessThan(0.15)
+  })
+
   it('splits twist weights', () => {
     const sk = fakeSkeleton()
     const model = new Model(makeGlb())

@@ -264,7 +264,7 @@ export class Service {
     const sk = this.skeleton(c.base)
     if (!sk) throw new LabError(`${R.label(c.base)}'s skeleton is not supported yet; pick another base`)
     const base = this.base(c.base)
-    const f = new Fit(m, sk, c.mapping, c.overrides, c.fit.scale, c.fit.torso_squash ?? true, c.fit.flip)
+    const f = new Fit(m, sk, c.mapping, c.overrides, c.fit.scale, c.fit.torso_squash ?? true, c.fit.flip, c.fit.floor_from_mesh ?? false)
     const included = c.materials.filter((x) => x.include)
     const slots: MaterialSlots = new Map()
     for (const x of c.materials) slots.set(x.gltfMaterial, [null, false])
