@@ -15,7 +15,7 @@ import { RgbaImage } from '../core/image/rgba'
 import * as gshtool from '../core/mnroi/gshtool'
 import * as ngmtool from '../core/mnroi/ngmtool'
 import * as bundle from '../core/model/bundle'
-import { Fit, type MaterialSlots } from '../core/model/fit'
+import { Fit, type MaterialSlots, type Tri } from '../core/model/fit'
 import { Model } from '../core/model/glb'
 import * as mapping from '../core/model/mapping'
 import { Skeleton } from '../core/model/skeleton'
@@ -259,28 +259,49 @@ export class Service {
     return mapping.autoMap(this.model, sk)
   }
 
-  preview(c: imperfect.Character, needBase: boolean): PreviewResult {
+  private fitted(c: imperfect.Character): { m: Model; sk: Skeleton; f: Fit; included: imperfect.Character['materials']; tris: Map<number, Tri[]> } {
     const m = this.currentModel()
     const sk = this.skeleton(c.base)
     if (!sk) throw new LabError(`${R.label(c.base)}'s skeleton is not supported yet; pick another base`)
-    const base = this.base(c.base)
-    const f = new Fit(m, sk, c.mapping, c.overrides, c.fit.scale, c.fit.torso_squash ?? true, c.fit.flip)
+    const f = new Fit(m, sk, c.mapping, c.overrides, c.fit.scale, c.fit.torso_squash ?? true, c.fit.flip, c.fit.floor_from_mesh ?? false)
     const included = c.materials.filter((x) => x.include)
     const slots: MaterialSlots = new Map()
     for (const x of c.materials) slots.set(x.gltfMaterial, [null, false])
     included.forEach((x, i) => slots.set(x.gltfMaterial, [i, x.twoSided, x.bind]))
-    const tris = f.triangles(slots)
+    return { m, sk, f, included, tris: f.triangles(slots) }
+  }
+
+  private build(c: imperfect.Character, tris: Map<number, Tri[]>, included: imperfect.Character['materials']): PreviewResult['stats'] {
+    const base = this.base(c.base)
+    const ngm = base.bundleFiles()[0]
+    const [, models] = ngmtool.read(ngm)
+    const nidx = new bundle.NormalIndex(bundle.readNormals(this.src().entry('Misc/NormalTable.ngn')))
+    const render = bundle.renderModel(models[0], new Map([...tris].map(([k, v]) => [k, [...v]])), nidx, 'x', included.map(() => 'm'), models[0].meshes[0][5])
+    const [data] = bundle.buildNgm(ngm, render, new Map())
+    return [render.meshes.length, render.indices.length / 3, data.length, ngm.length]
+  }
+
+  fitCheck(c: imperfect.Character): string | null {
+    if (!this.model) return null
+    try {
+      const { included, tris } = this.fitted(c)
+      this.build(c, tris, included)
+      return null
+    } catch (e) {
+      if (!(e instanceof LabError)) throw e
+      return e.message
+    }
+  }
+
+  preview(c: imperfect.Character, needBase: boolean): PreviewResult {
+    const { m, sk, f, included, tris } = this.fitted(c)
+    const base = this.base(c.base)
     const images = materialImages(m, c)
     const bySlot = new Map(included.map((x, i) => [i, images.get(x.gltfMaterial) ?? null]))
     const fitted = fittedMeshes(tris, bySlot)
     let stats: PreviewResult['stats']
     try {
-      const ngm = base.bundleFiles()[0]
-      const [, models] = ngmtool.read(ngm)
-      const nidx = new bundle.NormalIndex(bundle.readNormals(this.src().entry('Misc/NormalTable.ngn')))
-      const render = bundle.renderModel(models[0], new Map([...tris].map(([k, v]) => [k, [...v]])), nidx, 'x', included.map(() => 'm'), models[0].meshes[0][5])
-      const [data] = bundle.buildNgm(ngm, render, new Map())
-      stats = [render.meshes.length, render.indices.length / 3, data.length, ngm.length]
+      stats = this.build(c, tris, included)
     } catch (e) {
       if (!(e instanceof LabError)) throw e
       stats = e.message

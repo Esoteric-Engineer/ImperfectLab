@@ -93,7 +93,7 @@ export interface Character {
   glb: Uint8Array | null
   mapping: Map<number, string>
   overrides: Map<string, number>
-  fit: { scale: number | null; torso_squash: boolean; flip: boolean | null }
+  fit: { scale: number | null; torso_squash: boolean; flip: boolean | null; floor_from_mesh?: boolean }
   materials: Material[]
   aura: { mode: string; tint: string; color: string; alt_color: string }
   flames: Flames
@@ -161,6 +161,11 @@ function sha(body: Uint8Array): string {
   return toHex(sha256(body))
 }
 
+function fitJson(fit: Character['fit']): Json {
+  const { floor_from_mesh: floor, ...rest } = fit
+  return floor ? { ...rest, floor_from_mesh: true } : rest
+}
+
 export function manifest(c: Character): Json {
   const files = new Map(c.files)
   if (c.glb !== null) files.set('model/model.glb', c.glb)
@@ -172,7 +177,7 @@ export function manifest(c: Character): Json {
     model: {
       mapping: Object.fromEntries([...c.mapping].sort((a, b) => a[0] - b[0]).map(([k, v]) => [String(k), v])),
       overrides: Object.fromEntries([...c.overrides].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))),
-      fit: c.fit,
+      fit: fitJson(c.fit),
       materials: c.materials.map(materialJson),
     },
     aura: c.aura,
@@ -286,11 +291,12 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   const overrides = typed<Record<string, unknown>>(mo.overrides ?? {}, 'object', 'model.overrides')
   if (Object.keys(overrides).length > 512) throw new LabError('manifest: too many overrides')
   for (const [k, v] of Object.entries(overrides)) c.overrides.set(str(k, 'model.overrides', 200)!, num(v, 'model.overrides', 0, 255, true, true)!)
-  const fit = keys(mo.fit ?? {}, ['scale', 'torso_squash', 'flip'], 'model.fit')
+  const fit = keys(mo.fit ?? {}, ['scale', 'torso_squash', 'flip', 'floor_from_mesh'], 'model.fit')
   c.fit = {
     scale: num(fit.scale, 'fit.scale', 0.0001, 10000.0),
     torso_squash: typed<boolean>(fit.torso_squash ?? true, 'boolean', 'fit.torso_squash'),
     flip: typeof fit.flip === 'boolean' ? fit.flip : null,
+    floor_from_mesh: typed<boolean>(fit.floor_from_mesh ?? false, 'boolean', 'fit.floor_from_mesh'),
   }
   const mats = typed<unknown[]>(mo.materials ?? [], 'array', 'model.materials')
   if (mats.length > 16) throw new LabError('manifest: at most 16 materials')

@@ -158,7 +158,7 @@ export class Builder {
     const c = this.c, base = this.base
     const model = this.model ?? new Model(c.glb!)
     const sk = Skeleton.ofBase(base)
-    const f = new Fit(model, sk, c.mapping, c.overrides, c.fit.scale, c.fit.torso_squash ?? true, c.fit.flip)
+    const f = new Fit(model, sk, c.mapping, c.overrides, c.fit.scale, c.fit.torso_squash ?? true, c.fit.flip, c.fit.floor_from_mesh ?? false)
     const included = c.materials.filter((m) => m.include)
     const slots: MaterialSlots = new Map()
     for (const m of c.materials) slots.set(m.gltfMaterial, [null, false])
