@@ -61,6 +61,7 @@ class Preview {
     this.setBusy(true)
     const spec = copyCharacter({ ...store.character, glb: null })
     const needBase = this.base?.key !== spec.base
+    const key = store.fitKey()
     try {
       const r = await engine.call<PreviewResult>('preview', [spec, needBase])
       if (r.base) this.base = { key: spec.base, meshes: r.base }
@@ -70,10 +71,12 @@ class Preview {
       } else {
         this.setReport('✖ ' + r.stats)
       }
+      store.setFitProblem(key, Array.isArray(r.stats) ? null : r.stats)
       this.setScene({ ok: true, r })
     } catch (e) {
       const lines = errorText(e).trim().split('\n')
       this.setReport('✖ ' + lines[lines.length - 1])
+      store.setFitProblem(key, lines[lines.length - 1])
       const J = skel.positions()
       this.setScene({ ok: false, bones: skel.nodes.filter((n) => n.parent >= 0).map((n) => [J[n.parent], J[n.index], n.index]) })
     } finally {
@@ -199,9 +202,13 @@ export function ModelPage() {
   if (!s.game) info += ' - choose your game disc to map the model.'
   else if (!sk) info += ` - ${s.base()?.label}'s skeleton is not supported yet; pick another base.`
 
-  const problems = useMemo(() => (sk && model ? mapping.check(model, sk, c.mapping, c.overrides) : null),
+  const mappingProblems = useMemo(() => (sk && model ? mapping.check(model, sk, c.mapping, c.overrides) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [sk, model, s.versions.mapping, s.versions.model])
+  const fitProblem = s.lastFitProblem()
+  const problems = mappingProblems && fitProblem && !mappingProblems.some(([level]) => level === 'error')
+    ? [...mappingProblems, ['error', fitProblem] as [string, string]]
+    : mappingProblems
 
   return (
     <div className="page model-page">
@@ -238,7 +245,7 @@ export function ModelPage() {
             {tab === 'fit' && <FitOptions report={report} />}
           </div>
           <h4>Problems</h4>
-          {problems ? <ProblemList problems={problems} ok="The mapping is complete." /> : <ul className="problems" />}
+          {problems ? <ProblemList problems={problems} ok="The mapping is complete and the model fits." /> : <ul className="problems" />}
         </div>
       </div>
     </div>

@@ -30,11 +30,16 @@ export function ExportPage() {
   const defaultOut = `${stem} (${titleCase(c.displayName)}).iso`
   const out = outName ?? defaultOut
 
+  const fitProblem = s.fitProblem()
   const problems = useMemo(() => {
     const p: [string, string][] = [...characterProblems(c)]
     if (!g) p.push(['warning', 'choose the game disc to check the mapping and to patch'])
     else if (!sk) p.push(['error', `${s.base()?.label}'s skeleton is not supported yet: pick another base`])
-    else if (s.model) p.push(...mapping.check(s.model, sk, c.mapping, c.overrides))
+    else if (s.model) {
+      const mapped = mapping.check(s.model, sk, c.mapping, c.overrides)
+      p.push(...mapped)
+      if (fitProblem && !mapped.some(([level]) => level === 'error')) p.push(['error', fitProblem])
+    }
     const level = details ? effects.tintLevel(details.tint, c.aura.tint, flames.cost(c.flames)) : c.aura.tint
     const plan = details?.tint[level]
     if (g && c.aura.mode === 'tint' && plan && !plan.roots.length && !plan.alt.length) {
@@ -45,7 +50,7 @@ export function ExportPage() {
     }
     return p
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [c, g, sk, s.model, details, s.versions.character, s.versions.mapping, s.versions.model])
+  }, [c, g, sk, s.model, details, s.versions.character, s.versions.mapping, s.versions.model, fitProblem])
 
   const onProgress = (stage: string, done: number, total: number) => {
     setBusy(stage + '...')

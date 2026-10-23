@@ -80,6 +80,7 @@ const handlers: Record<string, (progress: (stage: string, done?: number, total?:
   setModel: (_p, glb: Uint8Array | null) => service.setModel(glb),
   autoMap: (_p, key: string) => service.autoMap(key),
   preview: (_p, c, needBase: boolean) => service.preview(c, needBase),
+  fitCheck: (_p, c) => service.fitCheck(c),
   materialThumbs: (_p, c) => service.materialThumbs(c),
   layout: () => service.layoutInfo(),
   setPictures: (_p, pictures: Record<string, Uint8Array>) => service.setPictures(pictures),

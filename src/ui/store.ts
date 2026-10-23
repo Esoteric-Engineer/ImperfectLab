@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react'
 import type { Catalog } from '../core/build/moves'
 import type { Joint, JointModel } from '../core/model/glb'
 import { Skeleton } from '../core/model/skeleton'
-import { type Character, newCharacter } from '../core/package/imperfect'
+import { type Character, copyCharacter, newCharacter } from '../core/package/imperfect'
 import type { BaseDetails, BaseInfo, BatchCheckResult, ModelInfo } from '../worker/protocol'
 import { engine, errorText } from './engine'
 
@@ -70,6 +70,8 @@ class Store {
   private details = new Map<string, BaseDetails | 'loading'>()
   private moves: Catalog | 'loading' | null = null
   private statusTimer = 0
+  private fit: { key: string; problem: string | null } | null = null
+  private fitAsked: string | null = null
 
   subscribe = (fn: () => void) => {
     this.listeners.add(fn)
@@ -177,6 +179,33 @@ class Store {
       this.skeletons.set(key, b?.skeleton ? new Skeleton({ nodes: b.skeleton.nodes }, b.skeleton.body) : null)
     }
     return this.skeletons.get(key)!
+  }
+
+  setFitProblem(key: string, problem: string | null) {
+    this.fit = { key, problem }
+    this.emit()
+  }
+
+  fitKey(): string {
+    const v = this.versions
+    return `${v.character}.${v.mapping}.${v.model}.${v.game}`
+  }
+
+  lastFitProblem(): string | null {
+    return this.fit?.problem ?? null
+  }
+
+  fitProblem(): string | null {
+    if (!this.game || !this.model) return null
+    const key = this.fitKey()
+    if (this.fit?.key === key) return this.fit.problem
+    if (this.fitAsked !== key) {
+      this.fitAsked = key
+      engine.call<string | null>('fitCheck', [copyCharacter({ ...this.character, glb: null })]).then((problem) => {
+        if (this.fitKey() === key) this.setFitProblem(key, problem)
+      }, () => {})
+    }
+    return null
   }
 
   baseDetails(key = this.character.base): BaseDetails | null {
