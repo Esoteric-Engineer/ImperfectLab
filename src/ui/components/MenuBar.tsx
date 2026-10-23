@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 export type MenuItem =
   | { separator: true }
   | { heading: string }
-  | { label: string; shortcut?: string; checked?: boolean; onSelect: () => void }
+  | { label: string; shortcut?: string; checked?: boolean; disabled?: boolean; onSelect: () => void }
 
 export interface Menu {
   label: string
@@ -16,7 +16,7 @@ export function MenuBar({ menus }: { menus: Menu[] }) {
   const focusFirst = useRef(false)
 
   const triggerEls = () => [...(root.current?.querySelectorAll<HTMLElement>('.menu-trigger') ?? [])]
-  const itemEls = () => [...(root.current?.querySelectorAll<HTMLElement>('.menu-popup [role^="menuitem"]') ?? [])]
+  const itemEls = () => [...(root.current?.querySelectorAll<HTMLElement>('.menu-popup [role^="menuitem"]:not(:disabled)') ?? [])]
 
   useEffect(() => {
     if (open === null) return
@@ -88,6 +88,7 @@ export function MenuBar({ menus }: { menus: Menu[] }) {
                     role={item.checked === undefined ? 'menuitem' : 'menuitemradio'}
                     aria-checked={item.checked}
                     tabIndex={-1}
+                    disabled={item.disabled}
                     onClick={() => {
                       setOpen(null)
                       item.onSelect()

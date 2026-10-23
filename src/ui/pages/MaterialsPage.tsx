@@ -48,22 +48,24 @@ function MaterialCard({ index, thumbs }: { index: number; thumbs: [RgbaImage | n
   const choose = async (which: 'texture' | 'alt') => {
     const file = await pickFile(PICTURES)
     if (!file) return false
-    let im: RgbaImage
-    try {
-      im = await decodePicture(file)
-    } catch (e) {
-      store.fail(`The picture could not be read:\n${(e as Error).message}`)
-      return false
-    }
-    const member = `textures/mat${m.gltfMaterial}${which === 'alt' ? '_alt' : ''}.png`
-    c.files.set(member, encodePng(im))
-    if (which === 'alt') m.alt = member
-    else {
-      m.texture = member
-      if (Math.max(im.width, im.height) <= 1024) m.size = [im.width, im.height].map((d) => Math.min(512, 1 << Math.max(3, 32 - Math.clz32(d - 1)))) as [number, number]
-    }
-    edited()
-    return true
+    return store.edit(async () => {
+      let im: RgbaImage
+      try {
+        im = await decodePicture(file)
+      } catch (e) {
+        store.fail(`The picture could not be read:\n${(e as Error).message}`)
+        return false
+      }
+      const member = `textures/mat${m.gltfMaterial}${which === 'alt' ? '_alt' : ''}.png`
+      c.files.set(member, encodePng(im))
+      if (which === 'alt') m.alt = member
+      else {
+        m.texture = member
+        if (Math.max(im.width, im.height) <= 1024) m.size = [im.width, im.height].map((d) => Math.min(512, 1 << Math.max(3, 32 - Math.clz32(d - 1)))) as [number, number]
+      }
+      edited()
+      return true
+    })
   }
 
   return (
@@ -106,11 +108,10 @@ function MaterialCard({ index, thumbs }: { index: number; thumbs: [RgbaImage | n
           <label className="check"><input type="checkbox" checked={m.twoSided} onChange={(e) => { m.twoSided = e.target.checked; edited() }} /> Draw both sides (capes, thin cloth)</label>
           <label>Costume 2</label>
           <div className="row tight">
-            <select value={altMode} onChange={async (e) => {
+            <select value={altMode} onChange={(e) => {
               const v = Number(e.target.value)
-              if (v === 0) m.alt = 'same'
-              else if (v === 1) m.alt = 'hue:0'
-              else if (!(await choose('alt'))) return
+              if (v === 2) return void choose('alt')
+              m.alt = v === 0 ? 'same' : 'hue:0'
               edited()
             }}>
               <option value={0}>Same texture</option>

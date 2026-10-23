@@ -48,6 +48,7 @@ export function showCredits() {
 
 async function write(ask: boolean): Promise<boolean> {
   const c = store.character
+  const point = store.savePoint()
   let data: Uint8Array
   try {
     data = imperfect.save(c)
@@ -59,9 +60,10 @@ async function write(ask: boolean): Promise<boolean> {
     const name = store.fileName ?? `${c.internalName.toLowerCase()}.imperfect`
     const r = await saveCharacter(data, name, store.fileHandle, ask)
     if (!r) return false
+    if (store.character !== c) return true
     store.fileName = r.name
     store.fileHandle = r.handle
-    store.dirty = false
+    store.markSaved(point)
     store.message(`Saved ${r.name} (${Math.floor(data.length / 1024)} KB)`)
     return true
   } catch (e) {

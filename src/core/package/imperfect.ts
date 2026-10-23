@@ -148,6 +148,14 @@ export function copyCharacter(c: Character): Character {
   return structuredClone(c)
 }
 
+// For undo history. Arrays are only ever replaced, never edited in place.
+export function snapshotCharacter(c: Character): Character {
+  const copy: Character = structuredClone({ ...c, glb: null, files: new Map<string, Uint8Array>() })
+  copy.glb = c.glb
+  copy.files = new Map(c.files)
+  return copy
+}
+
 export function textureMember(name: string): string {
   return `textures/${name}.png`
 }
