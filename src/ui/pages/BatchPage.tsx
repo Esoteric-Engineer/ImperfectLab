@@ -14,8 +14,9 @@ import { choosePatchTarget, OPFS_NAME } from '../target'
 const kb = (n: number) => `${Math.round(n / 1024).toLocaleString('en-US')} KB`
 
 function aura(c: Character): string {
-  if (c.aura.mode === 'tint') return `tinted (${c.aura.tint === 'all' ? 'all effects' : 'idle and power-up'})`
-  return c.aura.mode === 'swap' ? 'swapped' : "the base's"
+  const fire = c.flames.body ? ', flames over the whole body' : c.flames.parts.length ? `, flames on ${c.flames.parts.length} part${c.flames.parts.length > 1 ? 's' : ''}` : ''
+  if (c.aura.mode === 'tint') return `tinted (${c.aura.tint === 'all' ? 'all effects' : 'idle and power-up'})${fire}`
+  return (c.aura.mode === 'swap' ? 'swapped' : "the base's") + fire
 }
 
 async function chooseSlot(): Promise<BatchSlot | null> {

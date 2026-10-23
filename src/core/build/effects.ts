@@ -1,4 +1,4 @@
-// Misc/game.nfx: recolored copies of the base's effects for the aura tint.
+// Misc/game.nfx: recolored copies of the base's effects for the aura tint, and the blocks flames.ts adds.
 // A tree of effect blocks (a block and every block its effectname/effect0-3 keys name) is copied under new names with every color turned to the chosen hue/lightness.
 // The copies are appended; nothing of the base's changes. Memory limits: docs/LIMITATIONS.md.
 import { LabError } from '../errors'
@@ -8,8 +8,9 @@ import type { GameSource } from '../game/source'
 import { roundHalfEven } from '../mnroi/gxtex'
 import * as nfxtool from '../mnroi/nfxtool'
 import * as nvbtool from '../mnroi/nvbtool'
-import { AURA_TINTS } from '../package/imperfect'
+import { AURA_TINTS, type Flames } from '../package/imperfect'
 import { hlsToRgb, rgbToHls } from './colorsys'
+import * as flames from './flames'
 import * as templates from './templates'
 import * as tuning from './tuning'
 
@@ -54,6 +55,7 @@ export interface TintPlan {
   alt: string[]
   bytes: number
   extra: number
+  used: number
 }
 
 // Measured by making the copies the patch would make.
@@ -65,12 +67,12 @@ export function tintPlans(source: GameSource, base: BaseCharacter): Record<strin
     const before = fx.used()
     fx.tinted(normal, '#808080', copyPrefix('xx', false))
     fx.tinted(alt, '#808080', copyPrefix('xx', true))
-    return [level, { roots: normal, alt, bytes: fx.used() - before, extra: cacheSize(fx.used()) - nfxtool.CACHE_SIZE }]
+    return [level, { roots: normal, alt, bytes: fx.used() - before, extra: cacheSize(fx.used()) - nfxtool.CACHE_SIZE, used: fx.used() }]
   }))
 }
 
-// How much several characters' tints grow the cache together (they share it), measured the same way. A null level tints nothing.
-export function sharedExtra(source: GameSource, tints: [BaseCharacter, string | null][]): number {
+// How much several characters' tints and flames grow the cache together.
+export function sharedExtra(source: GameSource, tints: [BaseCharacter, string | null][], fires: (Flames | null)[] = []): number {
   const fx = new Effects(source.entry('Misc/game.nfx'))
   tints.forEach(([base, level], i) => {
     if (level === null) return
@@ -78,11 +80,18 @@ export function sharedExtra(source: GameSource, tints: [BaseCharacter, string | 
     fx.tinted(normal, '#808080', copyPrefix(`x${i}`, false))
     fx.tinted(alt, '#808080', copyPrefix(`x${i}`, true))
   })
+  fires.forEach((f, i) => {
+    if (f) flames.effectNames(fx, f, `x${i}`)
+  })
   return cacheSize(fx.used()) - nfxtool.CACHE_SIZE
 }
 
-export function tintLevel(plans: Record<string, TintPlan>, level: string): string {
-  return level === 'all' && plans.all && plans.all.extra > TINT_ALL_LIMIT ? 'power' : level
+export function planExtra(p: TintPlan, more = 0): number {
+  return more ? cacheSize(p.used + more) - nfxtool.CACHE_SIZE : p.extra
+}
+
+export function tintLevel(plans: Record<string, TintPlan>, level: string, more = 0): string {
+  return level === 'all' && plans.all && planExtra(plans.all, more) > TINT_ALL_LIMIT ? 'power' : level
 }
 
 export function copyPrefix(internal: string, alt: boolean): string {
@@ -106,7 +115,36 @@ export function tint(rgb: number[], target: number[]): [number, number, number] 
   return hlsToRgb(th, l, ts).map((c) => 255.0 * c) as [number, number, number]
 }
 
-const num = (x: number) => formatG(x).replace(/\.0$/, '')
+export const num = (x: number) => formatG(x).replace(/\.0$/, '')
+
+export function recolor(type: number, body: string[], color: string): string[] {
+  const target = hexRgb(color)
+  const alpha = hexAlpha(color), opacity = alpha / 255
+  let colored = false
+  const out = body.map((line) => {
+    const t = nfxtool.tokens(line)
+    const key = t.length ? t[0].toLowerCase() : ''
+    if (COLOR_KEYS.includes(key) && t.length >= 2) {
+      const vals = nfxtool.scanFloats(t[1], 4)
+      if (vals.length === 4) {
+        const [r, g, bl] = tint(vals.slice(1), target)
+        colored = true
+        return `${t[0]} (${num(vals[0] * opacity)},${roundHalfEven(r)},${roundHalfEven(g)},${roundHalfEven(bl)})`
+      }
+    } else if (HEX_KEYS.includes(key) && t.length >= 2) {
+      const v = nfxtool.scanHex(t[1])
+      if (v) {
+        const [r, g, bl] = tint([(v >>> 16) & 255, (v >>> 8) & 255, v & 255], target)
+        const out = roundHalfEven((v >>> 24) * opacity) * 0x1000000 + roundHalfEven(r) * 0x10000 + roundHalfEven(g) * 0x100 + roundHalfEven(bl)
+        colored = true
+        return `${t[0]} 0x${out.toString(16).padStart(8, '0')}`
+      }
+    }
+    return line
+  })
+  if (!colored && PARTICLES.includes(nfxtool.TYPES[type])) out.push(`endcol (${alpha},${target[0]},${target[1]},${target[2]})`)
+  return out
+}
 
 function hasColor(b: nfxtool.Block): boolean {
   return b.lines.slice(1).some((line) => {
@@ -175,59 +213,54 @@ export class Effects {
     return CACHE_MAX - this.used()
   }
 
-  tinted(roots: (string | null)[], color: string, prefix: string): Map<string, string> {
-    const blocks = this.changed(roots)
-    const names = new Map<string, string>()
-    let k = 0
-    for (const b of blocks) {
-      let next: string
-      for (;;) {
-        next = `${prefix}${k.toString(36)}`
-        k++
-        const taken = [...names.values()].some((v) => v.toLowerCase() === next.toLowerCase())
-        if (!this.has(next) && !taken) break
+  // The first name prefix + a base-36 counter (from k) that no block has and taken does not hold.
+  fresh(prefix: string, taken: Set<string> = new Set(), k = 0): [string, number] {
+    for (;;) {
+      const next = `${prefix}${k.toString(36)}`
+      k++
+      if (!this.has(next) && !taken.has(next.toLowerCase())) {
+        if (next.length > 31) throw new LabError(`effect name ${next} is too long`)
+        return [next, k]
       }
-      if (next.length > 31) throw new LabError(`effect name ${next} is too long`)
-      names.set(b.name.toLowerCase(), next)
     }
-    const target = hexRgb(color)
-    // The color's opacity scales every alpha the effect has; at 0 the recolored effects are invisible.
-    const alpha = hexAlpha(color), opacity = alpha / 255
-    const copies: nfxtool.Block[] = []
-    for (const b of blocks) {
-      const lines = [`${nfxtool.TYPES[b.type]} ${names.get(b.name.toLowerCase())}`]
-      let colored = false
-      for (let line of b.lines.slice(1, b.lines.length - (b.ended ? 1 : 0))) {
-        const t = nfxtool.tokens(line)
-        const key = t.length ? t[0].toLowerCase() : ''
-        if (REFERENCES.includes(key) && t.length >= 2 && names.has(t[1].toLowerCase())) {
-          line = `${t[0]} ${names.get(t[1].toLowerCase())}`
-        } else if (COLOR_KEYS.includes(key) && t.length >= 2) {
-          const vals = nfxtool.scanFloats(t[1], 4)
-          if (vals.length === 4) {
-            const [r, g, bl] = tint(vals.slice(1), target)
-            line = `${t[0]} (${num(vals[0] * opacity)},${roundHalfEven(r)},${roundHalfEven(g)},${roundHalfEven(bl)})`
-            colored = true
-          }
-        } else if (HEX_KEYS.includes(key) && t.length >= 2) {
-          const v = nfxtool.scanHex(t[1])
-          if (v) {
-            const [r, g, bl] = tint([(v >>> 16) & 255, (v >>> 8) & 255, v & 255], target)
-            const out = roundHalfEven((v >>> 24) * opacity) * 0x1000000 + roundHalfEven(r) * 0x10000 + roundHalfEven(g) * 0x100 + roundHalfEven(bl)
-            line = `${t[0]} 0x${out.toString(16).padStart(8, '0')}`
-            colored = true
-          }
-        }
-        lines.push(line)
-      }
-      if (!colored && PARTICLES.includes(nfxtool.TYPES[b.type])) lines.push(`endcol (${alpha},${target[0]},${target[1]},${target[2]})`)
-      lines.push('end')
-      copies.push(new nfxtool.Block(b.type, names.get(b.name.toLowerCase())!, lines, true))
+  }
+
+  same(type: number, body: string[]): string | null {
+    const want = body.join('\n')
+    for (const b of nfxtool.blocks(this.items)) {
+      if (b.type === type && b.ended && b.lines.length === body.length + 2 && b.lines.slice(1, -1).join('\n') === want) return b.name
     }
+    return null
+  }
+
+  append(copies: nfxtool.Block[]) {
     const items = this.items
     const at = items.length && items[items.length - 1] === '' ? items.length - 1 : items.length
     items.splice(at, 0, ...copies)
     for (const c of copies) if (!this.by.has(c.name.toLowerCase())) this.by.set(c.name.toLowerCase(), c)
+  }
+
+  tinted(roots: (string | null)[], color: string, prefix: string): Map<string, string> {
+    const blocks = this.changed(roots)
+    const names = new Map<string, string>()
+    const taken = new Set<string>()
+    let k = 0, next: string
+    for (const b of blocks) {
+      ;[next, k] = this.fresh(prefix, taken, k)
+      taken.add(next.toLowerCase())
+      names.set(b.name.toLowerCase(), next)
+    }
+    const copies: nfxtool.Block[] = []
+    for (const b of blocks) {
+      const body = b.lines.slice(1, b.lines.length - (b.ended ? 1 : 0)).map((line) => {
+        const t = nfxtool.tokens(line)
+        const key = t.length ? t[0].toLowerCase() : ''
+        return REFERENCES.includes(key) && t.length >= 2 && names.has(t[1].toLowerCase()) ? `${t[0]} ${names.get(t[1].toLowerCase())}` : line
+      })
+      const name = names.get(b.name.toLowerCase())!
+      copies.push(new nfxtool.Block(b.type, name, [`${nfxtool.TYPES[b.type]} ${name}`, ...recolor(b.type, body, color), 'end'], true))
+    }
+    this.append(copies)
     return names
   }
 

@@ -28,6 +28,8 @@ const SUFFIX = /^(_[A-Za-z0-9]{1,7})?$/
 const COLOR = /^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$/
 export const AURA_MODES = ['base', 'swap', 'tint']
 export const AURA_TINTS = ['all', 'power']
+export const FLAME_PARTS = ['head', 'chest', 'r_hand', 'l_hand', 'r_foot', 'l_foot']
+export const FLAME_SIZE: [number, number] = [0.5, 2.0]
 export const LIFT = ['light', 'medium', 'heavy']
 export const GAMEPLAY: Record<string, [number, number, boolean]> = {
   damage_taken: [0.1, 3.0, false], health: [10, 1000, true], run_speed: [1.0, 30.0, false],
@@ -73,6 +75,15 @@ export interface BaseMoves {
   throw_cable?: boolean
 }
 
+export interface Flames {
+  parts: string[]
+  body: boolean
+  color: string | null
+  alt_color: string | null
+  size: number
+  base_effect: boolean
+}
+
 export interface Character {
   internalName: string
   displayName: string
@@ -85,6 +96,7 @@ export interface Character {
   fit: { scale: number | null; torso_squash: boolean; flip: boolean | null }
   materials: Material[]
   aura: { mode: string; tint: string; color: string; alt_color: string }
+  flames: Flames
   stats: { normal: number[]; alt: number[] }
   gameplay: Gameplay
   baseMoves: BaseMoves
@@ -95,6 +107,14 @@ export interface Character {
 
 export function defaultStats() {
   return { normal: [4, 4, 4, 4, 4, 4], alt: [4, 4, 4, 4, 4, 4] }
+}
+
+export function defaultFlames(): Flames {
+  return { parts: [], body: false, color: null, alt_color: null, size: 1, base_effect: true }
+}
+
+export function hasFlames(f: Flames): boolean {
+  return f.parts.length > 0 || f.body || f.color !== null || f.alt_color !== null || f.size !== 1 || !f.base_effect
 }
 
 export function newMaterial(gltfMaterial: number, name: string, include = true, suffix = '', size: [number, number] = [256, 256]): Material {
@@ -114,6 +134,7 @@ export function newCharacter(): Character {
     fit: { scale: null, torso_squash: true, flip: null },
     materials: [],
     aura: { mode: 'base', tint: 'all', color: '#40A0FF', alt_color: '#50FF50' },
+    flames: defaultFlames(),
     stats: defaultStats(),
     gameplay: {},
     baseMoves: {},
@@ -155,6 +176,7 @@ export function manifest(c: Character): Json {
       materials: c.materials.map(materialJson),
     },
     aura: c.aura,
+    flames: hasFlames(c.flames) ? c.flames : undefined,
     stats: { display: c.stats, gameplay: c.gameplay },
     ui: c.ui,
     base_moves: c.baseMoves,
@@ -184,6 +206,7 @@ export function problems(c: Character): Problem[] {
     else if (from === c.base) out.push(['error', `${move.label} is taken from ${BASES[from][0]}, the base itself: set it back to the base's on the Moves page`])
   }
   if (c.moves.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach changes the base\'s own super attack far: set that move back to the base\'s, or untick the reach'])
+  if (c.flames.body && c.flames.parts.length) out.push(['error', 'flames are on the whole body or on chosen parts, not both: pick one on the Aura page'])
   if (!c.files.get('ui/select_ready.png')) out.push(['warning', "no select-screen portrait: the base's portraits are used"])
   return out
 }
@@ -231,7 +254,7 @@ function upgrade(m: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Character {
-  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'stats', 'ui', 'base_moves', 'moves', 'files'], 'the manifest')
+  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'stats', 'ui', 'base_moves', 'moves', 'files'], 'the manifest')
   if (m.format !== FORMAT) throw new LabError('not a .imperfect file')
   upgrade(m)
   if (m.game !== GAME) throw new LabError(`this file is for ${m.game}, not ${GAME}`)
@@ -297,6 +320,18 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   c.aura = { mode: str(au.mode ?? 'base', 'aura.mode', 8)!, tint: str(au.tint ?? 'all', 'aura.tint', 8)!, color: color(au.color ?? '#40A0FF', 'aura.color'), alt_color: color(au.alt_color ?? '#50FF50', 'aura.alt_color') }
   if (!AURA_MODES.includes(c.aura.mode)) throw new LabError('manifest: unknown aura mode')
   if (!AURA_TINTS.includes(c.aura.tint)) throw new LabError('manifest: unknown aura tint')
+  const fl = keys(m.flames ?? {}, ['parts', 'body', 'color', 'alt_color', 'size', 'base_effect'], 'flames')
+  const parts = typed<unknown[]>(fl.parts ?? [], 'array', 'flames.parts').map((p) => str(p, 'flames.parts', 10)!)
+  for (const p of parts) if (!FLAME_PARTS.includes(p)) throw new LabError(`manifest: unknown flame part ${JSON.stringify(p)}`)
+  c.flames = {
+    parts: FLAME_PARTS.filter((p) => parts.includes(p)),
+    body: typed<boolean>(fl.body ?? false, 'boolean', 'flames.body'),
+    color: fl.color === null || fl.color === undefined ? null : color(fl.color, 'flames.color'),
+    alt_color: fl.alt_color === null || fl.alt_color === undefined ? null : color(fl.alt_color, 'flames.alt_color'),
+    size: num(fl.size ?? 1, 'flames.size', FLAME_SIZE[0], FLAME_SIZE[1], false)!,
+    base_effect: typed<boolean>(fl.base_effect ?? true, 'boolean', 'flames.base_effect'),
+  }
+  if (c.flames.body && c.flames.parts.length) throw new LabError('manifest: flames are on the whole body or on parts, not both')
   const st = keys(m.stats ?? {}, ['display', 'gameplay'], 'stats')
   const disp = keys(st.display ?? defaultStats(), ['normal', 'alt'], 'stats.display')
   for (const k of ['normal', 'alt'] as const) {
