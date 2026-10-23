@@ -356,6 +356,10 @@ export class Service {
     return { canvases, sR: layout.sR, originals }
   }
 
+  stripOutlines(): [RgbaImage[], RgbaImage[]] {
+    return [portraits.stripOutlines(this.src()), portraits.stripOutlines(this.src(), true)]
+  }
+
   setPictures(pictures: Record<string, Uint8Array>) {
     this.pictures = new Map(Object.entries(pictures).map(([k, v]) => [k, decodePng(v)]))
   }

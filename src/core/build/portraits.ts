@@ -209,16 +209,24 @@ export function stripSizes(source: GameSource, alt = false): [number, number][] 
   return bank.names.map((n) => new gshtool.Picture(bank.record(n))).map((p) => [p.width, p.height] as [number, number]).sort((a, b) => b[0] - a[0])
 }
 
-export function stripCrop(source: GameSource, picture: RgbaImage, anchor: [number, number], scale: number, alt = false): RgbaImage[] {
+export function stripOutlines(source: GameSource, alt = false): RgbaImage[] {
   const [, bank] = stripBank(source, alt)
   const pics = bank.names.map((n) => [n, new gshtool.Picture(bank.record(n))] as [string, gshtool.Picture]).sort((a, b) => b[1].width - a[1].width)
-  const outlines = pics.map(([n, p]) => new RgbaImage(p.width, p.height, p.decode(bank.record(n))))
+  return pics.map(([n, p]) => new RgbaImage(p.width, p.height, p.decode(bank.record(n))))
+}
+
+export function stripCrop(source: GameSource, picture: RgbaImage, anchor: [number, number], scale: number, alt = false): RgbaImage[] {
+  const outlines = stripOutlines(source, alt)
   let W = 0
   for (const o of outlines) W += o.width
   const H = outlines[0].height
   const bw = W / scale, bh = H / scale
   const box: [number, number, number, number] = [anchor[0] - bw * 0.5, anchor[1] - bh * 0.45, anchor[0] + bw * 0.5, anchor[1] + bh * 0.55]
-  const face = images.cropResize(picture, box, [W, H])
+  return cutStrips(images.cropResize(picture, box, [W, H]), outlines)
+}
+
+export function cutStrips(face: RgbaImage, outlines: RgbaImage[]): RgbaImage[] {
+  const H = outlines[0].height
   const out: RgbaImage[] = []
   let x = 0
   for (const o of outlines) {

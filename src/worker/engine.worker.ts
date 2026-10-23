@@ -9,7 +9,7 @@ import { Service } from './service'
 declare const self: DedicatedWorkerGlobalScope
 
 const service = new Service()
-const FRESH = new Set(['preview', 'materialThumbs', 'compose', 'layout', 'bases'])
+const FRESH = new Set(['preview', 'materialThumbs', 'compose', 'layout', 'bases', 'stripOutlines'])
 
 function fileReader(file: Blob): ReadAt {
   const reader = new FileReaderSync()
@@ -85,6 +85,7 @@ const handlers: Record<string, (progress: (stage: string, done?: number, total?:
   layout: () => service.layoutInfo(),
   setPictures: (_p, pictures: Record<string, Uint8Array>) => service.setPictures(pictures),
   compose: (_p, args, index: number) => service.compose(args, index),
+  stripOutlines: () => service.stripOutlines(),
   check: (p, c) => service.check(c, p),
   patch: (p, c, target: PatchTarget, verified: boolean) => intoSink(target, (sink) => service.patch(c, sink, verified, p)),
   checkBatch: (p, chars: Batch) => service.checkBatch(chars, p),
