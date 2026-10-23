@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import type { Catalog } from '../core/build/moves'
 import type { Joint, JointModel } from '../core/model/glb'
 import { Skeleton } from '../core/model/skeleton'
 import { type Character, newCharacter } from '../core/package/imperfect'
@@ -67,6 +68,7 @@ class Store {
   private listeners = new Set<() => void>()
   private skeletons = new Map<string, Skeleton | null>()
   private details = new Map<string, BaseDetails | 'loading'>()
+  private moves: Catalog | 'loading' | null = null
   private statusTimer = 0
 
   subscribe = (fn: () => void) => {
@@ -160,6 +162,7 @@ class Store {
     this.batchCheck = null
     this.skeletons.clear()
     this.details.clear()
+    this.moves = null
     this.touch('game', false)
   }
 
@@ -188,6 +191,21 @@ class Store {
       return null
     }
     return d === 'loading' ? null : d
+  }
+
+  moveCatalog(): Catalog | null {
+    if (!this.game) return null
+    if (this.moves === null) {
+      this.moves = 'loading'
+      const game = this.game
+      engine.call<Catalog>('moveCatalog', []).then((v) => {
+        if (this.game !== game) return
+        this.moves = v
+        this.emit()
+      }, (e) => this.fail(e))
+      return null
+    }
+    return this.moves === 'loading' ? null : this.moves
   }
 
   title(): string {

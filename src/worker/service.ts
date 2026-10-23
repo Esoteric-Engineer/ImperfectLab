@@ -1,6 +1,7 @@
 import { type Batch, buildBatch, checkBatch } from '../core/build/batch'
 import { Builder, glowRgba, patch, type Progress, report, type Result, WIRE, write } from '../core/build/patch'
 import * as effects from '../core/build/effects'
+import * as moves from '../core/build/moves'
 import * as portraits from '../core/build/portraits'
 import * as tuning from '../core/build/tuning'
 import * as ui from '../core/build/ui'
@@ -170,6 +171,10 @@ export class Service {
         return { key, label: R.label(key), body: 'male', stats: [], altStats: [], hudName: '', icon: null, skeleton: null, error: e.message }
       }
     })
+  }
+
+  moveCatalog(): moves.Catalog {
+    return moves.catalog(this.src())
   }
 
   baseDetails(key: string): BaseDetails {

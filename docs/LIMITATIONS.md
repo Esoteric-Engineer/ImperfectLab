@@ -42,7 +42,24 @@ What each base's full tint needs:
 
 Every character with changed stats or a tint gets its own tuning file. Each one listed in `Misc/nvblist.txt` takes 12,354 bytes when the game boots, and the list itself has room for about 53 more bytes (a line costs its two names plus 2, so `PLAYER <internal name>` costs the name's length plus 8).
 
-So a patch of several characters fits only a few that need tuning: two with 10-letter internal names, five with 2-letter ones. The check on the **Multi-Character Patch** page adds the lines up before building. Characters with the base's or a swapped aura and the base's gameplay need no line, so nine of those fit.
+So a patch of several characters fits only a few that need tuning: two with 10-letter internal names, five with 2-letter ones. The check on the **Multi-Character Patch** page adds the lines up before building. Characters with the base's or a swapped aura, the base's gameplay and no long baton throw need no line, so nine of those fit.
+
+## Baton throw
+
+A Daredevil-based character's `throw_reach` (`base_moves`, [`FORMAT.md`](FORMAT.md)):
+
+- **What it hits.** The target must be in front, more than 4 m away and no more than 10 m above or below.
+- **Memory and space.** The character has its own copy of Daredevil's animations (about 2.7 MB on the disc), so a match against Daredevil loads both. It needs its own tuning file, so it takes a line in the tuning list (above).
+- **`main.dol` changes.** `fn_8019DB24` (animation time setter) is rewritten in place so that a club that hits comes back from where it hit.
+
+## Swapped moves
+
+Moves taken from other bases (`moves`, [`FORMAT.md`](FORMAT.md)):
+
+- **Only the animation changes.** Damage, cost, reach, sounds and effects stay the base's, and a cue the base has no effect for does nothing (the Thing's super throw on Daredevil has no hit flash).
+- **Other body classes are approximate.** Their animations are mapped bone by bone, but limbs differ: a brute's grab on a male character holds the opponent at arm's length.
+- **Memory and space.** The character has its own copy of the base's animations (about 1 to 3 MB on the disc), so a match against the base loads both.
+- **Finishing moves can't currently be swapped.** They are cutscenes, not motion-set animations.
 
 ## More characters
 

@@ -10,7 +10,8 @@ import * as mapping from '../model/mapping'
 import { Skeleton } from '../model/skeleton'
 import { type Character, problems as characterProblems, type Problem } from '../package/imperfect'
 import * as effects from './effects'
-import { Builder, type PatchOutput, type Progress, Result, tuningFields, write } from './patch'
+import { motionSetName, SLOTS } from './moves'
+import { Builder, ownMotions, type PatchOutput, type Progress, Result, tuningFields, write } from './patch'
 import { templateNames } from './templates'
 import * as tuning from './tuning'
 import * as ui from './ui'
@@ -113,6 +114,7 @@ export function buildBatch(source: GameSource, chars: Batch, progress: Progress 
     r.cache = Math.max(...caches)
     r.dol = D.growEffectCache(r.dol, r.cache)
   }
+  if (batch.some((c) => c.baseMoves.throw_reach !== undefined)) r.dol = D.mirrorSkip(r.dol)
   r.notes = [...notes, ...results.flatMap((x, i) => x.notes.map((n) => `${batch[i].displayName}: ${n}`))]
   return r
 }
@@ -138,6 +140,7 @@ function claims(c: Character): Set<string> {
     ...templateNames(c.internalName).map((t) => t.toLowerCase()),
     `bundles/${n}`, `bundles/${n}_alt`, `misc/player_${n}.nvb`,
     `plr_${n}_rage`, `plr_alt${n}_rage`, ...R.LANGS.map((l) => `ovr_${n}${l.toLowerCase()}`),
+    ...(ownMotions(c) ? [`motions/${motionSetName(c.internalName).toLowerCase()}`, ...SLOTS.map((slot) => `bundles/${n}${slot}.ngb`)] : []),
   ])
 }
 
