@@ -92,7 +92,7 @@ export function ArtPage() {
         <button disabled={!s.game} onClick={() => setGenerating(true)}>
           {!s.game ? 'Select a disc image first to generate art' : 'Generate art from pictures...'}
         </button>
-        <Note>Makes the loading screens, HUD portraits and select tiles from one full-body picture per costume.</Note>
+        <Note>Makes the select-screen portraits, loading screens, HUD portraits and select tiles from one full-body picture per costume, and places the portraits.</Note>
       </div>
       <div className="row">
         <button disabled={!s.game || !c.files.has('ui/select_ready.png')} onClick={() => setPlacing(true)}>

@@ -1,41 +1,94 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as A from '../../core/build/artgen'
+import { FADE } from '../../core/build/portraits'
 import { decodePng, encodePng } from '../../core/image/png'
 import { RgbaImage } from '../../core/image/rgba'
-import type { Character } from '../../core/package/imperfect'
+import type { Character, Placement, Pose } from '../../core/package/imperfect'
 import { decodePicture, pickFile } from '../../io/files'
 import { engine } from '../engine'
+import { PLACEMENT_HELP, POSE_LABELS, startingPlacements } from '../placement'
 import { store, useStore } from '../store'
 import { bundledTemplates } from '../templates'
 import { ColorButton, ImageView, Modal, Note, NumberInput, Warning } from './common'
+import { PlacementEditor } from './PlacementDialog'
 
 type Kind = 'loading' | 'hud' | 'tile'
+type Tab = Kind | 'select'
 type Costume = 0 | 1
 type TileSource = 'rest' | Costume
 type Pair<T> = [T, T]
 
+interface Picture { image: RgbaImage; png: Uint8Array }
+
 const PICTURES = '.png,.jpg,.jpeg,.webp,.bmp,.gif'
-const TABS: [Kind, string][] = [['loading', 'Loading screen'], ['hud', 'HUD portrait'], ['tile', 'Select tiles']]
+const TABS: [Tab, string][] = [['loading', 'Loading screen'], ['hud', 'HUD portrait'], ['tile', 'Select tiles'], ['select', 'Select portrait']]
 const ZOOM: Record<Kind, number> = { loading: 2, hud: 4, tile: 4 }
 const MARGIN = 56
 const COSTUMES: [Costume, string][] = [[0, 'Costume 1'], [1, 'Costume 2']]
+const SLOTS: [TileSource, string][] = [[0, 'select_ready'], [1, 'select_readyalt'], ['rest', 'select_rest']]
 
 interface State {
-  pictures: Pair<RgbaImage | null>
+  pictures: Pair<Picture | null>
+  rest: Picture | null
+  base: Record<string, Uint8Array | undefined>
+  baseUi: Pick<Character['ui'], 'select' | 'fade'> | null
   loading: Pair<A.Framing | null>
   hud: Pair<A.Framing | null>
   tile: Partial<Record<TileSource, A.Framing>>
-  // null: REST when the Art tab has it, otherwise costume 1
   tileSource: TileSource | null
   rage: Pair<string>
   linked: Record<'loading' | 'hud', boolean>
+  select: Partial<Record<Pose, Placement>>
+  fade: number
 }
 
 const fresh = (): State => ({
-  pictures: [null, null], loading: [null, null], hud: [null, null], tile: {}, tileSource: null, rage: [...A.RAGE_DEFAULTS], linked: { loading: true, hud: true },
+  pictures: [null, null], rest: null, base: {}, baseUi: null, loading: [null, null], hud: [null, null], tile: {}, tileSource: null, rage: [...A.RAGE_DEFAULTS],
+  linked: { loading: true, hud: true }, select: {}, fade: FADE,
 })
 
 let kept: { owner: Character; state: State } | null = null
+
+const pictureIn = (st: State, which: TileSource) => (which === 'rest' ? st.rest : st.pictures[which])
+
+function posePictures(st: Pick<State, 'pictures' | 'rest'>): Record<Pose, Picture | null> {
+  const ready = st.pictures[0]
+  return { ready, readyalt: st.pictures[1] ?? ready, rest: st.rest ?? ready }
+}
+
+function withPicture(st: State, which: TileSource, pic: Picture | null): State {
+  const next: State = which === 'rest' ? { ...st, rest: pic } : { ...st, pictures: (which === 0 ? [pic, st.pictures[1]] : [st.pictures[0], pic]) }
+  const before = posePictures(st), after = posePictures(next)
+  const select = Object.fromEntries(Object.entries(st.select).filter(([p]) => before[p as Pose] === after[p as Pose]))
+  next.select = select
+  next.tile = { ...st.tile, [which]: undefined }
+  if (which !== 'rest') {
+    const reset = <T,>(pair: Pair<T | null>): Pair<T | null> => (which === 0 ? [null, pair[1]] : [pair[0], null])
+    next.loading = reset(st.loading)
+    next.hud = reset(st.hud)
+  }
+  return next
+}
+
+function opening(c: Character): State {
+  let st = kept && kept.owner === c ? kept.state : fresh()
+  if (st.baseUi?.select !== c.ui.select || st.baseUi.fade !== c.ui.fade) {
+    st = { ...st, select: { ...c.ui.select }, fade: c.ui.fade ?? FADE, baseUi: { select: c.ui.select, fade: c.ui.fade } }
+  }
+  for (const [which, slot] of SLOTS) {
+    const png = c.files.get(`ui/${slot}.png`)
+    if (png === st.base[slot]) continue
+    let pic: Picture | null = null
+    try {
+      if (png) pic = { image: decodePng(png), png }
+    } catch {
+      // Left out, as if unset
+    }
+    st = withPicture(st, which, pic)
+    st.base = { ...st.base, [slot]: png }
+  }
+  return st
+}
 
 const wrap = (im: { width: number; height: number; data: Uint8ClampedArray }) => new RgbaImage(im.width, im.height, im.data)
 const sameSize = (a: [number, number] | undefined, b: [number, number]) => !a || (a[0] === b[0] && a[1] === b[1])
@@ -50,8 +103,9 @@ function toCanvas(im: RgbaImage): HTMLCanvasElement {
 
 export function GenerateArtDialog({ onClose }: { onClose: () => void }) {
   useStore()
-  const [s, setS] = useState<State>(() => (kept && kept.owner === store.character ? kept.state : fresh()))
-  const [kind, setKind] = useState<Kind>('loading')
+  const [s, setS] = useState<State>(() => opening(store.character))
+  const [tab, setTab] = useState<Tab>('loading')
+  const [pose, setPose] = useState<Pose>('ready')
   const [costume, setCostume] = useState<Costume>(0)
   const [outlines, setOutlines] = useState<Pair<RgbaImage[]> | null>(null)
   const [failed, setFailed] = useState(false)
@@ -75,20 +129,17 @@ export function GenerateArtDialog({ onClose }: { onClose: () => void }) {
       .filter(([k, size]) => !sameSize(sizes[k], size)).map(([k]) => k)
     : []
 
-  const restBytes = store.character.files.get('ui/select_rest.png')
-  const rest = useMemo(() => {
-    try {
-      return restBytes ? decodePng(restBytes) : null
-    } catch {
-      return null
-    }
-  }, [restBytes])
-  const wanted = s.tileSource ?? (rest ? 'rest' : 0)
-  const tileSource: TileSource = wanted === 'rest' ? (rest ? 'rest' : 0) : s.pictures[wanted] ? wanted : 0
-  const tilePicture = tileSource === 'rest' ? rest : s.pictures[tileSource]
+  const kind: Kind = tab === 'select' ? 'loading' : tab
+  const wanted = s.tileSource ?? (s.rest ? 'rest' : 0)
+  const tileSource: TileSource = pictureIn(s, wanted) ? wanted : 0
+  const tilePicture = pictureIn(s, tileSource)?.image ?? null
+
+  const poses = useMemo(() => posePictures({ pictures: s.pictures, rest: s.rest }), [s.pictures, s.rest])
+  const posePngs = useMemo(() => (poses.ready ? { ready: poses.ready.png, readyalt: poses.readyalt!.png, rest: poses.rest!.png } : null), [poses])
+  const placements = useMemo(() => (poses.ready ? startingPlacements(s.select, (p) => poses[p]!.image) : null), [s.select, poses])
 
   const sizeOf = (k: Kind): [number, number] => (k === 'loading' ? A.stripsSize(outlines![0]) : k === 'hud' ? t.hud.size : t.tiles.normal[0].size)
-  const pictureOf = (k: Kind, i: Costume): RgbaImage | null => (k === 'tile' ? tilePicture : s.pictures[i] ?? s.pictures[0])
+  const pictureOf = (k: Kind, i: Costume): RgbaImage | null => (k === 'tile' ? tilePicture : (s.pictures[i] ?? s.pictures[0])?.image ?? null)
   const shared = (k: Kind, i: Costume): Costume => (k !== 'tile' && i === 1 && s.linked[k] ? 0 : i)
   const framingOf = (k: Kind, i: Costume): A.Framing => {
     const own = k === 'tile' ? s.tile[tileSource] : s[k][shared(k, i)]
@@ -101,17 +152,13 @@ export function GenerateArtDialog({ onClose }: { onClose: () => void }) {
     return { ...st, [k]: pair }
   })
 
-  const load = async (i: Costume) => {
+  const load = async (which: TileSource) => {
     const file = await pickFile(PICTURES)
     if (!file) return
     try {
       const im = await decodePicture(file)
-      setS((st) => {
-        const pictures: Pair<RgbaImage | null> = [...st.pictures]
-        pictures[i] = im
-        const reset = <T,>(pair: Pair<T | null>): Pair<T | null> => (i === 0 ? [null, pair[1]] : [pair[0], null])
-        return { ...st, pictures, loading: reset(st.loading), hud: reset(st.hud), tile: { ...st.tile, [i]: undefined } }
-      })
+      const pic = { image: im, png: encodePng(im) }
+      setS((st) => withPicture(st, which, pic))
     } catch (e) {
       store.fail(`The picture could not be read:\n${(e as Error).message}`)
     }
@@ -130,7 +177,7 @@ export function GenerateArtDialog({ onClose }: { onClose: () => void }) {
 
   const finish = () => {
     const inputs: A.ArtInputs = {
-      pictures: [s.pictures[0]!, s.pictures[1]],
+      pictures: [s.pictures[0]!.image, s.pictures[1]?.image ?? null],
       loading: [framingOf('loading', 0), framingOf('loading', 1)],
       hud: [framingOf('hud', 0), framingOf('hud', 1)],
       tile: framingOf('tile', 0),
@@ -139,38 +186,59 @@ export function GenerateArtDialog({ onClose }: { onClose: () => void }) {
     }
     const c = store.character
     for (const [slot, im] of A.generate(inputs, { ...t, outlines: outlines! })) c.files.set(`ui/${slot}.png`, encodePng(im))
+    const base: State['base'] = {}
+    for (const [which, slot] of SLOTS) {
+      const png = pictureIn(s, which)?.png
+      if (png) c.files.set(`ui/${slot}.png`, png)
+      else c.files.delete(`ui/${slot}.png`)
+      base[slot] = png
+    }
+    c.ui.select = { ...placements! }
+    c.ui.fade = s.fade
+    kept = { owner: c, state: { ...s, base, baseUi: { select: c.ui.select, fade: c.ui.fade } } }
     store.touch('character')
     onClose()
   }
 
   return (
     <Modal title="Generate art from pictures" onClose={onClose} wide>
-      <Note>Load a picture for each costume, then frame each piece of art on its tab. Drag to move, and use the mouse wheel to zoom. The dimmed area is cut away.</Note>
+      <Note>Load a picture for each costume, then frame each piece of art on its tab. Drag to move, and use the mouse wheel to zoom. The dimmed area is cut away. The pictures also become the select-screen portraits on the Art tab.</Note>
       <div className="artgen-pictures">
-        {COSTUMES.map(([i, label]) => (
-          <div key={i} className="artgen-picture">
-            <ImageView image={s.pictures[i]} side={72} />
-            <div>
-              <div>{label} picture{i === 1 ? ' (optional)' : ''}</div>
-              <Note>{s.pictures[i] ? `${s.pictures[i].width} x ${s.pictures[i].height} pixels` : i === 1 ? "costume 1's art is used" : 'required'}</Note>
-              <div className="row">
-                <button className="small" onClick={() => void load(i)}>Load...</button>
-                {i === 1 && <button className="small" disabled={!s.pictures[1]} onClick={() => setS((st) => ({ ...st, pictures: [st.pictures[0], null], tile: { ...st.tile, 1: undefined } }))}>Clear</button>}
+        {([...COSTUMES, ['rest', 'REST']] as [TileSource, string][]).map(([which, label]) => {
+          const pic = pictureIn(s, which)
+          return (
+            <div key={which} className="artgen-picture">
+              <ImageView image={pic?.image ?? null} side={72} />
+              <div>
+                <div>{label} picture{which !== 0 ? ' (optional)' : ''}</div>
+                <Note>{pic ? `${pic.image.width} x ${pic.image.height} pixels` : which === 1 ? "costume 1's art is used" : which === 'rest' ? "costume 1's picture is used" : 'required'}</Note>
+                <div className="row">
+                  <button className="small" onClick={() => void load(which)}>Load...</button>
+                  {which !== 0 && <button className="small" disabled={!pic} onClick={() => setS((st) => withPicture(st, which, null))}>Clear</button>}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
       {mismatch.length > 0 && <Warning title="The art can't be generated for this base">The game's art sizes don't match the templates ({mismatch.join(', ')}).</Warning>}
       <div className="tabs">
-        {TABS.map(([k, label]) => <button key={k} className={k === kind ? 'active' : ''} onClick={() => setKind(k)}>{label}</button>)}
+        {TABS.map(([k, label]) => <button key={k} className={k === tab ? 'active' : ''} onClick={() => setTab(k)}>{label}</button>)}
       </div>
       <div className="row">
-        {kind === 'tile' ? (
+        {tab === 'select' ? (
+          <>
+            {POSE_LABELS.map(([p, label]) => (
+              <button key={p} className={`small toggle ${pose === p ? 'active' : ''}`} onClick={() => setPose(p)}>{label}</button>
+            ))}
+            <label>Fade-in rows at the top</label>
+            <NumberInput min={0} max={200} step={1} value={s.fade} onChange={(v) => setS((st) => ({ ...st, fade: Math.round(v) }))} />
+          </>
+        ) : kind === 'tile' ? (
           <>
             <label>Picture:</label>
             <select value={tileSource} onChange={(e) => setS((st) => ({ ...st, tileSource: e.target.value === 'rest' ? 'rest' : Number(e.target.value) as Costume }))}>
-              <option value="rest" disabled={!rest}>{rest ? "Select screen, REST" : 'Select screen, REST (must first be set on the Art tab)'}</option>
+              <option value="rest" disabled={!s.rest}>{s.rest ? 'REST' : 'REST (load its picture first)'}</option>
               {COSTUMES.map(([i, label]) => <option key={i} value={i} disabled={!s.pictures[i]}>{label}</option>)}
             </select>
             <Note>One picture makes both tiles; they're the same for both costumes. The inner box is the selected tile.</Note>
@@ -193,7 +261,15 @@ export function GenerateArtDialog({ onClose }: { onClose: () => void }) {
           </>
         )}
       </div>
-      {picture && masks ? (
+      {tab === 'select' ? (
+        posePngs && placements ? (
+          <>
+            <Note>{PLACEMENT_HELP}</Note>
+            <PlacementEditor pictures={posePngs} pose={pose} spec={placements} fade={s.fade}
+              onChange={(p) => setS((st) => ({ ...st, select: { ...st.select, [pose]: p } }))} />
+          </>
+        ) : <p className="note">Load the costume 1 picture to start.</p>
+      ) : picture && masks ? (
         <div className="artgen">
           <div>
             <FramingEditor picture={picture} framing={framingOf(kind, shownCostume)} size={sizeOf(kind)} zoom={ZOOM[kind]} mask={masks[kind]}

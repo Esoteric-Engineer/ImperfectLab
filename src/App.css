@@ -716,8 +716,13 @@ table.credits input {
 
 .placement {
   display: flex;
+  flex-wrap: wrap;
   gap: 16px;
   align-items: flex-start;
+}
+
+.placement .form .wide {
+  grid-column: 1 / -1;
 }
 
 .placement-canvas {
@@ -728,6 +733,7 @@ table.credits input {
 
 .artgen-pictures {
   display: flex;
+  flex-wrap: wrap;
   gap: 24px;
   margin-bottom: 8px;
 }
