@@ -90,6 +90,21 @@ describe('round trip', () => {
     expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes('the base itself'))).toBe(true)
   })
 
+  it('saves and loads flames, and leaves them out at their defaults', () => {
+    const c = character()
+    expect(imperfect.manifest(c).flames).toBeUndefined()
+    expect(imperfect.load(imperfect.save(c)).flames).toEqual(imperfect.defaultFlames())
+    c.flames = { parts: ['r_hand', 'head'], body: false, color: '#FF8000', alt_color: null, size: 1.5, base_effect: false }
+    const d = imperfect.load(imperfect.save(c))
+    expect(d.flames).toEqual({ ...c.flames, parts: ['head', 'r_hand'] })
+  })
+
+  it('keeps flames to the body or to parts', () => {
+    const c = character()
+    c.flames = { ...imperfect.defaultFlames(), parts: ['head'], body: true }
+    expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes('whole body'))).toBe(true)
+  })
+
   it('slims a GLB', () => {
     const raw = makeGlb(undefined, undefined, pngBytes())
     const slim = imperfect.slimGlb(raw, new Set())
@@ -159,6 +174,11 @@ describe('hostile files', () => {
       (m) => (m.moves = { SuperThrow: 3 }),
       (m) => (m.moves = { SuperThrow: 'wolverine' }),
       (m) => (m.moves = ['SuperThrow']),
+      (m) => (m.flames = { parts: ['tail'] }),
+      (m) => (m.flames = { parts: ['head'], body: true }),
+      (m) => (m.flames = { size: 5 }),
+      (m) => (m.flames = { color: 'orange' }),
+      (m) => (m.flames = { glow: true }),
     ]
     for (const edit of cases) rejected(withManifest(files(), edit))
   })

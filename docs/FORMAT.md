@@ -61,6 +61,7 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
     }]
   },
   "aura": {"mode": "swap", "tint": "all", "color": "#40A0FF", "alt_color": "#50FF50"},
+  "flames": {"parts": ["head"], "body": false, "color": null, "alt_color": "#40A0FF", "size": 1.2, "base_effect": true},
   "stats": {"display": {"normal": [7, 4, 3, 6, 5, 4], "alt": [7, 4, 3, 6, 5, 4]}, "gameplay": {"damage_taken": 0.7, "lift": "medium", "wire_swing": false}},
   "ui": {"select": {"ready": {"scale": 0.8, "anchor": [210, 75], "glow": "#3CFF5A6E"}}, "fade": 36, "strip_scale": null, "ready_voice": null, "banner": true},
   "base_moves": {},
@@ -105,6 +106,16 @@ Game bone numbers in `model` belong to the base's body class (male, female or br
 - `power`: the idle and power-up effects only.
 
 A base whose full tint needs more memory than a match can spare is built as `power` ([`LIMITATIONS.md`](LIMITATIONS.md)).
+
+### `flames`
+Optional; left out when every key has its default. Fire that burns on the character all match, on top of the `aura`:
+- `parts` (default `[]`): any of `head chest r_hand l_hand r_foot l_foot`.
+- `body` (default `false`): Human Torch's body fire over the whole model instead.
+- `color`, `alt_color` (default `null`): the costume's flame color, `#RRGGBB` or `#RRGGBBAA`.
+- `size` (default `1`): 0.5-2.0, scales the flames.
+- `base_effect` (default `true`): `false` removes the base's own always-on effect, such as Human Torch's body fire.
+
+Older ImperfectLab builds refuse a file with `flames`.
 
 ### `stats`
 - `display`: six integers 1-7 per costume: intel, strength, speed, durability, energy, skill. Shown on the

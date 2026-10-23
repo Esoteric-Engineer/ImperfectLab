@@ -23,6 +23,7 @@ import { Skeleton } from '../model/skeleton'
 import { type Character, image as readImage, type Material, problems, type Placement } from '../package/imperfect'
 import * as effects from './effects'
 import * as basemoves from './basemoves'
+import * as flames from './flames'
 import * as moves from './moves'
 import * as portraits from './portraits'
 import * as shaders from './shaders'
@@ -37,7 +38,7 @@ export type Progress = (stage: string, done?: number, total?: number) => void
 
 export class Result {
   dol: Uint8Array | null = null
-  // the effect cache main.dol needs, when a tint outgrows the game's
+  // the effect cache main.dol needs, when a tint or flames outgrow the game's
   cache: number | null = null
   sets = new Map<string, Uint8Array>()
   adds = new Map<string, Uint8Array>()
@@ -116,10 +117,10 @@ export class Builder {
     this.progress('Model')
     const materials = this.buildModel()
     this.progress('Templates, materials and tuning')
-    const [effect1, power, projectiles] = this.effects()
+    const [effect1, power, projectiles, effect2] = this.effects()
     const description = this.tuning(power)
     const motionSet = this.motions()
-    this.templates(effect1, description, projectiles, motionSet)
+    this.templates(effect1, description, projectiles, motionSet, effect2)
     this.r.sets.set('Materials/Shaders/shaders.nsa', shaders.build(this.src.entry('Materials/Shaders/shaders.nsa'), materials, this.texture2))
     this.progress('Select screen, portraits and HUD')
     this.ui()
@@ -196,13 +197,11 @@ export class Builder {
       }
       const names = latin1(ngt).split(/\s+/).filter(Boolean)
       const keep = names.filter((n) => !replaced.has(n.toLowerCase()) || keptByOthers.has(n.toLowerCase()) || n.toLowerCase() === this.texture2.toLowerCase())
-      let extra: [string, gxtex.TplImage][] = []
-      if (!names.some((n) => n.toLowerCase() === this.texture2.toLowerCase())) {
-        const joNames = latin1(this.src.entry('Bundles/johnnyohm.ngt')).split(/\s+/).filter(Boolean).map((n) => n.toLowerCase())
-        const [joIms] = gxtex.readTpl(this.src.entry('Bundles/johnnyohm.tpl'))
-        const at = joNames.indexOf(this.texture2.toLowerCase())
-        if (at < 0) throw new LabError(`Johnny Ohm's bundle has no texture ${this.texture2}`)
-        extra = [[this.texture2, joIms[at]]]
+      const extra: [string, gxtex.TplImage][] = []
+      if (!names.some((n) => n.toLowerCase() === this.texture2.toLowerCase())) extra.push(this.borrowTexture('johnnyohm', "Johnny Ohm's", this.texture2))
+      // a recolored flame draws the grey fire sprite, which only some characters' bundles have
+      if ((alt ? c.flames.alt_color : c.flames.color) !== null && flames.hasAny(c.flames)) {
+        extra.push(this.borrowTexture(flames.GREY_BUNDLE, "Human Torch's costume 2", flames.GREY_SPRITE))
       }
       const mats = included.map((m) => c.internalName + costume + m.suffix)
       allMaterials.push(...mats)
@@ -217,6 +216,10 @@ export class Builder {
       const render = bundle.renderModel(renderBase, copy, normals, nm.MODEL, mats,
         renderBase.meshes.length ? renderBase.meshes[0][5] : [0, 0, 0], stats)
       if (c.baseMoves.throw_reach !== undefined) basemoves.hitSegment(render)
+      if (c.flames.parts.length) {
+        const empty = flames.markers(render, sk, copy, c.flames.parts)
+        if (!alt && empty.length) this.note(`flames: no part of the model follows the ${empty.join(', ')} bone, so its flame sits on the bone itself`)
+      }
       const [data] = bundle.buildNgm(ngm, render, renames)
       const otherNames = new Set(models.slice(1).map((m) => m.name.toLowerCase()))
       const missing = [...renames.keys()].filter((old) => !otherNames.has(old))
@@ -240,21 +243,43 @@ export class Builder {
     return allMaterials
   }
 
-  effects(): [[string, string] | null, Map<number, string[]> | null, nottool.Template[]] {
-    const c = this.c, base = this.base
-    if (c.aura.mode !== 'tint') return [null, null, []]
+  borrowTexture(bundleName: string, label: string, texture: string): [string, gxtex.TplImage] {
+    const names = latin1(this.src.entry(`Bundles/${bundleName}.ngt`)).split(/\s+/).filter(Boolean).map((n) => n.toLowerCase())
+    const [ims] = gxtex.readTpl(this.src.entry(`Bundles/${bundleName}.tpl`))
+    const at = names.indexOf(texture.toLowerCase())
+    if (at < 0) throw new LabError(`${label} bundle has no texture ${texture}`)
+    return [texture, ims[at]]
+  }
+
+  // The aura tint's copies and the flames' blocks, in one effect file.
+  effects(): [[string, string] | null, Map<number, string[]> | null, nottool.Template[], [string, string] | null] {
+    const c = this.c
+    const tinted = c.aura.mode === 'tint', fire = flames.hasAny(c.flames)
+    if (!tinted && !fire) return [null, null, [], null]
     const fx = new effects.Effects(this.src.entry('Misc/game.nfx'))
+    const before = fx.used()
+    const [effect1, power, extra] = tinted ? this.tinted(fx) : [null, null, []]
+    const effect2 = flames.effectNames(fx, c.flames, c.internalName)
+    if (fire) this.note(`flames: ${c.flames.body ? "over the whole body (Human Torch's body fire)" : `on the ${c.flames.parts.join(', ')}`}`)
+    // the game's own body fire adds nothing
+    if (fx.used() === before) return [effect1, power, extra, effect2]
+    this.r.sets.set('Misc/game.nfx', fx.build())
+    const size = effects.cacheSize(fx.used())
+    if (size > nfxtool.CACHE_SIZE) this.r.cache = size
+    this.note(`effects: ${fx.used() - before} bytes added, ${fx.used()} of ${size} bytes of effect cache used`)
+    return [effect1, power, extra, effect2]
+  }
+
+  private tinted(fx: effects.Effects): [[string, string] | null, Map<number, string[]>, nottool.Template[]] {
+    const c = this.c, base = this.base
     const tun = new tuning.Tuning(this.src, base)
-    const level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, base), 'all') : c.aura.tint)
+    const level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, base), 'all', flames.cost(c.flames)) : c.aura.tint)
     if (this.tint === null && level !== c.aura.tint) this.note(`aura tint: ${base.label}'s full tint needs more memory than a match can spare; its idle and power-up effects are tinted`)
     const [rootsN, rootsA] = effects.roots(fx, tun, base, level)
     if (!rootsN.length && !rootsA.length) throw new LabError(`${base.label} has no effects to tint; use the Base or Swap aura`)
     const mn = fx.tinted(rootsN, c.aura.color, effects.copyPrefix(c.internalName, false))
     const ma = fx.tinted(rootsA, c.aura.alt_color, effects.copyPrefix(c.internalName, true))
-    this.r.sets.set('Misc/game.nfx', fx.build())
-    const size = effects.cacheSize(fx.used())
-    if (size > nfxtool.CACHE_SIZE) this.r.cache = size
-    this.note(`aura tint: ${mn.size + ma.size} effect blocks copied, ${fx.used()} of ${size} bytes of effect cache used`)
+    this.note(`aura tint: ${mn.size + ma.size} effect blocks copied`)
     const pick = (m: Map<string, string>, name: string | null) => m.get((name ?? '').toLowerCase()) ?? name!
     const effect1: [string, string] | null = base.effect1 ? [pick(mn, base.effect1), pick(ma, base.altEffect1)] : null
     // Every effect field naming a tinted block follows it.
@@ -316,7 +341,8 @@ export class Builder {
     return m.motionSet
   }
 
-  templates(effect1: [string, string] | null, description: string | null, extra: nottool.Template[], motionSet: string | null = null) {
+  templates(effect1: [string, string] | null, description: string | null, extra: nottool.Template[], motionSet: string | null = null,
+    effect2: [string, string] | null = null) {
     const c = this.c, gp = c.gameplay
     let on = 0, off = 0
     if (gp.lift) {
@@ -330,7 +356,7 @@ export class Builder {
     }
     const mode = c.aura.mode === 'swap' ? 'swap' : 'base'
     this.r.sets.set('Misc/Global.not', templates.build(this.src.entry('Misc/Global.not'), this.base, c.internalName, mode, effect1, description,
-      on || off ? [on, off] : null, gp.health ?? null, extra, motionSet, c.baseMoves.throw_cable ?? true))
+      on || off ? [on, off] : null, gp.health ?? null, extra, motionSet, (c.baseMoves.throw_cable ?? true) && c.flames.base_effect, effect2))
   }
 
   picture(slot: string): RgbaImage | null {

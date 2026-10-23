@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as effects from '../src/core/build/effects'
+import * as flames from '../src/core/build/flames'
 import * as basemoves from '../src/core/build/basemoves'
 import * as moves from '../src/core/build/moves'
 import { buildBatch, checkBatch, ordinal } from '../src/core/build/batch'
@@ -283,6 +284,95 @@ describe.skipIf(!ISO)('game', () => {
     const r = new Builder(src(), tinted('ironman')).build()
     expect(D.readEffectCache(r.dol!)).toBe(nfxtool.CACHE_SIZE)
     expect(r.notes.some((n) => n.includes('idle and power-up effects are tinted'))).toBe(true)
+  })
+
+  it('puts flames on chosen parts', () => {
+    for (const base of ['wolverine', 'storm', 'megalith']) {
+      const c = tinted(base)
+      c.aura = { ...c.aura, mode: 'base' }
+      c.flames = { ...imperfect.defaultFlames(), parts: ['head', 'r_hand', 'l_foot'] }
+      const r = new Builder(src(), c).build()
+      const sk = Skeleton.ofBase(new R.BaseCharacter(src(), base))
+      for (const costume of ['', '_alt']) {
+        const [, models] = ngmtool.read(r.adds.get(`Bundles/synth${costume}.ngm`)!)
+        const marks = models[0].attachments.filter(([, kind]) => kind === flames.FLAME_KIND).map(([node, , index]) => [node, index])
+        expect(marks, base).toEqual([[sk.node('head'), 0], [sk.node('R.hand'), 2], [sk.node('L.foot'), 5]])
+      }
+      const T = new R.Templates(r.sets.get('Misc/Global.not')!)
+      const names = ['plr_Synth', 'plr_altSynth'].map((t) => R.text(T.prop(t, R.P_EFFECT2))!)
+      expect(names[0]).toBe(names[1])
+      const items = nfxtool.readNfx(r.sets.get('Misc/game.nfx')!)
+      expect(nfxtool.problems(items)[0]).toEqual([])
+      const by = new Map(nfxtool.blocks(items).map((b) => [b.name, b]))
+      const children = by.get(names[0])!.records()[0].map((rec) => rec.value as string)
+      const marker = (n: string) => by.get(n)!.records()[0].filter((rec) => ['markertype', 'marker_index'].includes(nfxtool.KEYS[rec.key])).map((rec) => rec.value)
+      expect(children.map(marker)).toEqual([[69, 0], [69, 2], [69, 5]])
+      expect(r.adds.has('Misc/PLAYER_Synth.nvb')).toBe(false)
+      expect(D.readEffectCache(r.dol!)).toBe(nfxtool.CACHE_SIZE)
+    }
+  })
+
+  it('colors flames per costume and drops the base\'s own effect', () => {
+    const c = tinted('humantorch')
+    c.aura = { ...c.aura, mode: 'base' }
+    c.flames = { ...imperfect.defaultFlames(), parts: ['head'], color: '#2040FF', base_effect: false }
+    const r = new Builder(src(), c).build()
+    const T = new R.Templates(r.sets.get('Misc/Global.not')!)
+    for (const t of ['act_Synth', 'plr_Synth', 'plr_altSynth']) expect(T.get(t).get(R.P_EFFECT1), t).toBeNull()
+    const [normal, alt] = ['plr_Synth', 'plr_altSynth'].map((t) => R.text(T.prop(t, R.P_EFFECT2))!)
+    expect(normal).not.toBe(alt)
+    const by = new Map(nfxtool.blocks(nfxtool.readNfx(r.sets.get('Misc/game.nfx')!)).map((b) => [b.name, b]))
+    const records = (controller: string) => by.get(by.get(controller)!.records()[0][0].value as string)!.records()[0]
+    const values = (controller: string, key: string) => records(controller).filter((rec) => nfxtool.KEYS[rec.key] === key).map((rec) => rec.value)
+    // blue, from a lighter start, on the grey sprite; the game's own orange sprite would turn any color orange
+    const [start, end] = ['startcol', 'endcol'].map((k) => values(normal, k)[0] as number)
+    expect((end & 255) > ((end >>> 16) & 255)).toBe(true)
+    expect((start >>> 16) & 255).toBeGreaterThan((end >>> 16) & 255)
+    expect(values(normal, 'material')).toEqual([flames.GREY_SPRITE])
+    expect([values(alt, 'startcol'), values(alt, 'endcol'), values(alt, 'material')]).toEqual([[], [], ['GE_PAR_FireSprite_04']])
+    // the grey sprite goes into the recolored costume's bundle (Human Torch's costume 2 bundle has its own), once
+    const greys = (costume: string) => latin1(r.adds.get(`Bundles/synth${costume}.ngt`)!).split(/\s+/).filter((n) => n.toLowerCase() === flames.GREY_SPRITE.toLowerCase()).length
+    expect([greys(''), greys('_alt')]).toEqual([1, 1])
+  })
+
+  it('sets the whole body on fire with the game\'s own effect', () => {
+    const c = tinted('wolverine')
+    c.aura = { ...c.aura, mode: 'base' }
+    c.flames = { ...imperfect.defaultFlames(), body: true }
+    const r = new Builder(src(), c).build()
+    const T = new R.Templates(r.sets.get('Misc/Global.not')!)
+    expect(['plr_Synth', 'plr_altSynth'].map((t) => R.text(T.prop(t, R.P_EFFECT2)))).toEqual(['htBodyFire', 'htBodyFire'])
+    expect(r.sets.has('Misc/game.nfx')).toBe(false)
+    const [, models] = ngmtool.read(r.adds.get('Bundles/synth.ngm')!)
+    expect(models[0].attachments.some(([, kind]) => kind === flames.FLAME_KIND)).toBe(false)
+  })
+
+  it('counts flames in the memory a tint may take', () => {
+    const f = { ...imperfect.defaultFlames(), parts: [...imperfect.FLAME_PARTS], color: '#FF0000', alt_color: '#0000FF' }
+    const fx = new effects.Effects(src().entry('Misc/game.nfx'))
+    const before = fx.used()
+    flames.effectNames(fx, f, 'Synth')
+    expect(Math.abs(fx.used() - before - flames.cost(f))).toBeLessThan(16)
+    expect(flames.cost({ ...imperfect.defaultFlames(), body: true })).toBe(0)
+    const plans = effects.tintPlans(src(), new R.BaseCharacter(src(), 'johnnyohm'))
+    expect(effects.tintLevel(plans, 'all', 0)).toBe('all')
+    expect(effects.tintLevel(plans, 'all', flames.cost(f))).toBe('power')
+    const c = tinted('johnnyohm')
+    c.flames = f
+    const r = new Builder(src(), c).build()
+    expect(r.notes.some((n) => n.includes('idle and power-up effects are tinted'))).toBe(true)
+  })
+
+  it('shares the flames of characters that have the same', () => {
+    const f = { ...imperfect.defaultFlames(), parts: ['head', 'chest'] }
+    const a = { ...tinted('wolverine'), flames: f }
+    const b = { ...tinted('storm'), internalName: 'Other', displayName: 'OTHER', flames: f }
+    for (const c of [a, b]) c.aura = { ...c.aura, mode: 'base' }
+    const r = buildBatch(src(), [a, b])
+    const T = new R.Templates(r.sets.get('Misc/Global.not')!)
+    expect(R.text(T.prop('plr_Other', R.P_EFFECT2))).toBe(R.text(T.prop('plr_Synth', R.P_EFFECT2)))
+    const added = nfxtool.blocks(nfxtool.readNfx(r.sets.get('Misc/game.nfx')!)).length - nfxtool.blocks(nfxtool.readNfx(src().entry('Misc/game.nfx'))).length
+    expect(added).toBe(3)
   })
 
   it('names the new fighters', () => {

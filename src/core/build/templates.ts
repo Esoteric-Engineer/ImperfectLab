@@ -58,7 +58,7 @@ export function retarget(T: R.Templates, name: string, effects: Map<string, stri
 
 export function build(data: Uint8Array, base: R.BaseCharacter, internal: string, aura = 'base', effect1: [string, string] | null = null,
   description: string | null = null, abilities: [number, number] | null = null, health: number | null = null, extra: nottool.Template[] = [],
-  motionSet: string | null = null, effect1Kept = true): Uint8Array {
+  motionSet: string | null = null, effect1Kept = true, effect2: [string, string] | null = null): Uint8Array {
   const T = new R.Templates(data)
   const [actN, plrN, altN] = templateNames(internal)
   for (const n of [actN, plrN, altN, ...extra.map((t) => t.name)]) if (T.has(n)) throw new LabError(`Global.not already has a template ${n}`)
@@ -85,6 +85,10 @@ export function build(data: Uint8Array, base: R.BaseCharacter, internal: string,
   if (effect1) {
     plr.set(R.P_EFFECT1, nottool.vStr(effect1[0]))
     alt.set(R.P_EFFECT1, nottool.vStr(effect1[1]))
+  }
+  if (effect2) {
+    plr.set(R.P_EFFECT2, nottool.vStr(effect2[0]))
+    alt.set(R.P_EFFECT2, nottool.vStr(effect2[1]))
   }
   if (description) {
     for (const t of [act, plr, alt]) if (t === act || t.get(R.P_DESCRIPTIONID) !== null) t.set(R.P_DESCRIPTIONID, nottool.vStr(description))

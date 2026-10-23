@@ -28,7 +28,7 @@ export function ordinal(i: number): string {
 
 const lower = (level: string | null) => (level === 'all' ? 'power' : level)
 
-// The tint levels they get: as asked, unless together they grow the effect cache by more than one full tint may.
+// The tint levels they get: as asked, unless together (with their flames) they grow the effect cache by more than one full tint may.
 export function batchTints(source: GameSource, chars: Batch): [(string | null)[], number] {
   const bases = chars.map((c) => new R.BaseCharacter(source, c.base))
   const asked = chars.map((c) => (c.aura.mode === 'tint' ? c.aura.tint : null))
@@ -38,7 +38,7 @@ export function batchTints(source: GameSource, chars: Batch): [(string | null)[]
   const seen = new Map<string, number>()
   for (const t of tries) {
     const key = t.join()
-    if (!seen.has(key)) seen.set(key, effects.sharedExtra(source, t.map((level, i) => [bases[i], level])))
+    if (!seen.has(key)) seen.set(key, effects.sharedExtra(source, t.map((level, i) => [bases[i], level]), chars.map((c) => c.flames)))
     if (seen.get(key)! <= effects.TINT_ALL_LIMIT) return [t, seen.get(key)!]
   }
   const last = tries[tries.length - 1]
@@ -205,7 +205,7 @@ export function checkBatch(source: GameSource, chars: Batch, progress: Progress 
       add('warning', `${named[i]}: the tints together need more effect memory than a match can spare (the patch can grow it by ${effects.TINT_ALL_LIMIT.toLocaleString('en-US')} bytes), so only its idle and power-up effects are tinted`)
     }
   })
-  if (extra > effects.TINT_ALL_LIMIT) add('warning', `even cut back, the tints grow the effect cache by ${extra.toLocaleString('en-US')} bytes, more than has been tested`)
+  if (extra > effects.TINT_ALL_LIMIT) add('warning', `even cut back, the tints and flames grow the effect cache by ${extra.toLocaleString('en-US')} bytes, more than has been tested`)
 
   let r: Result
   try {

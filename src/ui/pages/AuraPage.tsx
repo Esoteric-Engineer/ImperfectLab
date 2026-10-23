@@ -1,5 +1,7 @@
 import * as effects from '../../core/build/effects'
-import { ColorButton, Note, Warning } from '../components/common'
+import * as flames from '../../core/build/flames'
+import { FLAME_SIZE } from '../../core/package/imperfect'
+import { ColorButton, Note, NumberInput, Warning } from '../components/common'
 import { store, useStore } from '../store'
 
 const TEXTS: [string, string][] = [
@@ -13,7 +15,29 @@ const LEVELS: [string, string][] = [
   ['power', 'Idle and power-up effects only'],
 ]
 
+const FLAME_MODES: [string, string][] = [
+  ['none', 'None'],
+  ['parts', 'On chosen body parts'],
+  ['body', 'Over the entire body'],
+]
+
+const PARTS: [string, string][] = [
+  ['head', 'Head'], ['chest', 'Chest'], ['r_hand', 'Right hand'], ['l_hand', 'Left hand'], ['r_foot', 'Right foot'], ['l_foot', 'Left foot'],
+]
+
 const kb = (n: number) => (n / 1024).toFixed(1)
+
+function FlameColor({ color, onChange }: { color: string | null; onChange: (c: string | null) => void }) {
+  return (
+    <span className="check">
+      <select value={color === null ? 'fire' : 'color'} onChange={(e) => onChange(e.target.value === 'fire' ? null : '#FF6A00')}>
+        <option value="fire">The game's fire</option>
+        <option value="color">Recolored</option>
+      </select>
+      {color !== null && <ColorButton color={color} alpha onChange={onChange} />}
+    </span>
+  )
+}
 
 export function AuraPage() {
   useStore()
@@ -23,27 +47,41 @@ export function AuraPage() {
   const details = s.baseDetails()
   const edited = () => s.touch('character')
   const tint = c.aura.mode === 'tint'
+  const f = c.flames
+  const flameMode = f.body ? 'body' : f.parts.length ? 'parts' : 'none'
+  const flameBytes = flames.cost(f)
   const plans = details?.tint ?? {}
-  const tooBig = (level: string) => effects.tintLevel(plans, level) !== level
+  const tooBig = (level: string) => effects.tintLevel(plans, level, flameBytes) !== level
   const memory = (level: string) => {
     const p = plans[level]
     if (!p) return ''
-    if (tooBig(level)) return ` (needs ${kb(p.extra)} KB of game memory, more than a match can spare)`
-    return p.extra ? ` (adds ${kb(p.extra)} KB of game memory)` : ' (fits the game\'s memory)'
+    const extra = effects.planExtra(p, flameBytes)
+    if (tooBig(level)) return ` (needs ${kb(extra)} KB of game memory, more than a match can spare)`
+    return extra ? ` (adds ${kb(extra)} KB of game memory)` : ' (fits the game\'s memory)'
   }
   let about = 'Choose your game disc to see what the base character\'s aura is.'
   let tintable = true
   let cost = ''
-  const level = effects.tintLevel(plans, c.aura.tint)
+  const level = effects.tintLevel(plans, c.aura.tint, flameBytes)
   const plan = plans[level]
   if (base && details && plans.all) {
     tintable = plans.all.roots.length > 0 || plans.all.alt.length > 0
     about = `${base.label}'s effects: ${plans.power.roots.join(', ') || 'none'}. ${tintable ? '' : 'There is nothing to tint; Base and Swap still apply.'}`
     if (tintable && plan) {
-      cost = (level !== c.aura.tint ? `${base.label}'s full tint needs more memory than a match can spare, so only the idle and power-up effects are tinted. ` : '') +
+      const extra = effects.planExtra(plan, flameBytes)
+      cost = (level !== c.aura.tint ? `${base.label}'s full tint${flameBytes ? ' with flames' : ''} needs more memory than a match can spare, so only the idle and power-up effects are tinted. ` : '') +
         `This tint copies ${plan.roots.length + plan.alt.length} effects (${plan.bytes} bytes); ` +
-        (plan.extra ? `the patch adds ${plan.extra} bytes to the game's effect memory for them.` : 'they fit the game\'s effect memory.')
+        (extra ? `the patch adds ${extra} bytes to the game's effect memory for them${flameBytes ? ' and the flames' : ''}.` : 'they fit the game\'s effect memory.')
     }
+  }
+  const setFlameMode = (mode: string) => {
+    f.body = mode === 'body'
+    f.parts = mode === 'parts' ? ['head'] : []
+    edited()
+  }
+  const togglePart = (part: string, on: boolean) => {
+    f.parts = PARTS.map(([p]) => p).filter((p) => (p === part ? on : f.parts.includes(p)))
+    edited()
   }
   return (
     <div className="page">
@@ -83,6 +121,40 @@ export function AuraPage() {
         Note that transparent tints still use the same amount of memory as any other tint.
       </Note>
       <p>{cost}</p>
+
+      <h3>Flames</h3>
+      <Note>
+        Add flames to the character on chosen parts or the whole body.
+      </Note>
+      {FLAME_MODES.map(([mode, text]) => (
+        <label key={mode} className="check block">
+          <input type="radio" name="flames" checked={flameMode === mode} onChange={() => setFlameMode(mode)} /> {text}
+        </label>
+      ))}
+      {flameMode === 'parts' && (
+        <div>
+          {PARTS.map(([part, text]) => (
+            <label key={part} className="check">
+              <input type="checkbox" checked={f.parts.includes(part)} onChange={(e) => togglePart(part, e.target.checked)} /> {text}
+            </label>
+          ))}
+        </div>
+      )}
+      <div className="form">
+        <label>Costume 1 flames</label>
+        <FlameColor color={f.color} onChange={(v) => { f.color = v; edited() }} />
+        <label>Costume 2 flames</label>
+        <FlameColor color={f.alt_color} onChange={(v) => { f.alt_color = v; edited() }} />
+        <label>Flame size</label>
+        <NumberInput value={f.size} min={FLAME_SIZE[0]} max={FLAME_SIZE[1]} step={0.1} disabled={flameMode === 'none'} onChange={(v) => { f.size = v; edited() }} />
+      </div>
+      <label className="check block">
+        <input type="checkbox" checked={f.base_effect} onChange={(e) => { f.base_effect = e.target.checked; edited() }} />
+        {' '}Keep the base's own always-on effect, if it has one (such as Human Torch's body fire)
+      </label>
+      <p>
+        {flameMode === 'none' ? '' : flameBytes ? `The flames add ${flameBytes} bytes to the game's effect memory.` : 'The flames use the game\'s own effect, which takes no more memory.'}
+      </p>
     </div>
   )
 }
