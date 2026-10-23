@@ -2,9 +2,23 @@ import { useSyncExternalStore } from 'react'
 import type { Catalog } from '../core/build/moves'
 import type { Joint, JointModel } from '../core/model/glb'
 import { Skeleton } from '../core/model/skeleton'
-import { type Character, copyCharacter, newCharacter } from '../core/package/imperfect'
+import { type Character, copyCharacter, newCharacter, snapshotCharacter } from '../core/package/imperfect'
 import type { BaseDetails, BaseInfo, BatchCheckResult, ModelInfo } from '../worker/protocol'
 import { engine, errorText } from './engine'
+import { History } from './history'
+
+const DISCRETE_INPUTS = new Set(['checkbox', 'radio', 'button', 'file', 'submit', 'reset'])
+const controlIds = new WeakMap<Element, number>()
+let controls = 0
+
+function editKey(what: Change): string | null {
+  const el = globalThis.document?.activeElement
+  if (!el) return null
+  const continuous = el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && !DISCRETE_INPUTS.has((el as HTMLInputElement).type))
+  if (!continuous) return null
+  if (!controlIds.has(el)) controlIds.set(el, ++controls)
+  return `${what}:${controlIds.get(el)}`
+}
 
 export class ModelView implements JointModel {
   info: ModelInfo
@@ -65,6 +79,10 @@ class Store {
   batchCheck: BatchCheckResult | null = null
   versions: Record<Change, number> = { character: 0, model: 0, mapping: 0, game: 0 }
   private version = 0
+  private history = new History(snapshotCharacter(this.character))
+  private loads = 0
+  restores = 0
+  private editing = 0
   private listeners = new Set<() => void>()
   private skeletons = new Map<string, Skeleton | null>()
   private details = new Map<string, BaseDetails | 'loading'>()
@@ -87,6 +105,7 @@ class Store {
 
   touch(what: Change = 'character', dirty = true) {
     if (dirty) this.dirty = true
+    if (what !== 'game') this.history.record(snapshotCharacter(this.character), editKey(what), Date.now())
     this.versions[what]++
     this.emit()
   }
@@ -116,20 +135,83 @@ class Store {
     this.fileName = fileName
     this.fileHandle = handle
     this.dirty = false
+    this.history.reset(snapshotCharacter(c))
     await this.loadModel()
     for (const k of Object.keys(this.versions) as Change[]) this.versions[k]++
     this.emit()
   }
 
+  savePoint(): Character {
+    return this.history.latest
+  }
+
+  markSaved(point: Character) {
+    this.history.markSaved(point)
+    this.dirty = !this.history.isSaved
+  }
+
+  async edit<T>(work: () => Promise<T>): Promise<T> {
+    this.editing++
+    this.emit()
+    try {
+      return await work()
+    } finally {
+      this.editing--
+      this.emit()
+    }
+  }
+
+  // Use a model the worker already holds, superseding any load still in flight.
+  adoptModel(info: ModelInfo) {
+    this.loads++
+    this.model = new ModelView(info)
+    this.modelError = null
+  }
+
+  // A newer load supersedes an older one still waiting on the worker.
   async loadModel() {
+    const load = ++this.loads
     this.model = null
     this.modelError = null
     try {
       const info = await engine.call<ModelInfo | null>('setModel', [this.character.glb])
-      this.model = info ? new ModelView(info) : null
+      if (load === this.loads) this.model = info ? new ModelView(info) : null
     } catch (e) {
-      this.modelError = errorText(e)
+      if (load === this.loads) this.modelError = errorText(e)
     }
+  }
+
+  get canUndo(): boolean {
+    return this.editing === 0 && this.history.canUndo
+  }
+
+  get canRedo(): boolean {
+    return this.editing === 0 && this.history.canRedo
+  }
+
+  undo() {
+    return this.restore(this.canUndo ? this.history.undo() : null)
+  }
+
+  redo() {
+    return this.restore(this.canRedo ? this.history.redo() : null)
+  }
+
+  private async restore(target: Character | null) {
+    if (!target) return
+    const modelChanged = target.glb !== this.character.glb
+    Object.assign(this.character, snapshotCharacter(target))
+    this.dirty = !this.history.isSaved
+    this.restores++
+    this.versions.character++
+    this.versions.mapping++
+    this.versions.model++
+    const loading = modelChanged ? this.loadModel() : null
+    this.emit()
+    if (!loading) return
+    await loading
+    this.versions.model++
+    this.emit()
   }
 
   // Every change makes a new array, so a check started on the old one can tell.

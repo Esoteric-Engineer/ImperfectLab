@@ -31,6 +31,21 @@ const STEPS: [string, () => React.JSX.Element][] = [
 // After the steps, separate section.
 const PAGES: [string, () => React.JSX.Element][] = [...STEPS, ['Multi-Character Patch', BatchPage]]
 
+const NON_TEXT = new Set(['range', 'checkbox', 'radio', 'color', 'button', 'file'])
+function editingText(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  if (target.isContentEditable || target instanceof HTMLTextAreaElement) return true
+  return target instanceof HTMLInputElement && !NON_TEXT.has(target.type)
+}
+
+function dialogOpen(): boolean {
+  return document.querySelector('[role="dialog"]') !== null
+}
+
+function stepHistory(redo: boolean) {
+  if (!dialogOpen()) void (redo ? store.redo() : store.undo())
+}
+
 function App() {
   useStore()
   const s = store
@@ -49,7 +64,13 @@ function App() {
     const keys = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return
       const k = e.key.toLowerCase()
-      if (k === 's') {
+      if (k === 'z' || k === 'y') {
+        if (dialogOpen()) return
+        e.preventDefault()
+        if (e.repeat) return
+        if (editingText(e.target)) (e.target as HTMLElement).blur()
+        stepHistory(k === 'y' || e.shiftKey)
+      } else if (k === 's') {
         e.preventDefault()
         void (e.shiftKey ? actions.saveAs() : actions.save())
       } else if (k === 'o') {
@@ -75,6 +96,13 @@ function App() {
         { separator: true },
         { label: 'Save', shortcut: `${mod}S`, onSelect: () => actions.save() },
         { label: 'Save as...', shortcut: `${mod}${mod === '⌘' ? '⇧' : 'Shift+'}S`, onSelect: () => actions.saveAs() },
+      ],
+    },
+    {
+      label: 'Edit',
+      items: [
+        { label: 'Undo', shortcut: `${mod}Z`, disabled: !s.canUndo, onSelect: () => stepHistory(false) },
+        { label: 'Redo', shortcut: `${mod}${mod === '⌘' ? '⇧Z' : 'Y'}`, disabled: !s.canRedo, onSelect: () => stepHistory(true) },
       ],
     },
     {

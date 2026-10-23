@@ -18,30 +18,32 @@ export function CharacterPage() {
 
   const changeBase = async (key: string) => {
     if (key === c.base) return
-    const old = s.game ? s.skeleton(c.base) : null
-    c.base = key
-    for (const k of Object.keys(c.baseMoves) as (keyof BaseMoves)[]) if (!(BASE_MOVES[key] ?? []).includes(k)) delete c.baseMoves[k]
-    for (const [id, from] of Object.entries(c.moves)) if (from === key) delete c.moves[id]
-    const next = s.skeleton()
-    if (next && old) {
-      ;[c.mapping, c.overrides] = mapping.translate(c.mapping, c.overrides, old, next)
-      for (const m of c.materials) {
-        if (m.bind !== null) {
-          const [moved] = mapping.translate(new Map([[m.bind, '']]), new Map(), old, next)
-          m.bind = moved.keys().next().value ?? null
+    await store.edit(async () => {
+      const old = s.game ? s.skeleton(c.base) : null
+      c.base = key
+      for (const k of Object.keys(c.baseMoves) as (keyof BaseMoves)[]) if (!(BASE_MOVES[key] ?? []).includes(k)) delete c.baseMoves[k]
+      for (const [id, from] of Object.entries(c.moves)) if (from === key) delete c.moves[id]
+      const next = s.skeleton()
+      if (next && old) {
+        ;[c.mapping, c.overrides] = mapping.translate(c.mapping, c.overrides, old, next)
+        for (const m of c.materials) {
+          if (m.bind !== null) {
+            const [moved] = mapping.translate(new Map([[m.bind, '']]), new Map(), old, next)
+            m.bind = moved.keys().next().value ?? null
+          }
         }
       }
-    }
-    if (s.model && next && next.requiredRoles().some((r) => !c.mapping.has(next.node(r)!))) {
-      const auto = await engine.call<AutoMap | null>('autoMap', [key]).catch(() => null)
-      if (auto) {
-        c.mapping = auto.mapping
-        c.overrides = auto.overrides
+      if (s.model && next && next.requiredRoles().some((r) => !c.mapping.has(next.node(r)!))) {
+        const auto = await engine.call<AutoMap | null>('autoMap', [key]).catch(() => null)
+        if (auto) {
+          c.mapping = auto.mapping
+          c.overrides = auto.overrides
+        }
       }
-    }
-    const b = s.base()
-    if (b && b.stats.length && JSON.stringify(c.stats) === JSON.stringify(defaultStats())) c.stats = { normal: [...b.stats], alt: [...b.altStats] }
-    store.touch('mapping')
+      const b = s.base()
+      if (b && b.stats.length && JSON.stringify(c.stats) === JSON.stringify(defaultStats())) c.stats = { normal: [...b.stats], alt: [...b.altStats] }
+      store.touch('mapping')
+    })
   }
 
   const assets = c.credits.assets

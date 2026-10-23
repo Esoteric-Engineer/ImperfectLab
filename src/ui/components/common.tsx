@@ -42,7 +42,7 @@ export function ColorButton({ color, alpha = false, onChange, disabled }: { colo
   const [draft, setDraft] = useState<string | null>(null)
   const commitDraft = (text: string) => {
     const m = /^#?([0-9a-f]{6})$/i.exec(text.trim())
-    if (m) emit('#' + m[1].toUpperCase(), a)
+    if (m && '#' + m[1].toUpperCase() !== rgb) emit('#' + m[1].toUpperCase(), a)
     setDraft(null)
   }
   const css = `rgb(${parseInt(rgb.slice(1, 3), 16)} ${parseInt(rgb.slice(3, 5), 16)} ${parseInt(rgb.slice(5, 7), 16)}`
@@ -132,7 +132,8 @@ export function NumberInput({ value, onChange, min, max, step, disabled, classNa
     const v = Number(raw)
     if (raw.trim() === '' || !Number.isFinite(v)) return
     if (!final && ((min !== undefined && v < min) || (max !== undefined && v > max))) return
-    onChange(Math.max(min ?? -Infinity, Math.min(max ?? Infinity, v)))
+    const next = Math.max(min ?? -Infinity, Math.min(max ?? Infinity, v))
+    if (next !== value) onChange(next)
   }
   return (
     <input type="number" className={className} value={shown} min={min} max={max} step={step} disabled={disabled}

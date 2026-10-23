@@ -7,7 +7,7 @@ import type { ImportedModel, PreviewResult } from '../../worker/protocol'
 import { NumberInput, ProblemList } from '../components/common'
 import { Viewport } from '../components/viewport'
 import { engine, errorText } from '../engine'
-import { ModelView, store, useStore } from '../store'
+import { store, useStore } from '../store'
 
 const MODES = ['Fitted over base', 'Fitted', 'Your model', 'Base character']
 const NONE = '(none)'
@@ -122,6 +122,12 @@ export function ModelPage() {
   const [tab, setTab] = useState<'game' | 'model' | 'fit'>('game')
   const [selNode, setSelNode] = useState<number | null>(null)
   const [selJoint, setSelJoint] = useState<string | null>(null)
+  const [restores, setRestores] = useState(s.restores)
+  if (restores !== s.restores) {
+    setRestores(s.restores)
+    setSelNode(null)
+    setSelJoint(null)
+  }
   const [busy, setBusy] = useState(false)
   const [report, setReport] = useState('')
   const [scene, setScene] = useState<Scene | null>(null)
@@ -151,41 +157,49 @@ export function ModelPage() {
     const c = store.character
     const file = await pickFile('.glb')
     if (!file) return
-    let imported: ImportedModel
-    try {
-      imported = await engine.call<ImportedModel>('importModel', [new Uint8Array(await file.arrayBuffer())])
-    } catch (e) {
-      store.fail(`The model could not be imported:\n${errorText(e)}`)
-      return
-    }
-    c.glb = imported.slim
-    c.materials = imported.materials
-    c.mapping = new Map()
-    c.overrides = new Map()
-    store.model = new ModelView(imported.info)
-    store.modelError = null
-    if (sk) {
-      const auto = await engine.call<mapping.AutoMap | null>('autoMap', [c.base])
-      if (auto) {
-        c.mapping = auto.mapping
-        c.overrides = auto.overrides
-        store.message(`Imported ${file.name} (${Math.floor(imported.slim.length / 1024)} KB after dropping animations and unused data); mapped with the ${auto.preset} preset`)
+    await store.edit(async () => {
+      let imported: ImportedModel
+      try {
+        imported = await engine.call<ImportedModel>('importModel', [new Uint8Array(await file.arrayBuffer())])
+      } catch (e) {
+        store.fail(`The model could not be imported:\n${errorText(e)}`)
+        return
       }
-    }
-    const name = file.name.replace(/\.[^.]*$/, '')
-    if (!c.credits.assets.some((a) => a.what === 'model')) c.credits.assets.push({ what: 'model', by: '', license: '', url: name })
-    store.touch('model')
+      const name = file.name.replace(/\.[^.]*$/, '')
+      c.glb = imported.slim
+      c.materials = imported.materials
+      c.mapping = new Map()
+      c.overrides = new Map()
+      store.adoptModel(imported.info)
+      if (!c.credits.assets.some((a) => a.what === 'model')) c.credits.assets.push({ what: 'model', by: '', license: '', url: name })
+      try {
+        if (sk) {
+          const auto = await engine.call<mapping.AutoMap | null>('autoMap', [c.base])
+          if (auto) {
+            c.mapping = auto.mapping
+            c.overrides = auto.overrides
+            store.message(`Imported ${file.name} (${Math.floor(imported.slim.length / 1024)} KB after dropping animations and unused data); mapped with the ${auto.preset} preset`)
+          }
+        }
+      } catch (e) {
+        store.fail(`${file.name} was imported, but it could not be mapped automatically:\n${errorText(e)}`)
+      } finally {
+        store.touch('model')
+      }
+    })
   }
 
   const autoMap = async () => {
     const c = store.character
     if (!sk || !model) return
-    const auto = await engine.call<mapping.AutoMap | null>('autoMap', [c.base])
-    if (!auto) return
-    c.mapping = auto.mapping
-    c.overrides = auto.overrides
-    store.message(`Mapped with the ${auto.preset} preset`)
-    store.touch('mapping')
+    await store.edit(async () => {
+      const auto = await engine.call<mapping.AutoMap | null>('autoMap', [c.base])
+      if (!auto) return
+      c.mapping = auto.mapping
+      c.overrides = auto.overrides
+      store.message(`Mapped with the ${auto.preset} preset`)
+      store.touch('mapping')
+    })
   }
 
   const clear = () => {

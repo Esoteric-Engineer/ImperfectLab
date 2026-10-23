@@ -6,6 +6,7 @@ import { decodePicture, pickFile } from '../../io/files'
 import { CropDialog } from '../components/CropDialog'
 import { ImageView, Note } from '../components/common'
 import { PlacementDialog } from '../components/PlacementDialog'
+import type { Character } from '../../core/package/imperfect'
 import { store, useStore } from '../store'
 
 const SLOTS: [string, string, string][] = [
@@ -26,7 +27,19 @@ const SLOTS: [string, string, string][] = [
 ]
 const PICTURES = '.png,.jpg,.jpeg,.webp,.bmp,.gif'
 
-const sources = new Map<string, RgbaImage>()
+interface Source { image: RgbaImage; owner: Character; result: Uint8Array | undefined }
+const sources = new Map<string, Source>()
+
+function source(slot: string): RgbaImage | null {
+  const s = sources.get(slot)
+  return s && s.owner === store.character && store.character.files.get(`ui/${slot}.png`) === s.result ? s.image : null
+}
+
+function setPicture(slot: string, bytes: Uint8Array) {
+  store.character.files.set(`ui/${slot}.png`, bytes)
+  const s = sources.get(slot)
+  if (s) s.result = bytes
+}
 
 function fallback(slot: string): string {
   const files = store.character.files
@@ -65,7 +78,7 @@ export function ArtPage() {
       store.fail("Choose the game disc first: this picture's size comes from the game.")
       return
     }
-    c.files.set(`ui/${slot}.png`, encodePng(im))
+    setPicture(slot, encodePng(im))
     store.touch('character')
   }
 
@@ -94,14 +107,14 @@ export function ArtPage() {
               if (!file) return
               try {
                 const im = await decodePicture(file)
-                sources.set(slot, im)
+                sources.set(slot, { image: im, owner: store.character, result: store.character.files.get(`ui/${slot}.png`) })
                 applyPicture(slot, kind, title, im)
               } catch (e) {
                 store.fail(`The picture could not be read:\n${(e as Error).message}`)
               }
             }}
             onRecrop={() => {
-              const im = sources.get(slot)
+              const im = source(slot)
               if (im) applyPicture(slot, kind, title, im, true)
             }}
             onClear={() => {
@@ -116,7 +129,7 @@ export function ArtPage() {
         const slot = crop.slot
         setCrop(null)
         if (im) {
-          c.files.set(`ui/${slot}.png`, encodePng(im))
+          setPicture(slot, encodePng(im))
           store.touch('character')
         }
       }} />}
@@ -148,7 +161,7 @@ function SlotCard({ slot, title, kind, size, onLoad, onRecrop, onClear }: {
           <Note>{body ? 'Your picture' : fallback(slot)}</Note>
           <div className="row">
             <button className="small" onClick={onLoad}>Load...</button>
-            <button className="small" onClick={onRecrop} disabled={!sources.has(slot) || kind === 'free'}>Crop again</button>
+            <button className="small" onClick={onRecrop} disabled={!source(slot) || kind === 'free'}>Crop again</button>
             <button className="small" onClick={onClear}>Clear</button>
           </div>
         </div>
