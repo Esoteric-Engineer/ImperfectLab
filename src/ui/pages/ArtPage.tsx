@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
+import { zipSync } from 'fflate'
 import * as R from '../../core/game/roster'
 import { decodePng, encodePng } from '../../core/image/png'
 import type { RgbaImage } from '../../core/image/rgba'
-import { decodePicture, pickFile } from '../../io/files'
+import { decodePicture, download, pickFile } from '../../io/files'
 import { CropDialog } from '../components/CropDialog'
 import { GenerateArtDialog } from '../components/GenerateArtDialog'
 import { ImageView, Note } from '../components/common'
@@ -60,6 +61,20 @@ function fallback(slot: string): string {
   return ''
 }
 
+function artName(c: Character): string {
+  return (c.displayName || c.internalName || 'character').replace(/[\\/:*?"<>|]+/g, '_')
+}
+
+function downloadAll() {
+  const c = store.character
+  const entries: Record<string, Uint8Array> = {}
+  for (const [slot] of SLOTS) {
+    const body = c.files.get(`ui/${slot}.png`)
+    if (body) entries[`${slot}.png`] = body
+  }
+  download(zipSync(entries, { level: 0 }), `${artName(c)} - art.zip`, 'application/zip')
+}
+
 export function ArtPage() {
   useStore()
   const s = store
@@ -68,6 +83,7 @@ export function ArtPage() {
   const sizes = s.game ? (details?.sizes ?? null) : null
   const [placing, setPlacing] = useState(false)
   const [generating, setGenerating] = useState(false)
+  const hasArt = SLOTS.some(([slot]) => c.files.has(`ui/${slot}.png`))
   const [crop, setCrop] = useState<{ slot: string; image: RgbaImage; size: [number, number]; title: string } | null>(null)
 
   const applyPicture = (slot: string, kind: string, title: string, im: RgbaImage, force = false) => {
@@ -92,7 +108,7 @@ export function ArtPage() {
         <button disabled={!s.game} onClick={() => setGenerating(true)}>
           {!s.game ? 'Select a disc image first to generate art' : 'Generate art from pictures...'}
         </button>
-        <Note>Makes the select-screen portraits, loading screens, HUD portraits and select tiles from one full-body picture per costume, and places the portraits.</Note>
+        <Note>Replaces existing art: make the select-screen, loading screen, and HUD portraits from one picture per costume.</Note>
       </div>
       <div className="row">
         <button disabled={!s.game || !c.files.has('ui/select_ready.png')} onClick={() => setPlacing(true)}>
@@ -106,6 +122,10 @@ export function ArtPage() {
           <option value="">none (no sound effect)</option>
           {R.keys().map((k) => <option key={k} value={R.VOICES[k]}>{R.label(k)}'s</option>)}
         </select>
+      </div>
+      <div className="row">
+        <button disabled={!hasArt} onClick={downloadAll}>Download all art</button>
+        <Note>Saves every picture you have loaded or generated as a zip of PNG files.</Note>
       </div>
       <div className="slots">
         {SLOTS.map(([slot, title, kind]) => (
@@ -162,6 +182,8 @@ function SlotCard({ slot, title, kind, size, onLoad, onRecrop, onClear }: {
   const sizeText = kind === 'free' ? 'any size' : size ? `${size[0]} x ${size[1]} pixels` : 'size unknown until the game disc is chosen'
   return (
     <div className="card slot">
+      <button className="small slot-download" title="Download this picture" aria-label={`Download ${title}`} disabled={!body}
+        onClick={() => body && download(body, `${artName(s.character)} - ${slot}.png`, 'image/png')}>&#x2B07;</button>
       <h4>{title}</h4>
       <div className="slot-body">
         <ImageView image={image} side={110} />

@@ -682,6 +682,20 @@ table.credits input {
   gap: 4px;
 }
 
+.slot {
+  position: relative;
+}
+
+.slot h4 {
+  padding-right: 32px;
+}
+
+.slot-download {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
 .slots {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
