@@ -64,7 +64,7 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
   "stats": {"display": {"normal": [7, 4, 3, 6, 5, 4], "alt": [7, 4, 3, 6, 5, 4]}, "gameplay": {"damage_taken": 0.7, "lift": "medium", "wire_swing": false}},
   "ui": {"select": {"ready": {"scale": 0.8, "anchor": [210, 75], "glow": "#3CFF5A6E"}}, "fade": 36, "strip_scale": null, "ready_voice": null, "banner": true},
   "base_moves": {},
-  "moves": {},
+  "moves": { "SuperThrow": "thing" },
   "files": {"model/model.glb": "<sha256>", "ui/select_ready.png": "<sha256>"}
 }
 ```
@@ -76,7 +76,7 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
 
 ### `base`
 One of `thing wolverine paradox elektra johnnyohm spiderman daredevil storm aftershock venom heatwave humantorch ironman megalith magneto biohazard defcon roekel`.
-The character uses the base's moves, animations, sounds, AI, effects and (unless `stats.gameplay` changes it) tuning.
+The character uses the base's moves, animations, sounds, AI, effects and (unless `stats.gameplay` changes it) tuning, except where `moves` takes moves from other bases.
 Game bone numbers in `model` belong to the base's body class (male, female or brute), which have different skeletons.
 
 ### `model`
@@ -147,7 +147,8 @@ Daredevil (`daredevil`):
 - `throw_cable`: a boolean, default `true`. `false` removes the cable drawn from the forearm to the club.
 
 ### `moves`
-Reserved; empty in version 1.
+Moves taken from other bases: move id -> the base (not the character's own) whose animations it gets. Ids are motion-set state names, listed in `MOVES` in `src/core/build/moves.ts`; a throw or a sequence is one id covering its parts (`SuperThrow` includes the female, brute and victim versions).
+`SuperAttackFar` cannot be combined with `base_moves.throw_reach`. Older ImperfectLab builds refuse a non-empty `moves`.
 
 ## Licensing
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as effects from '../src/core/build/effects'
 import * as basemoves from '../src/core/build/basemoves'
+import * as moves from '../src/core/build/moves'
 import { buildBatch, checkBatch, ordinal } from '../src/core/build/batch'
 import { Builder, report } from '../src/core/build/patch'
 import * as templates from '../src/core/build/templates'
@@ -14,6 +15,7 @@ import { Apt } from '../src/core/mnroi/apt'
 import * as nfxtool from '../src/core/mnroi/nfxtool'
 import * as ngbtool from '../src/core/mnroi/ngbtool'
 import * as ngmtool from '../src/core/mnroi/ngmtool'
+import * as nmstool from '../src/core/mnroi/nmstool'
 import * as nvbtool from '../src/core/mnroi/nvbtool'
 import { Model } from '../src/core/model/glb'
 import * as mapping from '../src/core/model/mapping'
@@ -493,5 +495,121 @@ describe.skipIf(!ISO)('base moves', () => {
     c.baseMoves = { throw_reach: 20 }
     const t = new R.Templates(new Builder(src(), c).build().sets.get('Misc/Global.not')!)
     expect(R.text(t.prop('plr_Synth', R.P_EFFECT1))).toBe(R.text(t.prop('plr_Daredevil', R.P_EFFECT1)))
+  })
+
+  it('gives the long throw a name of its own', () => {
+    const c = daredevil()
+    c.baseMoves = { throw_reach: 30 }
+    const r = new Builder(src(), c).build()
+    const names = ngbtool.names(r.adds.get('Bundles/synth.ngb')!).map((n) => n.toLowerCase())
+    expect(names).not.toContain(basemoves.THROW)
+    const set = nmstool.parse(r.adds.get('Motions/Synth.nms')!).motions()
+    const own = set.get('superattackfar')!.anim
+    expect(own).toMatch(/^Daredevil_RangedAtta_[0-9a-f]{6}\.nad$/)
+    for (const s of ['rangedattack', 'dodgeexitsuperattack']) expect(set.get(s)!.anim).toBe(own)
+    expect(names).toContain(own.toLowerCase())
+  })
+})
+
+describe.skipIf(!ISO)('moves', () => {
+  const src = () => gameSource()
+  const daredevil = () => {
+    const c = tinted('daredevil')
+    c.aura = { ...c.aura, mode: 'base' }
+    return c
+  }
+  const records = (data: Uint8Array) => new Map(ngbtool.parse(data).map((r) => [r.name.toLowerCase(), r]))
+
+  it('reads and writes every motion set byte for byte', () => {
+    const names = src().names('Motions/', '.nms')
+    expect(names.length).toBeGreaterThanOrEqual(47)
+    for (const n of names) expect(nmstool.parse(src().entry(n)).build()).toEqual(src().entry(n))
+  })
+
+  it('lists every base\'s moves', () => {
+    const cat = moves.catalog(src())
+    expect(Object.keys(cat).sort()).toEqual(R.keys().sort())
+    expect(cat.thing.body).toBe('brute')
+    expect(cat.daredevil.motions.superthrow).toBe('daredevil_superThrow.nad')
+    expect(cat.thing.motions.superthrowfemale).toBe('Thing_SuperThrowFemale.nad')
+    // a line whose animation no bundle has is dropped, as the game drops it
+    expect(cat.daredevil.motions.superwallattackloop).not.toBe('Daredevil_WallAttackSLoop.nad')
+    const grab = moves.options(cat, 'daredevil', moves.MOVE_IDS.get('SuperThrow')!)
+    expect(grab.some((o) => o.from.includes('thing'))).toBe(true)
+  })
+
+  it('sets the motion set on the player templates\' parent only', () => {
+    const t = new R.Templates(src().entry('Misc/Global.not'))
+    for (const key of R.keys()) {
+      const b = new R.BaseCharacter(src(), key, t)
+      expect(t.get(b.plr).get(R.P_MOTIONSET)).toBeNull()
+      expect(t.get(b.alt).get(R.P_MOTIONSET)).toBeNull()
+      expect(R.text(t.prop(b.plr, R.P_MOTIONSET))).toBe(moves.motionSetOf(b))
+    }
+  })
+
+  it('gives Daredevil the Thing\'s super throw, as the Doom and Cap mod gave Captain America', () => {
+    const c = daredevil()
+    c.moves = { SuperThrow: 'thing' }
+    const r = new Builder(src(), c).build()
+    const t = new R.Templates(r.sets.get('Misc/Global.not')!)
+    expect(R.text(t.prop('plr_Synth', R.P_MOTIONSET))).toBe('Synth.nms')
+    const set = nmstool.parse(r.adds.get('Motions/Synth.nms')!).motions()
+    const thing = nmstool.parse(src().entry('Motions/thing.nms')).motions()
+    for (const s of ['superthrowvictim', 'superthrowvictimfemale', 'superthrowvictimbrute']) expect(set.get(s)).toEqual(thing.get(s))
+    const map = moves.boneMap('brute', 'male', 88)
+    for (const [i, suffix] of ['', 'Female', 'Brute'].entries()) {
+      const m = set.get(`superthrow${suffix.toLowerCase()}`)!
+      expect(m.opts).toEqual(['noloop', 'endpause'])
+      expect(m.anim).toMatch(new RegExp(`^${`Thing_SuperThrow${suffix || 'Male'}`.slice(0, 20)}_[0-9a-f]{6}\\.nad$`))
+      const built = records(r.adds.get(`Bundles/synth-t${i}.ngb`)!)
+      const theirs = records(src().entry(`Bundles/thing-t${i}.ngb`))
+      const own = built.get(m.anim.toLowerCase())!
+      expect(ngbtool.sameMotion(own, moves.remapRecord(theirs.get(`thing_superthrow${(suffix || 'male').toLowerCase()}.nad`)!, map))).toBe(true)
+      const victim = thing.get(`superthrowvictim${suffix.toLowerCase()}`)!.anim.toLowerCase()
+      expect(ngbtool.sameMotion(built.get(victim)!, theirs.get(victim)!)).toBe(true)
+      for (const gone of ['daredevil_superthrow.nad', 'male_ddsuperthrwvictim.nad', 'female_ddsuperthrwvictim.nad', 'brute_ddsuperthrwvictim.nad']) expect(built.has(gone)).toBe(false)
+      // the rest of Daredevil's bundle is as it was
+      const dd = records(src().entry(`Bundles/daredevil-t${i}.ngb`))
+      for (const [k, rec] of dd) if (!k.includes('superthrw') && !k.includes('superthrow')) expect(built.has(k) && ngbtool.sameMotion(built.get(k)!, rec)).toBe(true)
+    }
+    expect(r.adds.get('Bundles/synth.ngb')).toEqual(src().entry('Bundles/daredevil.ngb'))
+    expect(r.notes.some((n) => n.includes('Super throw') && n.includes('approximate'))).toBe(true)
+  })
+
+  it('takes moves along with a long throw', () => {
+    const c = daredevil()
+    c.moves = { SuperThrow: 'thing', Attack1: 'spiderman' }
+    c.baseMoves = { throw_reach: 30 }
+    const r = new Builder(src(), c).build()
+    const set = nmstool.parse(r.adds.get('Motions/Synth.nms')!).motions()
+    const main = records(r.adds.get('Bundles/synth.ngb')!)
+    expect(set.get('superattackfar')!.anim).toMatch(/^Daredevil_RangedAtta_/)
+    const attack = set.get('attack1')!
+    expect(attack.anim.toLowerCase()).toBe(moves.catalog(src()).spiderman.motions.attack1.toLowerCase())
+    expect(main.has(attack.anim.toLowerCase())).toBe(true)
+    expect(main.has('daredevil_ncombo_h1.nad')).toBe(false)
+    expect(set.get('superthrow')!.anim).toMatch(/^Thing_SuperThrowMale_/)
+  })
+
+  it('builds two characters with moves in one patch', () => {
+    const a = daredevil()
+    a.moves = { SuperThrow: 'thing' }
+    const b = tinted('wolverine')
+    b.aura = { ...b.aura, mode: 'base' }
+    b.internalName = 'Other'
+    b.displayName = 'OTHER'
+    b.moves = { Attack1: 'spiderman', Throw: 'storm' }
+    const r = buildBatch(src(), [a, b])
+    for (const n of ['Motions/Synth.nms', 'Motions/Other.nms', 'Bundles/synth-t1.ngb', 'Bundles/other-t2.ngb']) expect(r.adds.has(n)).toBe(true)
+    const t = new R.Templates(r.sets.get('Misc/Global.not')!)
+    expect(R.text(t.prop('plr_Other', R.P_MOTIONSET))).toBe('Other.nms')
+    expect(r.notes.some((n) => n.startsWith('OTHER: moves: Throw from Storm') && n.includes('female animations on a male skeleton'))).toBe(true)
+  })
+
+  it('refuses a move from the base itself', () => {
+    const c = daredevil()
+    c.moves = { SuperThrow: 'daredevil' }
+    expect(() => new Builder(src(), c).build()).toThrow(LabError)
   })
 })

@@ -11,6 +11,7 @@ import { ExportPage } from './ui/pages/ExportPage'
 import { GamePage } from './ui/pages/GamePage'
 import { MaterialsPage } from './ui/pages/MaterialsPage'
 import { ModelPage } from './ui/pages/ModelPage'
+import { MovesPage } from './ui/pages/MovesPage'
 import { StatsPage } from './ui/pages/StatsPage'
 import { store, useStore } from './ui/store'
 import { THEMES, setTheme, useTheme } from './ui/theme'
@@ -23,8 +24,9 @@ const STEPS: [string, () => React.JSX.Element][] = [
   ['4. Materials', MaterialsPage],
   ['5. Aura', AuraPage],
   ['6. Stats', StatsPage],
-  ['7. Art', ArtPage],
-  ['8. Save & patch', ExportPage],
+  ['7. Moves', MovesPage],
+  ['8. Art', ArtPage],
+  ['9. Save & patch', ExportPage],
 ]
 // After the steps, separate section.
 const PAGES: [string, () => React.JSX.Element][] = [...STEPS, ['Multi-Character Patch', BatchPage]]
@@ -52,7 +54,7 @@ function App() {
         void (e.shiftKey ? actions.saveAs() : actions.save())
       } else if (k === 'o') {
         e.preventDefault()
-        void actions.open().then((ok) => ok && setStep(store.game ? 7 : 0))
+        void actions.open().then((ok) => ok && setStep(store.game ? STEPS.length - 1 : 0))
       }
     }
     window.addEventListener('beforeunload', unload)
@@ -69,7 +71,7 @@ function App() {
       label: 'File',
       items: [
         { label: 'New character', onSelect: async () => (await actions.newCharacter()) && setStep(1) },
-        { label: 'Open...', shortcut: `${mod}O`, onSelect: async () => (await actions.open()) && setStep(store.game ? 7 : 0) },
+        { label: 'Open...', shortcut: `${mod}O`, onSelect: async () => (await actions.open()) && setStep(store.game ? STEPS.length - 1 : 0) },
         { separator: true },
         { label: 'Save', shortcut: `${mod}S`, onSelect: () => actions.save() },
         { label: 'Save as...', shortcut: `${mod}${mod === '⌘' ? '⇧' : 'Shift+'}S`, onSelect: () => actions.saveAs() },

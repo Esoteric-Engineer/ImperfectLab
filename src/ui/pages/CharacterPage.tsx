@@ -21,6 +21,7 @@ export function CharacterPage() {
     const old = s.game ? s.skeleton(c.base) : null
     c.base = key
     for (const k of Object.keys(c.baseMoves) as (keyof BaseMoves)[]) if (!(BASE_MOVES[key] ?? []).includes(k)) delete c.baseMoves[k]
+    for (const [id, from] of Object.entries(c.moves)) if (from === key) delete c.moves[id]
     const next = s.skeleton()
     if (next && old) {
       ;[c.mapping, c.overrides] = mapping.translate(c.mapping, c.overrides, old, next)

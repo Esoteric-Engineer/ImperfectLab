@@ -1,12 +1,10 @@
-// Base-specific moves (manifest `base_moves`).
+// Base-specific moves (manifest `base_moves`); the files they go in are built with the other moves (moves.ts, motionFiles).
 import { LabError } from '../errors'
-import * as R from '../game/roster'
-import type { GameSource } from '../game/source'
 import * as ngbtool from '../mnroi/ngbtool'
 import * as ngmtool from '../mnroi/ngmtool'
 
 export const CLUB = 39
-const THROW = 'daredevil_rangedattack.nad'
+export const THROW = 'daredevil_rangedattack.nad'
 // the club leaves at frame 13 and is back at 24
 const FLIGHT: [number, number] = [13, 24]
 // meters per frame; faster passes targets between frames
@@ -17,15 +15,6 @@ const HIT_KINDS = [43, 44]
 // On a hit the game skips to event 0x53; at the turn beside a 0x7E, main.dol mirrors that skip (dol.ts, mirrorSkip).
 const RETURN_EVENT = 0x53
 export const MIRROR_EVENT = 0x7e
-
-export interface MotionFiles {
-  motionSet: string
-  files: Map<string, Uint8Array>
-}
-
-export function motionSetName(internal: string): string {
-  return `${internal}.nms`
-}
 
 export function longThrow(rec: ngbtool.Record, model: Pick<ngmtool.Model, 'nodes'>, reach: number): ngbtool.Record {
   const [a, b] = FLIGHT
@@ -54,26 +43,6 @@ export function longThrow(rec: ngbtool.Record, model: Pick<ngmtool.Model, 'nodes
   out.events.push([a + n, MIRROR_EVENT, 0, 0])
   out.events.sort((x, y) => x[0] - y[0])
   return out
-}
-
-export function throwFiles(src: GameSource, base: R.BaseCharacter, internal: string, reach: number): MotionFiles {
-  const set = R.text(base.t.prop(base.act, R.P_MOTIONSET))
-  if (!set) throw new LabError(`${base.label} has no motion set`)
-  const stem = set.replace(/\.nms$/i, '').toLowerCase()
-  const name = internal.toLowerCase()
-  const [, models] = ngmtool.read(base.bundleFiles()[0])
-  const recs = ngbtool.parse(src.entry(`Bundles/${stem}.ngb`))
-  const at = recs.findIndex((r) => r.name.toLowerCase() === THROW)
-  if (at < 0) throw new LabError(`${base.label}'s animations have no ${THROW}`)
-  recs[at] = longThrow(recs[at], models[0], reach)
-  const files = new Map<string, Uint8Array>([
-    [`Motions/${motionSetName(internal)}`, src.entry(`Motions/${set}`)],
-    [`Bundles/${name}.ngb`, ngbtool.build(recs)],
-  ])
-  for (let t = 0; t < 3; t++) {
-    if (src.has(`Bundles/${stem}-t${t}.ngb`)) files.set(`Bundles/${name}-t${t}.ngb`, src.entry(`Bundles/${stem}-t${t}.ngb`))
-  }
-  return { motionSet: motionSetName(internal), files }
 }
 
 export function hitSegment(m: ngmtool.Model) {

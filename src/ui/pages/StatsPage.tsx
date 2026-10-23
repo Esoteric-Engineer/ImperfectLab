@@ -1,6 +1,5 @@
 import { formatG } from '../../core/format'
-import { label } from '../../core/game/roster'
-import { BASE_MOVES, type Gameplay, THROW_REACH } from '../../core/package/imperfect'
+import type { Gameplay } from '../../core/package/imperfect'
 import { Note, NumberInput } from '../components/common'
 import { store, useStore } from '../store'
 
@@ -130,54 +129,7 @@ export function StatsPage() {
           })}
         </tbody>
       </table>
-
-      {(BASE_MOVES[c.base] ?? []).length > 0 && <BaseMoves />}
     </div>
   )
 }
 
-// Options for one base's own moves; only Daredevil's baton throw so far.
-function BaseMoves() {
-  const c = store.character
-  const bv = store.baseDetails()
-  const mv = c.baseMoves
-  const edited = () => store.touch('character')
-  const reach = mv.throw_reach !== undefined
-  const cable = mv.throw_cable !== undefined
-  return (
-    <>
-      <h3>{label(c.base)}-specific moves</h3>
-      <Note>
-        Whatever is fixed to game bone 39, the club/baton, is what flies: on the Model page, fix a prop to that bone.<br />
-        The cable is drawn from the forearm to the baton all the time.
-      </Note>
-      <table className="gameplay">
-        <thead><tr><th>Value</th><th>Base</th><th>New</th></tr></thead>
-        <tbody>
-          <tr>
-            <td><label className="check"><input type="checkbox" checked={reach} onChange={(e) => {
-              if (e.target.checked) mv.throw_reach = 35
-              else delete mv.throw_reach
-              edited()
-            }} /> Baton throw reach</label></td>
-            <td>{bv ? `${formatG(bv.gameplay.throw_reach)} m` : '-'}</td>
-            <td><span><NumberInput disabled={!reach} min={THROW_REACH[0]} max={THROW_REACH[1]} step={1} value={mv.throw_reach ?? null} onChange={(v) => {
-              mv.throw_reach = Math.round(v * 10) / 10
-              edited()
-            }} /> m</span></td>
-          </tr>
-          <tr>
-            <td><label className="check"><input type="checkbox" checked={cable} onChange={(e) => {
-              if (e.target.checked) mv.throw_cable = false
-              else delete mv.throw_cable
-              edited()
-            }} /> Baton cable</label></td>
-            <td>on</td>
-            <td><select disabled={!cable} value={mv.throw_cable === false ? 'off' : 'on'} onChange={(e) => { mv.throw_cable = e.target.value === 'on'; edited() }}>
-              <option>off</option><option>on</option></select></td>
-          </tr>
-        </tbody>
-      </table>
-    </>
-  )
-}

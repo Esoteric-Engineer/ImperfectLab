@@ -5,6 +5,7 @@ import { LabError } from '../errors'
 import { decodeImage } from '../image/decode'
 import { encodePng, pngSize } from '../image/png'
 import type { RgbaImage } from '../image/rgba'
+import { MOVE_IDS } from '../build/moves'
 import { BASES } from '../game/roster'
 import { GLB, type Json } from '../mnroi/gltf'
 import { VERSION as APP_VERSION } from '../version'
@@ -87,6 +88,7 @@ export interface Character {
   stats: { normal: number[]; alt: number[] }
   gameplay: Gameplay
   baseMoves: BaseMoves
+  moves: Record<string, string>
   ui: { select: Partial<Record<Pose, Placement>>; fade: number; strip_scale: number | null; ready_voice: string | null; banner: boolean }
   files: Map<string, Uint8Array>
 }
@@ -115,6 +117,7 @@ export function newCharacter(): Character {
     stats: defaultStats(),
     gameplay: {},
     baseMoves: {},
+    moves: {},
     ui: { select: {}, fade: 36, strip_scale: null, ready_voice: null, banner: true },
     files: new Map(),
   }
@@ -155,7 +158,7 @@ export function manifest(c: Character): Json {
     stats: { display: c.stats, gameplay: c.gameplay },
     ui: c.ui,
     base_moves: c.baseMoves,
-    moves: {},
+    moves: c.moves,
     files: Object.fromEntries([...files].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, v]) => [k, sha(v)])),
   }
 }
@@ -173,7 +176,14 @@ export function problems(c: Character): Problem[] {
   if (new Set(suffixes).size !== suffixes.length) out.push(['error', 'two materials have the same game name suffix'])
   for (const m of c.materials) if (m.texture && !c.files.has(m.texture)) out.push(['error', `the texture of ${m.name} is missing`])
   const unsupported = Object.keys(c.baseMoves).filter((k) => !(BASE_MOVES[c.base] ?? []).includes(k as keyof BaseMoves))
-  if (unsupported.length) out.push(['error', `${unsupported.join(', ')} only apply to a ${movesBases(unsupported[0])} base: untick them on the Stats page`])
+  if (unsupported.length) out.push(['error', `${unsupported.join(', ')} only apply to a ${movesBases(unsupported[0])} base: untick them on the Moves page`])
+  for (const [id, from] of Object.entries(c.moves)) {
+    const move = MOVE_IDS.get(id)
+    if (!move) out.push(['error', `there is no move ${id}`])
+    else if (!(from in BASES)) out.push(['error', `${move.label} is taken from an unknown character`])
+    else if (from === c.base) out.push(['error', `${move.label} is taken from ${BASES[from][0]}, the base itself: set it back to the base's on the Moves page`])
+  }
+  if (c.moves.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach changes the base\'s own super attack far: set that move back to the base\'s, or untick the reach'])
   if (!c.files.get('ui/select_ready.png')) out.push(['warning', "no select-screen portrait: the base's portraits are used"])
   return out
 }
@@ -331,7 +341,15 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   for (const k of Object.keys(c.baseMoves)) {
     if (!(BASE_MOVES[c.base] ?? []).includes(k as keyof BaseMoves)) throw new LabError(`manifest: base_moves.${k} only applies to a ${movesBases(k)} base`)
   }
-  keys(m.moves ?? {}, [], 'moves')
+  const moves = typed<Record<string, unknown>>(m.moves ?? {}, 'object', 'moves')
+  c.moves = {}
+  for (const [id, from] of Object.entries(moves)) {
+    if (!MOVE_IDS.has(id)) throw new LabError(`manifest: unknown move ${JSON.stringify(id.slice(0, 40))}`)
+    const key = str(from, `moves.${id}`, 20)!
+    if (!(key in BASES)) throw new LabError(`manifest: moves.${id} names an unknown base character`)
+    if (key === c.base) throw new LabError(`manifest: moves.${id} is taken from the base itself`)
+    c.moves[id] = key
+  }
   c.glb = files.get('model/model.glb') ?? null
   files.delete('model/model.glb')
   c.files = files

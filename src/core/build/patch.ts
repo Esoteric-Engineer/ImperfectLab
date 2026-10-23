@@ -23,6 +23,7 @@ import { Skeleton } from '../model/skeleton'
 import { type Character, image as readImage, type Material, problems, type Placement } from '../package/imperfect'
 import * as effects from './effects'
 import * as basemoves from './basemoves'
+import * as moves from './moves'
 import * as portraits from './portraits'
 import * as shaders from './shaders'
 import * as templates from './templates'
@@ -90,8 +91,8 @@ export class Builder {
       if (this.src.has(`Bundles/${n}${costume}.ngm`)) throw new LabError(`the game already has a model bundle ${n}${costume}: pick another internal name`)
     }
     if (this.src.has(`Misc/PLAYER_${c.internalName}.nvb`)) throw new LabError(`the game already has a tuning file for ${c.internalName}: pick another internal name`)
-    if (c.baseMoves.throw_reach !== undefined) {
-      for (const name of [`Motions/${basemoves.motionSetName(c.internalName)}`, `Bundles/${n}.ngb`]) {
+    if (ownMotions(c)) {
+      for (const name of [`Motions/${moves.motionSetName(c.internalName)}`, ...moves.SLOTS.map((slot) => `Bundles/${n}${slot}.ngb`)]) {
         if (this.src.has(name)) throw new LabError(`the game already has ${name}: pick another internal name`)
       }
     }
@@ -117,7 +118,7 @@ export class Builder {
     this.progress('Templates, materials and tuning')
     const [effect1, power, projectiles] = this.effects()
     const description = this.tuning(power)
-    const motionSet = this.baseMoves()
+    const motionSet = this.motions()
     this.templates(effect1, description, projectiles, motionSet)
     this.r.sets.set('Materials/Shaders/shaders.nsa', shaders.build(this.src.entry('Materials/Shaders/shaders.nsa'), materials, this.texture2))
     this.progress('Select screen, portraits and HUD')
@@ -304,12 +305,14 @@ export class Builder {
   }
 
   // The character's own motion set, when a move changes an animation.
-  baseMoves(): string | null {
-    const reach = this.c.baseMoves.throw_reach
-    if (reach === undefined) return null
-    const m = basemoves.throwFiles(this.src, this.base, this.c.internalName, reach)
+  motions(): string | null {
+    const c = this.c
+    if (!ownMotions(c)) return null
+    const reach = c.baseMoves.throw_reach
+    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, reach)
     for (const [k, v] of m.files) this.r.adds.set(k, v)
-    this.note(`baton throw: reaches ${reach} m (${this.base.label}'s about 8)`)
+    if (reach !== undefined) this.note(`baton throw: reaches ${reach} m (${this.base.label}'s about 8)`)
+    for (const n of m.notes) this.note(n)
     return m.motionSet
   }
 
@@ -430,6 +433,11 @@ export class Builder {
     }
     if (copies.size) this.note(`HUD portraits not supplied (${[...copies.keys()].sort().join(', ')}): ${base.label}'s are used`)
   }
+}
+
+// Whether the character gets its own motion set and animation bundles (Builder.motions).
+export function ownMotions(c: Character): boolean {
+  return c.baseMoves.throw_reach !== undefined || Object.keys(c.moves).length > 0
 }
 
 // The gameplay fields that go in the character's own tuning file.

@@ -70,6 +70,26 @@ describe('round trip', () => {
     expect(imperfect.problems(c).filter(([l]) => l === 'error')).toEqual([])
   })
 
+  it('saves and loads moves taken from other bases', () => {
+    const c = character()
+    c.base = 'daredevil'
+    c.moves = { SuperThrow: 'thing', Attack1: 'spiderman' }
+    const d = imperfect.load(imperfect.save(c))
+    expect(d.moves).toEqual({ SuperThrow: 'thing', Attack1: 'spiderman' })
+  })
+
+  it('finds problems with moves', () => {
+    const c = character()
+    c.base = 'daredevil'
+    c.moves = { SuperAttackFar: 'wolverine' }
+    expect(imperfect.problems(c).filter(([l]) => l === 'error')).toEqual([])
+    c.baseMoves = { throw_reach: 30 }
+    expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes('baton throw'))).toBe(true)
+    c.baseMoves = {}
+    c.moves = { SuperThrow: 'daredevil' }
+    expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes('the base itself'))).toBe(true)
+  })
+
   it('slims a GLB', () => {
     const raw = makeGlb(undefined, undefined, pngBytes())
     const slim = imperfect.slimGlb(raw, new Set())
@@ -134,6 +154,11 @@ describe('hostile files', () => {
       (m) => ((m.base = 'daredevil'), (m.base_moves = { throw_reach: 100 })),
       (m) => ((m.base = 'daredevil'), (m.base_moves = { throw_cable: 'no' })),
       (m) => ((m.base = 'daredevil'), (m.base_moves = { grab: 'thing' })),
+      (m) => (m.moves = { NotAMove: 'thing' }),
+      (m) => (m.moves = { SuperThrow: 'galactus' }),
+      (m) => (m.moves = { SuperThrow: 3 }),
+      (m) => (m.moves = { SuperThrow: 'wolverine' }),
+      (m) => (m.moves = ['SuperThrow']),
     ]
     for (const edit of cases) rejected(withManifest(files(), edit))
   })

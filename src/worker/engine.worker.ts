@@ -75,6 +75,7 @@ const handlers: Record<string, (progress: (stage: string, done?: number, total?:
   verify: (p) => service.verify(p),
   bases: () => service.baseList(),
   baseDetails: (_p, key: string) => service.baseDetails(key),
+  moveCatalog: () => service.moveCatalog(),
   importModel: (_p, raw: Uint8Array) => service.importModel(raw),
   setModel: (_p, glb: Uint8Array | null) => service.setModel(glb),
   autoMap: (_p, key: string) => service.autoMap(key),

@@ -52,6 +52,15 @@ A Daredevil-based character's `throw_reach` (`base_moves`, [`FORMAT.md`](FORMAT.
 - **Memory and space.** The character has its own copy of Daredevil's animations (about 2.7 MB on the disc), so a match against Daredevil loads both. It needs its own tuning file, so it takes a line in the tuning list (above).
 - **`main.dol` changes.** `fn_8019DB24` (animation time setter) is rewritten in place so that a club that hits comes back from where it hit.
 
+## Swapped moves
+
+Moves taken from other bases (`moves`, [`FORMAT.md`](FORMAT.md)):
+
+- **Only the animation changes.** Damage, cost, reach, sounds and effects stay the base's, and a cue the base has no effect for does nothing (the Thing's super throw on Daredevil has no hit flash).
+- **Other body classes are approximate.** Their animations are mapped bone by bone, but limbs differ: a brute's grab on a male character holds the opponent at arm's length.
+- **Memory and space.** The character has its own copy of the base's animations (about 1 to 3 MB on the disc), so a match against the base loads both.
+- **Finishing moves can't currently be swapped.** They are cutscenes, not motion-set animations.
+
 ## More characters
 
 The roster tables in `main.dol` hold 20 records, and the 19th character takes the last one (a filler copy of the Thing). For a 20th and more, up to a 27th, the patch copies the three tables, grown to one record per character, into a new data section, and points their only four readers (`fn_80431CCC` and `fn_8044F070`) at the copies. `fn_8044F070` searches the order table up to a fixed index, which is raised with the count.

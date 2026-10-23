@@ -54,6 +54,28 @@ export function parse(d: Uint8Array): Record[] {
   return recs
 }
 
+// The records' names only, without reading their keys.
+export function names(d: Uint8Array): string[] {
+  const out: string[] = []
+  let o = 0
+  while (o + HEAD <= d.length) {
+    out.push(cstring(d, o, o + 0x20))
+    const ntr = u32be(d, o + 0x2c), nev = u32be(d, o + 0x3c), nex = u32be(d, o + 0x44)
+    if (o + HEAD + 16 * ntr > d.length) throw new LabError(`animation ${out[out.length - 1]} runs past the end of the file`)
+    let keys = 0
+    for (let i = 0; i < ntr; i++) keys += u32be(d, o + HEAD + 16 * i + 8)
+    o = (o + HEAD + 16 * ntr + 12 * keys + 12 * nev + 0x50 * nex + 3) & ~3
+  }
+  return out
+}
+
+// Whether two records move the same bones the same way, with the same events and extras (the pointer fields are fixed up at load).
+export function sameMotion(a: Record, b: Record): boolean {
+  if (a.length !== b.length || a.tracks.length !== b.tracks.length || a.events.length !== b.events.length || a.extra.length !== b.extra.length) return false
+  const flat = (r: Record) => JSON.stringify([r.tracks, r.events])
+  return flat(a) === flat(b) && a.extra.every((x, i) => x.length === b.extra[i].length && x.every((v, k) => v === b.extra[i][k]))
+}
+
 export function writeRecord(r: Record): Uint8Array {
   const out = new ByteWriter(HEAD + 16 * r.tracks.length)
   const name = new Uint8Array(0x20)
