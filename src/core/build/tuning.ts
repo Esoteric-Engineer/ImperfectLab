@@ -92,7 +92,7 @@ export class Tuning {
     return vals.map((v) => v * k)
   }
 
-  build(internal: string, gameplay: Record<string, unknown>, effects: Map<number, string[]> | null = null): [string, Uint8Array, Uint8Array] {
+  build(internal: string, gameplay: Record<string, unknown>, strings: Map<number, string[]> | null = null): [string, Uint8Array, Uint8Array] {
     const nvb = nvbtool.parseNvb(nvbtool.buildNvb(this.nvb))
     const raw = new Uint8Array(0x40)
     raw.set(encodeLatin1(internal))
@@ -113,7 +113,7 @@ export class Tuning {
 
     const reach = gameplay.throw_reach as number | undefined
     if (reach !== null && reach !== undefined) this.set(nvb, AIM_RANGE, new Array(SLOTS).fill(reach))
-    for (const [fid, names] of effects ?? []) this.set(nvb, fid, names)
+    for (const [fid, names] of strings ?? []) this.set(nvb, fid, names)
     return [`Misc/PLAYER_${internal}.nvb`, nvbtool.buildNvb(nvb), this.listed(internal)]
   }
 

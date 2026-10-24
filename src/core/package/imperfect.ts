@@ -7,6 +7,7 @@ import { encodePng, pngSize } from '../image/png'
 import type { RgbaImage } from '../image/rgba'
 import { MOVE_IDS } from '../build/moves'
 import { BASES } from '../game/roster'
+import * as asftool from '../mnroi/asftool'
 import { GLB, type Json } from '../mnroi/gltf'
 import { VERSION as APP_VERSION } from '../version'
 import { listZip, readEntry, writeZip } from './zip'
@@ -21,7 +22,7 @@ const STAT_RANGE = [1, 7]
 
 export const UI_SLOTS = ['select_rest', 'select_ready', 'select_readyalt', 'load_wide', 'load_narrow', 'load_wide_alt',
   'load_narrow_alt', 'tile', 'tile_selected', 'hud', 'hud_rage', 'hud_alt', 'hud_alt_rage', 'banner']
-export const MEMBER = new RegExp(`^(manifest\\.json|model/model\\.glb|textures/[A-Za-z0-9_-]{1,48}\\.png|ui/(${UI_SLOTS.join('|')})\\.png)$`)
+export const MEMBER = new RegExp(`^(manifest\\.json|model/model\\.glb|textures/[A-Za-z0-9_-]{1,48}\\.png|ui/(${UI_SLOTS.join('|')})\\.png|cutscenes/[A-Za-z0-9_-]{1,48}\\.asf)$`)
 const INTERNAL = /^[A-Za-z][A-Za-z0-9]{0,9}$/
 const DISPLAY = /^[A-Z0-9 .'&!-]{1,16}$/
 const SUFFIX = /^(_[A-Za-z0-9]{1,7})?$/
@@ -38,6 +39,11 @@ export const GAMEPLAY: Record<string, [number, number, boolean]> = {
 export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable'] }
 export const THROW_REACH: [number, number] = [8, 35]
 export const POSES = ['rest', 'ready', 'readyalt'] as const
+export const CUTSCENE_KINDS = ['intro', 'victory', 'finisher'] as const
+export type CutsceneKind = (typeof CUTSCENE_KINDS)[number]
+const AUDIO_SLOT = /^(intro|victory|finisher)_[1-9]$/
+const AUDIO_MEMBER = /^cutscenes\/[A-Za-z0-9_-]{1,48}\.asf$/
+export const MAX_AUDIO_SECONDS = 60
 export type Pose = (typeof POSES)[number]
 
 export interface Material {
@@ -84,6 +90,10 @@ export interface Flames {
   base_effect: boolean
 }
 
+export const CUTSCENE_EFFECTS = ['theirs', 'none'] as const
+export type CutsceneEffects = (typeof CUTSCENE_EFFECTS)[number]
+export type Cutscenes = Partial<Record<CutsceneKind, string>> & { audio: Record<string, string>; effects: Partial<Record<CutsceneKind, CutsceneEffects>> }
+
 export interface Character {
   internalName: string
   displayName: string
@@ -101,6 +111,7 @@ export interface Character {
   gameplay: Gameplay
   baseMoves: BaseMoves
   moves: Record<string, string>
+  cutscenes: Cutscenes
   ui: { select: Partial<Record<Pose, Placement>>; fade: number; strip_scale: number | null; ready_voice: string | null; banner: boolean }
   files: Map<string, Uint8Array>
 }
@@ -111,6 +122,10 @@ export function defaultStats() {
 
 export function defaultFlames(): Flames {
   return { parts: [], body: false, color: null, alt_color: null, size: 1, base_effect: true }
+}
+
+export function hasCutscenes(c: Cutscenes): boolean {
+  return CUTSCENE_KINDS.some((k) => c[k] !== undefined) || Object.keys(c.audio).length > 0
 }
 
 export function hasFlames(f: Flames): boolean {
@@ -139,6 +154,7 @@ export function newCharacter(): Character {
     gameplay: {},
     baseMoves: {},
     moves: {},
+    cutscenes: { audio: {}, effects: {} },
     ui: { select: {}, fade: 36, strip_scale: null, ready_voice: null, banner: true },
     files: new Map(),
   }
@@ -194,6 +210,7 @@ export function manifest(c: Character): Json {
     ui: c.ui,
     base_moves: c.baseMoves,
     moves: c.moves,
+    cutscenes: hasCutscenes(c.cutscenes) ? { ...c.cutscenes, effects: Object.keys(c.cutscenes.effects).length ? c.cutscenes.effects : undefined } : undefined,
     files: Object.fromEntries([...files].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, v]) => [k, sha(v)])),
   }
 }
@@ -204,7 +221,7 @@ export function problems(c: Character): Problem[] {
   const out: Problem[] = []
   if (!INTERNAL.test(c.internalName || '')) out.push(['error', 'the internal name must be 1-10 letters and digits, starting with a letter'])
   if (!DISPLAY.test(c.displayName || '')) out.push(['error', 'the display name must be 1-16 characters: A-Z, 0-9, space and . \' & ! -'])
-  if (!(c.base in BASES)) out.push(['error', 'pick a base character'])
+  if (!Object.hasOwn(BASES, c.base)) out.push(['error', 'pick a base character'])
   if (c.glb === null) out.push(['error', 'import a model (.glb)'])
   if (!c.materials.some((m) => m.include) && c.glb !== null) out.push(['error', 'every material is excluded: nothing would be drawn'])
   const suffixes = c.materials.filter((m) => m.include).map((m) => m.suffix)
@@ -215,11 +232,22 @@ export function problems(c: Character): Problem[] {
   for (const [id, from] of Object.entries(c.moves)) {
     const move = MOVE_IDS.get(id)
     if (!move) out.push(['error', `there is no move ${id}`])
-    else if (!(from in BASES)) out.push(['error', `${move.label} is taken from an unknown character`])
+    else if (!Object.hasOwn(BASES, from)) out.push(['error', `${move.label} is taken from an unknown character`])
     else if (from === c.base) out.push(['error', `${move.label} is taken from ${BASES[from][0]}, the base itself: set it back to the base's on the Moves page`])
   }
   if (c.moves.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach changes the base\'s own super attack far: set that move back to the base\'s, or untick the reach'])
   if (c.flames.body && c.flames.parts.length) out.push(['error', 'flames are on the whole body or on chosen parts, not both: pick one on the Aura page'])
+  for (const kind of CUTSCENE_KINDS) {
+    const from = c.cutscenes[kind]
+    if (from === undefined) continue
+    if (!Object.hasOwn(BASES, from)) out.push(['error', `the ${kind} cutscenes are taken from an unknown character`])
+    else if (from === c.base) out.push(['error', `the ${kind} cutscenes are taken from ${BASES[from][0]}, the base itself: set them back to the base's on the Cutscenes page`])
+  }
+  for (const kind of CUTSCENE_KINDS) if (c.cutscenes.effects[kind] && c.cutscenes[kind] === undefined) out.push(['error', `the ${kind} cutscenes are the base's own, so their effects can't be changed`])
+  for (const [slot, member] of Object.entries(c.cutscenes.audio)) {
+    if (!AUDIO_SLOT.test(slot)) out.push(['error', `there is no cutscene audio ${slot}`])
+    else if (!c.files.has(member)) out.push(['error', `the new cutscene audio for ${slot.replace('_', ' ')} is missing`])
+  }
   if (!c.files.get('ui/select_ready.png')) out.push(['warning', "no select-screen portrait: the base's portraits are used"])
   return out
 }
@@ -267,7 +295,7 @@ function upgrade(m: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Character {
-  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'stats', 'ui', 'base_moves', 'moves', 'files'], 'the manifest')
+  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'stats', 'ui', 'base_moves', 'moves', 'cutscenes', 'files'], 'the manifest')
   if (m.format !== FORMAT) throw new LabError('not a .imperfect file')
   upgrade(m)
   if (m.game !== GAME) throw new LabError(`this file is for ${m.game}, not ${GAME}`)
@@ -277,7 +305,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   c.displayName = str(ch.display_name, 'display_name', 16, DISPLAY)!
   c.nameColor = color(ch.name_color ?? '#FFFFFF', 'name_color')
   c.base = str(m.base, 'base', 20)!
-  if (!(c.base in BASES)) throw new LabError(`manifest: unknown base character ${JSON.stringify(c.base)}`)
+  if (!Object.hasOwn(BASES, c.base)) throw new LabError(`manifest: unknown base character ${JSON.stringify(c.base)}`)
   const cr = keys(m.credits ?? {}, ['author', 'description', 'assets'], 'credits')
   const assets = typed<unknown[]>(cr.assets ?? [], 'array', 'credits.assets').slice(0, 32)
   c.credits = {
@@ -395,9 +423,32 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   for (const [id, from] of Object.entries(moves)) {
     if (!MOVE_IDS.has(id)) throw new LabError(`manifest: unknown move ${JSON.stringify(id.slice(0, 40))}`)
     const key = str(from, `moves.${id}`, 20)!
-    if (!(key in BASES)) throw new LabError(`manifest: moves.${id} names an unknown base character`)
+    if (!Object.hasOwn(BASES, key)) throw new LabError(`manifest: moves.${id} names an unknown base character`)
     if (key === c.base) throw new LabError(`manifest: moves.${id} is taken from the base itself`)
     c.moves[id] = key
+  }
+  const cs = keys(m.cutscenes ?? {}, [...CUTSCENE_KINDS, 'audio', 'effects'], 'cutscenes')
+  c.cutscenes = { audio: {}, effects: {} }
+  for (const kind of CUTSCENE_KINDS) {
+    if (cs[kind] === undefined) continue
+    const key = str(cs[kind], `cutscenes.${kind}`, 20)!
+    if (!Object.hasOwn(BASES, key)) throw new LabError(`manifest: cutscenes.${kind} names an unknown base character`)
+    if (key === c.base) throw new LabError(`manifest: cutscenes.${kind} is taken from the base itself`)
+    c.cutscenes[kind] = key
+  }
+  for (const [slot, member] of Object.entries(typed<Record<string, unknown>>(cs.audio ?? {}, 'object', 'cutscenes.audio'))) {
+    if (!AUDIO_SLOT.test(slot)) throw new LabError(`manifest: unknown cutscene audio ${JSON.stringify(slot.slice(0, 40))}`)
+    const file = str(member, `cutscenes.audio.${slot}`, 80, AUDIO_MEMBER)!
+    if (!files.has(file)) throw new LabError(`manifest: cutscenes.audio.${slot} names ${file}, which the file lacks`)
+    c.cutscenes.audio[slot] = file
+  }
+  // a list of kinds is the first form, all `theirs`
+  const fx = Array.isArray(cs.effects) ? Object.fromEntries(cs.effects.map((k) => [k, 'theirs'])) : (cs.effects ?? {})
+  if (Array.isArray(cs.effects) && Object.keys(fx).length !== cs.effects.length) throw new LabError('manifest: cutscenes.effects repeats a kind')
+  for (const [kind, how] of Object.entries(keys(fx, [...CUTSCENE_KINDS], 'cutscenes.effects'))) {
+    if (!CUTSCENE_EFFECTS.includes(how as CutsceneEffects)) throw new LabError(`manifest: cutscenes.effects.${kind} is theirs or none`)
+    if (c.cutscenes[kind as CutsceneKind] === undefined) throw new LabError(`manifest: cutscenes.effects names ${kind}, which is the base's own`)
+    c.cutscenes.effects[kind as CutsceneKind] = how as CutsceneEffects
   }
   c.glb = files.get('model/model.glb') ?? null
   files.delete('model/model.glb')
@@ -447,6 +498,12 @@ export function checkMember(name: string, body: Uint8Array) {
     if (body.length < 8 || sig.some((b, i) => body[i] !== b)) throw new LabError(`${name} is not a PNG image`)
     const [w, h] = pngSize(body)
     if (!(w > 0 && w <= MAX_IMAGE_SIDE && h > 0 && h <= MAX_IMAGE_SIDE)) throw new LabError(`${name} is larger than ${MAX_IMAGE_SIDE} pixels a side`)
+  } else if (name.endsWith('.asf')) {
+    try {
+      asftool.check(body, MAX_AUDIO_SECONDS)
+    } catch (e) {
+      throw new LabError(`${name}: ${(e as Error).message}`)
+    }
   } else if (name.endsWith('.glb')) {
     if (body.length < 20 || body[0] !== 0x67 || body[1] !== 0x6c || body[2] !== 0x54 || body[3] !== 0x46) throw new LabError(`${name} is not a GLB model`)
   }

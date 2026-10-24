@@ -15,6 +15,7 @@ A ZIP archive (deflate). Only these members may appear, and nothing else is read
 | `model/model.glb` | the character's model, binary glTF 2.0 |
 | `textures/<name>.png` | textures that replace or complement the model's own (`<name>`: 1-48 of `A-Z a-z 0-9 _ -`) |
 | `ui/<slot>.png` | select-screen, loading-screen, tile and HUD pictures (slots below) |
+| `cutscenes/<name>.asf` | new cutscene audio ([`cutscenes`](#cutscenes); `<name>`: 1-48 of `A-Z a-z 0-9 _ -`) |
 
 Readers must reject:
 - any other member name, an absolute path, `..`, a backslash, a directory entry, or a duplicate member;
@@ -22,7 +23,8 @@ Readers must reject:
 - a member over 1 MB that compresses more than 200:1;
 - a member whose SHA-256 differs from the manifest's `files` list, or a list that names a member the archive
   lacks or misses one it has;
-- a PNG without the PNG signature or larger than 4096 pixels a side, and a GLB without the `glTF` magic.
+- a PNG without the PNG signature or larger than 4096 pixels a side, and a GLB without the `glTF` magic;
+- an `.asf` that is not EA-XA at 32000 Hz, mono or stereo, whose header disagrees with its data, or that is over 60 seconds.
 
 ImperfectLab writes the members with fixed timestamps, so the same character always gives the same bytes.
 
@@ -66,6 +68,7 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
   "ui": {"select": {"ready": {"scale": 0.8, "anchor": [210, 75], "glow": "#3CFF5A6E"}}, "fade": 36, "strip_scale": null, "ready_voice": null, "banner": true},
   "base_moves": {},
   "moves": { "SuperThrow": "thing" },
+  "cutscenes": { "finisher": "wolverine", "audio": { "finisher_1": "cutscenes/finisher_1.asf" } },
   "files": {"model/model.glb": "<sha256>", "ui/select_ready.png": "<sha256>"}
 }
 ```
@@ -160,6 +163,14 @@ Daredevil (`daredevil`):
 ### `moves`
 Moves taken from other bases: move id -> the base (not the character's own) whose animations it gets. Ids are motion-set state names, listed in `MOVES` in `src/core/build/moves.ts`; a throw or a sequence is one id covering its parts (`SuperThrow` includes the female, brute and victim versions).
 `SuperAttackFar` cannot be combined with `base_moves.throw_reach`. Older ImperfectLab builds refuse a non-empty `moves`.
+
+### `cutscenes`
+Optional, and left out when the character keeps its base's cutscenes and audio.
+- `intro`, `victory`, `finisher`: the base (not the character's own) whose cutscenes of that kind the character uses. Each is optional.
+- `effects`: kind -> `theirs` (that base's effects) or `none` (no effects), for kinds taken from another base. Optional; a kind left out plays the character's base's effects.
+- `audio`: audio slot -> a `cutscenes/` member that replaces that audio. A slot is `<kind>_<n>`, numbered from 1 as the **Cutscenes** page lists them. A member is no longer than the stream it replaces and serves both costumes, and a shorter one is padded with silence when patching.
+
+A `cutscenes/` member is an EA `SCHl` audio stream like the game's own (`Sounds/ASF/english/*.asf`): a `PT` header, `SCCl`, `SCDl` blocks of EA-XA ADPCM and `SCEl`. ImperfectLab writes stereo at 32000 Hz, in blocks of 2,156 samples and then 2,128. See [`LIMITATIONS.md`](LIMITATIONS.md) for what the patch can and cannot do.
 
 ## Licensing
 

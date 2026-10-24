@@ -120,7 +120,7 @@ export function motionSetOf(base: R.BaseCharacter): string {
   return set
 }
 
-const stemOf = (set: string) => set.replace(/\.nms$/i, '').toLowerCase()
+export const stemOf = (set: string) => set.replace(/\.nms$/i, '').toLowerCase()
 
 // The motions the game ends up with: the base set's, then the set's own, dropping any whose animation no bundle has.
 function resolved(src: GameSource, own: nmstool.MotionSet, has: (anim: string) => boolean): Map<string, nmstool.Motion> {
@@ -207,9 +207,15 @@ export function boneMap(from: string, to: string, nodes: number): Map<number, nu
   return out
 }
 
+// A track's bone word is the node in its low 16 bits and flags above, which stay.
+export function remapBone(word: number, map: Map<number, number>): number | undefined {
+  const to = map.get(word & 0xffff)
+  return to === undefined ? undefined : ((word & 0xffff0000) | to) >>> 0
+}
+
 export function remapRecord(rec: ngbtool.Record, map: Map<number, number>): ngbtool.Record {
-  const keep = rec.tracks.flatMap((t, i): [ngbtool.Track, number][] => (map.has(t[0]) ? [[t, rec.pointers[i] ?? 0]] : []))
-  return { ...rec, tracks: keep.map(([[bone, ch, keys]]): ngbtool.Track => [map.get(bone)!, ch, keys]), pointers: keep.map(([, p]) => p) }
+  const keep = rec.tracks.flatMap((t, i): [ngbtool.Track, number][] => (map.has(t[0] & 0xffff) ? [[t, rec.pointers[i] ?? 0]] : []))
+  return { ...rec, tracks: keep.map(([[bone, ch, keys]]): ngbtool.Track => [remapBone(bone, map)!, ch, keys]), pointers: keep.map(([, p]) => p) }
 }
 
 // The original name cut to fit plus a hash of the motion, at most 31 characters.

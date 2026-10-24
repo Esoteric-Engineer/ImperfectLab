@@ -20,7 +20,8 @@ import * as bundle from '../model/bundle'
 import { Fit, type MaterialSlots } from '../model/fit'
 import { Model } from '../model/glb'
 import { Skeleton } from '../model/skeleton'
-import { type Character, image as readImage, type Material, problems, type Placement } from '../package/imperfect'
+import { type Character, hasCutscenes, image as readImage, type Material, problems, type Placement } from '../package/imperfect'
+import * as cutscenes from './cutscenes'
 import * as effects from './effects'
 import * as basemoves from './basemoves'
 import * as flames from './flames'
@@ -321,9 +322,16 @@ export class Builder {
   tuning(power: Map<number, string[]> | null): string | null {
     const c = this.c
     const fields = tuningFields(c)
-    if (!Object.keys(fields).length && !(power && power.size)) return null
+    const strings = new Map(power)
+    if (hasCutscenes(c.cutscenes)) {
+      const cuts = cutscenes.plan(this.src, this.base, c)
+      for (const [fid, names] of cuts.fields) strings.set(fid, names)
+      for (const [k, v] of cuts.files) this.r.adds.set(k, v)
+      for (const n of cuts.notes) this.note(n)
+    }
+    if (!Object.keys(fields).length && !strings.size) return null
     const tun = new tuning.Tuning(this.src, this.base)
-    const [name, nvb, listed] = tun.build(c.internalName, fields, power)
+    const [name, nvb, listed] = tun.build(c.internalName, fields, strings)
     this.r.adds.set(name, nvb)
     this.r.sets.set('Misc/nvblist.txt', listed)
     return c.internalName

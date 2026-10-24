@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import type { Catalog as CutsceneCatalog, EffectFit } from '../core/build/cutscenes'
 import type { Catalog } from '../core/build/moves'
 import type { Joint, JointModel } from '../core/model/glb'
 import { Skeleton } from '../core/model/skeleton'
@@ -87,6 +88,8 @@ class Store {
   private skeletons = new Map<string, Skeleton | null>()
   private details = new Map<string, BaseDetails | 'loading'>()
   private moves: Catalog | 'loading' | null = null
+  private cutscenes: CutsceneCatalog | Promise<CutsceneCatalog> | null = null
+  private effectFits = new Map<string, EffectFit | 'loading'>()
   private statusTimer = 0
   private fit: { key: string; problem: string | null } | null = null
   private fitAsked: string | null = null
@@ -247,6 +250,8 @@ class Store {
     this.skeletons.clear()
     this.details.clear()
     this.moves = null
+    this.cutscenes = null
+    this.effectFits.clear()
     this.touch('game', false)
   }
 
@@ -317,6 +322,44 @@ class Store {
       return null
     }
     return this.moves === 'loading' ? null : this.moves
+  }
+
+  effectFit(): EffectFit | null {
+    const c = this.character
+    if (!this.game || !Object.keys(c.cutscenes).some((k) => k !== 'audio' && k !== 'effects')) return null
+    const picked = { ...c.cutscenes, audio: {} }
+    const key = JSON.stringify([c.base, picked, c.moves])
+    const d = this.effectFits.get(key)
+    if (d === undefined) {
+      this.effectFits.set(key, 'loading')
+      const game = this.game
+      engine.call<EffectFit>('cutsceneEffects', [c.base, picked, c.moves]).then((v) => {
+        if (this.game !== game) return
+        this.effectFits.set(key, v)
+        this.emit()
+      }, (e) => this.fail(e))
+      return null
+    }
+    return d === 'loading' ? null : d
+  }
+
+  cutsceneCatalog(): CutsceneCatalog | null {
+    if (!this.game) return null
+    if (this.cutscenes === null) this.readCutscenes().catch((e) => this.fail(e))
+    return this.cutscenes instanceof Promise ? null : this.cutscenes
+  }
+
+  readCutscenes(): Promise<CutsceneCatalog> {
+    if (this.cutscenes !== null) return Promise.resolve(this.cutscenes)
+    const game = this.game
+    const read = engine.call<CutsceneCatalog>('cutsceneCatalog', [])
+    this.cutscenes = read
+    read.then((v) => {
+      if (this.game !== game) return
+      this.cutscenes = v
+      this.emit()
+    }, () => {})
+    return read
   }
 
   title(): string {

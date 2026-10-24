@@ -1,4 +1,5 @@
 import { type Batch, buildBatch, checkBatch } from '../core/build/batch'
+import * as cutscenes from '../core/build/cutscenes'
 import { Builder, glowRgba, patch, type Progress, report, type Result, WIRE, write } from '../core/build/patch'
 import * as effects from '../core/build/effects'
 import * as moves from '../core/build/moves'
@@ -12,6 +13,7 @@ import { GameSource } from '../core/game/source'
 import { decodePng } from '../core/image/png'
 import { resizeNearest } from '../core/image/resample'
 import { RgbaImage } from '../core/image/rgba'
+import * as asftool from '../core/mnroi/asftool'
 import * as gshtool from '../core/mnroi/gshtool'
 import * as ngmtool from '../core/mnroi/ngmtool'
 import * as bundle from '../core/model/bundle'
@@ -175,6 +177,32 @@ export class Service {
 
   moveCatalog(): moves.Catalog {
     return moves.catalog(this.src())
+  }
+
+  cutsceneCatalog(): cutscenes.Catalog {
+    return cutscenes.catalog(this.src())
+  }
+
+  cutsceneEffects(base: string, picked: imperfect.Cutscenes, moves: Record<string, string>): cutscenes.EffectFit {
+    return cutscenes.effectFit(this.src(), base, picked, moves)
+  }
+
+  cutscenePcm(base: string, kind: imperfect.CutsceneKind, key: string): [Int16Array[], number] {
+    return cutscenes.pcm(this.src(), base, kind, key)
+  }
+
+  // `channels` are already at asftool.RATE.
+  encodeCutsceneAudio(channels: Int16Array[], samples: number): Uint8Array {
+    return asftool.build(asftool.encode(channels.map((c) => {
+      const out = new Int16Array(Math.max(samples, c.length))
+      out.set(c)
+      return out
+    })))
+  }
+
+  decodeCutsceneAudio(data: Uint8Array): [Int16Array[], number] {
+    const a = asftool.read(data)
+    return [asftool.decode(a), asftool.info(a).rate]
   }
 
   baseDetails(key: string): BaseDetails {

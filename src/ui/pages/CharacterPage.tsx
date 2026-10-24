@@ -1,6 +1,7 @@
+import { dropUnfitAudio } from '../../core/build/cutscenes'
 import * as R from '../../core/game/roster'
 import * as mapping from '../../core/model/mapping'
-import { type Credit, BASE_MOVES, type BaseMoves, defaultStats } from '../../core/package/imperfect'
+import { type Credit, BASE_MOVES, type BaseMoves, CUTSCENE_KINDS, defaultStats } from '../../core/package/imperfect'
 import type { AutoMap } from '../../core/model/mapping'
 import { ColorButton, ImageView, Note } from '../components/common'
 import { engine } from '../engine'
@@ -23,6 +24,13 @@ export function CharacterPage() {
       c.base = key
       for (const k of Object.keys(c.baseMoves) as (keyof BaseMoves)[]) if (!(BASE_MOVES[key] ?? []).includes(k)) delete c.baseMoves[k]
       for (const [id, from] of Object.entries(c.moves)) if (from === key) delete c.moves[id]
+      for (const kind of CUTSCENE_KINDS) if (c.cutscenes[kind] === key) delete c.cutscenes[kind]
+      for (const kind of CUTSCENE_KINDS) if (c.cutscenes[kind] === undefined) delete c.cutscenes.effects[kind]
+      if (s.game && Object.keys(c.cutscenes.audio).length) {
+        const cat = await s.readCutscenes().catch(() => null)
+        const dropped = cat ? CUTSCENE_KINDS.flatMap((kind) => dropUnfitAudio(c, cat, kind)) : []
+        if (dropped.length) store.message(`${dropped.length} new cutscene audio track${dropped.length === 1 ? '' : 's'} removed: ${dropped.length === 1 ? 'it does' : 'they do'} not fit ${R.label(key)}'s cutscenes`)
+      }
       const next = s.skeleton()
       if (next && old) {
         ;[c.mapping, c.overrides] = mapping.translate(c.mapping, c.overrides, old, next)
