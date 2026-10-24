@@ -129,6 +129,7 @@ Older ImperfectLab builds refuse a file with `flames`.
   - `damage_taken`: 0.1-3.0, the share of a hit's damage taken.
   - `lift`: `light`, `medium` or `heavy`.
   - `wire_swing`: a boolean.
+  - `wall_climb`: `true` lets a base that can't climb walls climb them (`moves` then names their animations). Not allowed on a base that already climbs.
   - `super_throw_range`: 1-20, how far away, in meters, the opponent can be for the super throw (R + X grab) to start.
   - Experimental: `health` (integer 10-1000), `run_speed` (1-30), `sprint_speed` (1-40), `rage_per_super` (0-100)
     and `rage_duration` (integer 1000-120000).
@@ -166,6 +167,7 @@ Daredevil (`daredevil`):
 ### `moves`
 Moves taken from other bases: move id -> the base (not the character's own) whose animations it gets. Ids are motion-set state names, listed in `MOVES` in `src/core/build/moves.ts`; a throw or a sequence is one id covering its parts (`SuperThrow` includes the female, brute and victim versions).
 `SuperAttackFar` cannot be combined with `base_moves.throw_reach`. Older ImperfectLab builds refuse a non-empty `moves`.
+With `stats.gameplay.wall_climb`, `moves` also adds states the base has none of: `WallClimbUp`, `WallClimbDown`, `WallClimbLeft`, `WallClimbRight` and `WallClimbStand` are required, and `WallJumpOff`, `WallJumpToWall` and `WallRunJumpOff` are optional.
 
 ### `move_effects`
 Optional, and left out when every taken move plays the base's effects. Move id (one in `moves`) -> `theirs` (the effects that base's version of the move starts, such as Daredevil's cable on his super throw) or `none` (no effects). A move left out starts the base's effects in their place.

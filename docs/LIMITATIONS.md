@@ -65,6 +65,14 @@ Moves taken from other bases (`moves`, [`FORMAT.md`](FORMAT.md)):
 - **A recolored line is a copy** of about 190 bytes per costume, out of the effect cache (above).
 - **The super throw range** (`super_throw_range`) needs the character's own tuning file, so a line in the tuning list (above). A long range with a close grab slides the character over to the opponent.
 
+## Wall climbing
+
+A base that can't climb walls given wall climbing (`wall_climb`, [`FORMAT.md`](FORMAT.md)):
+
+- **The CPU climbs too**, since every AI profile reads the same bit.
+- **The animations are added like swapped moves:** the same memory cost, and other body classes are approximate.
+- **No ranged attack on the wall** (`WallClimbRangedAttack`). Only Spider-Man and Venom have one, and it fires the base's own projectile.
+
 ## Cutscenes
 
 Cutscenes and audio changed on the **Cutscenes** page (`cutscenes`, [`FORMAT.md`](FORMAT.md)):

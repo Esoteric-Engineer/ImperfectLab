@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import * as moves from '../src/core/build/moves'
 import { LabError } from '../src/core/errors'
 import * as asftool from '../src/core/mnroi/asftool'
 import { Model } from '../src/core/model/glb'
@@ -123,6 +124,26 @@ describe('round trip', () => {
     c.baseMoves = {}
     c.moves = { SuperThrow: 'daredevil' }
     expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes('the base itself'))).toBe(true)
+  })
+
+  it('finds problems with wall climbing, and saves and loads it', () => {
+    const c = character()
+    c.base = 'thing'
+    const errors = () => imperfect.problems(c).filter(([l]) => l === 'error').map(([, m]) => m)
+    c.gameplay = { wall_climb: true }
+    expect(errors().filter((m) => m.startsWith('wall climbing needs')).length).toBe(5)
+    c.moves = Object.fromEntries(moves.WALL_CLIMB.map((id) => [id, 'venom']))
+    expect(errors()).toEqual([])
+    const back = imperfect.fromManifest(imperfect.manifest(c), new Map(c.files))
+    expect(back.gameplay.wall_climb).toBe(true)
+    expect(back.moves).toEqual(c.moves)
+    c.gameplay = {}
+    expect(imperfect.problems(c).some(([l, m]) => l === 'warning' && m.includes('wall climbing is off'))).toBe(true)
+    c.base = 'spiderman'
+    c.moves = {}
+    c.gameplay = { wall_climb: true }
+    expect(errors().some((m) => m.includes('already climbs walls'))).toBe(true)
+    expect(() => imperfect.fromManifest({ ...imperfect.manifest(c), stats: { gameplay: { wall_climb: 'yes' } } }, new Map())).toThrow(/wall_climb/)
   })
 
   it('saves and loads cutscenes and their audio, and leaves them out by default', () => {

@@ -34,6 +34,7 @@ import * as ui from './ui'
 
 const LIFT_BITS: Record<string, [number, number]> = { light: [0, 0x30], medium: [0x10, 0x20], heavy: [0x20, 0] }
 export const WIRE = 0x80
+export const CLIMB = 0x2
 
 export type Progress = (stage: string, done?: number, total?: number) => void
 
@@ -369,6 +370,7 @@ export class Builder {
       if (gp.wire_swing) on |= WIRE
       else off |= WIRE
     }
+    if (gp.wall_climb) on |= CLIMB
     const mode = c.aura.mode === 'swap' ? 'swap' : 'base'
     this.r.sets.set('Misc/Global.not', templates.build(this.src.entry('Misc/Global.not'), this.base, c.internalName, mode, effect1, description,
       on || off ? [on, off] : null, gp.health ?? null, extra, motionSet, (c.baseMoves.throw_cable ?? true) && c.flames.base_effect, effect2))

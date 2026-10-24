@@ -1,7 +1,7 @@
-import { animations, CATEGORIES, type Catalog, type Move, MOVE_IDS, MOVES, options } from '../../core/build/moves'
+import { addOptions, animations, CATEGORIES, type Catalog, type Move, MOVE_IDS, MOVES, options, WALL_CLIMB, WALL_STATES } from '../../core/build/moves'
 import { formatG } from '../../core/format'
 import { label } from '../../core/game/roster'
-import { BASE_MOVES, GAMEPLAY, type MoveEffect, THROW_REACH } from '../../core/package/imperfect'
+import { BASE_MOVES, GAMEPLAY, type MoveEffect, THROW_REACH, WALL_CLIMBERS } from '../../core/package/imperfect'
 import { ColorButton, Note, NumberInput, Warning } from '../components/common'
 import { store, useStore } from '../store'
 
@@ -38,7 +38,8 @@ export function MovesPage() {
   }
   const mine = cat?.[c.base]
   const cross = mine ? Object.entries(c.moves).filter(([, from]) => cat![from] && cat![from].body !== mine.body).map(([id]) => id) : []
-  const swapped = Object.keys(c.moves).length
+  const added = c.gameplay.wall_climb ? new Set(WALL_STATES) : new Set<string>()
+  const swapped = Object.keys(c.moves).filter((id) => !added.has(id)).length
 
   return (
     <div className="page">
@@ -56,7 +57,10 @@ export function MovesPage() {
           </p>
         </Warning>
       )}
-      {swapped > 0 && <div className="row"><span>{swapped} move{swapped === 1 ? '' : 's'} swapped</span><button onClick={() => { c.moves = {}; edited() }}>Set all back to {label(c.base)}'s</button></div>}
+      {swapped > 0 && <div className="row"><span>{swapped} move{swapped === 1 ? '' : 's'} swapped</span><button onClick={() => {
+        for (const id of Object.keys(c.moves)) if (!added.has(id)) delete c.moves[id]
+        edited()
+      }}>Set all back to {label(c.base)}'s</button></div>}
       {!cat ? <p className="muted">Reading every character's moves...</p> : !mine ? <p className="muted">{label(c.base)}'s moves could not be read from this disc.</p> : (
         CATEGORIES.map((category) => {
           const rows = MOVES.filter((m) => m.category === category && animations(cat, c.base, m))
@@ -73,6 +77,7 @@ export function MovesPage() {
           )
         })
       )}
+      {mine && !WALL_CLIMBERS.includes(c.base) && <WallClimbing cat={cat!} />}
       {mine && <GrabRange cat={cat!} />}
       <LineColors />
       {(BASE_MOVES[c.base] ?? []).length > 0 && <BaseMoves />}
@@ -142,6 +147,109 @@ function MoveEffects({ id, from }: { id: string; from: string }) {
       {how !== 'theirs' && fit.fit < fit.total && <span className="muted"> {label(from)}'s: only {fit.fit} of {effectCount(fit.total)} would fit</span>}
       {missing && <span className="muted"> only {fit.fit} of {effectCount(fit.total)} fit: the rest play as {label(c.base)}'s</span>}
     </span>
+  )
+}
+
+const CLIMB_FROM: Record<string, string> = { male: 'spiderman', female: 'elektra', brute: 'venom' }
+
+function takeAll(cat: Catalog, from: string) {
+  const c = store.character
+  for (const id of WALL_STATES) {
+    if (animations(cat, from, MOVE_IDS.get(id)!)) c.moves[id] = from
+    else {
+      delete c.moves[id]
+      delete c.moveEffects[id]
+    }
+  }
+}
+
+function setClimbing(cat: Catalog, on: boolean) {
+  const c = store.character
+  if (on) {
+    c.gameplay.wall_climb = true
+    const from = CLIMB_FROM[cat[c.base].body]
+    takeAll(cat, cat[from] ? from : 'spiderman')
+    return
+  }
+  delete c.gameplay.wall_climb
+  for (const id of WALL_STATES) {
+    delete c.moves[id]
+    delete c.moveEffects[id]
+  }
+}
+
+// Shown for a base that can't climb walls; the climbing states are added to its motion set.
+function WallClimbing({ cat }: { cat: Catalog }) {
+  const c = store.character
+  const on = Boolean(c.gameplay.wall_climb)
+  const edited = () => store.touch('character')
+  const climbers = WALL_CLIMBERS.filter((k) => cat[k])
+  const froms = new Set(WALL_STATES.flatMap((id) => c.moves[id] ?? []))
+  return (
+    <>
+      <h3>Wall climbing</h3>
+      <Note>
+        Lets {label(c.base)} climb walls like Spider-Man: jump at a wall to stick to it. The CPU climbs too.<br />
+        Each climbing action plays the animation picked here, copied into this character. The three jumps off the wall are optional: Venom has animations for only one of them.
+      </Note>
+      <div className="row">
+        <label className="check"><input type="checkbox" checked={on} onChange={(e) => {
+          setClimbing(cat, e.target.checked)
+          edited()
+        }} /> Wall climbing (experimental)</label>
+        {on && (
+          <>
+            <label>Take all from</label>
+            <select value={froms.size === 1 ? [...froms][0] : ''} onChange={(e) => {
+              if (!e.target.value) return
+              takeAll(cat, e.target.value)
+              edited()
+            }}>
+              {froms.size !== 1 && <option value="">(mixed)</option>}
+              {climbers.map((k) => <option key={k} value={k}>{label(k)}{cat[k].body !== cat[c.base].body ? ` (${cat[k].body}, approximate)` : ''}</option>)}
+            </select>
+          </>
+        )}
+      </div>
+      {on && (
+        <table className="gameplay">
+          <thead><tr><th>Action</th><th>Taken from</th><th>Effects</th></tr></thead>
+          <tbody>{WALL_STATES.map((id) => <ClimbRow key={id} cat={cat} move={MOVE_IDS.get(id)!} />)}</tbody>
+        </table>
+      )}
+    </>
+  )
+}
+
+function ClimbRow({ cat, move }: { cat: Catalog; move: Move }) {
+  const c = store.character
+  const opts = addOptions(cat, c.base, move)
+  const picked = c.moves[move.id]
+  const at = picked ? opts.findIndex((o) => o.from.includes(picked)) : -1
+  const required = WALL_CLIMB.includes(move.id)
+  return (
+    <tr>
+      <td>{move.label}</td>
+      <td>
+        <select value={at >= 0 ? opts[at].from[0] : (picked ?? '')} onChange={(e) => {
+          if (e.target.value) c.moves[move.id] = e.target.value
+          else {
+            delete c.moves[move.id]
+            delete c.moveEffects[move.id]
+          }
+          store.touch('character')
+        }}>
+          {(!required || !picked) && <option value="">{required ? '(pick one)' : 'None'}</option>}
+          {opts.map((o) => (
+            <option key={o.from[0]} value={o.from[0]}>
+              {o.from.map(label).join(', ')}: {stem(o.anims.find((a) => a !== null) ?? null)}{o.body !== cat[c.base].body ? ` (${o.body}, approximate)` : ''}
+            </option>
+          ))}
+          {picked && at < 0 && <option value={picked}>{label(picked)} (has no {move.label.toLowerCase()})</option>}
+        </select>
+      </td>
+      <td>{picked && <MoveEffects id={move.id} from={picked} />}</td>
+    </tr>
   )
 }
 

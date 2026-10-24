@@ -5,7 +5,7 @@ import { LabError } from '../errors'
 import { decodeImage } from '../image/decode'
 import { encodePng, pngSize } from '../image/png'
 import type { RgbaImage } from '../image/rgba'
-import { MOVE_IDS } from '../build/moves'
+import { MOVE_IDS, WALL_CLIMB, WALL_STATES } from '../build/moves'
 import { BASES } from '../game/roster'
 import * as asftool from '../mnroi/asftool'
 import { GLB, type Json } from '../mnroi/gltf'
@@ -38,6 +38,7 @@ export const GAMEPLAY: Record<string, [number, number, boolean]> = {
   super_throw_range: [1.0, 20.0, false],
 }
 export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable'] }
+export const WALL_CLIMBERS = ['spiderman', 'wolverine', 'elektra', 'aftershock', 'venom', 'defcon'] // bases with ability bit 0x2
 export const THROW_REACH: [number, number] = [8, 35]
 export const POSES = ['rest', 'ready', 'readyalt'] as const
 export const CUTSCENE_KINDS = ['intro', 'victory', 'finisher'] as const
@@ -75,6 +76,7 @@ export interface Credit {
 export type Gameplay = Partial<Record<'damage_taken' | 'health' | 'run_speed' | 'sprint_speed' | 'rage_per_super' | 'rage_duration' | 'super_throw_range', number>> & {
   lift?: string
   wire_swing?: boolean
+  wall_climb?: boolean
 }
 
 export interface BaseMoves {
@@ -250,6 +252,13 @@ export function problems(c: Character): Problem[] {
     else if (from === c.base) out.push(['error', `${move.label} is taken from ${BASES[from][0]}, the base itself: set it back to the base's on the Moves page`])
   }
   for (const id of Object.keys(c.moveEffects)) if (!c.moves[id]) out.push(['error', `${MOVE_IDS.get(id)?.label ?? id} is the base's own, so its effects can't be changed`])
+  const climber = WALL_CLIMBERS.includes(c.base)
+  if (c.gameplay.wall_climb && climber) out.push(['error', `${BASES[c.base][0]} already climbs walls: untick wall climbing on the Moves page`])
+  else if (c.gameplay.wall_climb) {
+    for (const id of WALL_CLIMB) if (!c.moves[id]) out.push(['error', `wall climbing needs ${MOVE_IDS.get(id)!.label.toLowerCase()}: pick it on the Moves page`])
+  } else if (!climber && Object.hasOwn(BASES, c.base) && WALL_STATES.some((id) => c.moves[id])) {
+    out.push(['warning', 'wall climbing animations are picked but wall climbing is off, so they never play'])
+  }
   if (c.moves.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach changes the base\'s own super attack far: set that move back to the base\'s, or untick the reach'])
   if (c.flames.body && c.flames.parts.length) out.push(['error', 'flames are on the whole body or on chosen parts, not both: pick one on the Aura page'])
   for (const kind of CUTSCENE_KINDS) {
@@ -396,7 +405,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     if (v.length !== 6) throw new LabError('manifest: six display stats per costume')
     c.stats[k] = v.map((x) => num(x, 'a display stat', STAT_RANGE[0], STAT_RANGE[1], false, true)!)
   }
-  const gp = keys(st.gameplay ?? {}, [...Object.keys(GAMEPLAY), 'lift', 'wire_swing'], 'stats.gameplay')
+  const gp = keys(st.gameplay ?? {}, [...Object.keys(GAMEPLAY), 'lift', 'wire_swing', 'wall_climb'], 'stats.gameplay')
   c.gameplay = {}
   for (const [k, [lo, hi, integer]] of Object.entries(GAMEPLAY)) {
     if (gp[k] !== null && gp[k] !== undefined) (c.gameplay as Record<string, number>)[k] = num(gp[k], k, lo, hi, true, integer)!
@@ -406,6 +415,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     c.gameplay.lift = gp.lift as string
   }
   if (gp.wire_swing !== null && gp.wire_swing !== undefined) c.gameplay.wire_swing = typed<boolean>(gp.wire_swing, 'boolean', 'wire_swing')
+  if (gp.wall_climb !== null && gp.wall_climb !== undefined && typed<boolean>(gp.wall_climb, 'boolean', 'wall_climb')) c.gameplay.wall_climb = true
   const ui = keys(m.ui ?? {}, ['select', 'fade', 'strip_scale', 'ready_voice', 'banner'], 'ui')
   const sel = keys(ui.select ?? {}, [...POSES], 'ui.select')
   c.ui = {

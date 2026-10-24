@@ -96,4 +96,17 @@ describe('moves', () => {
     expect(moves.options(cat, 'storm', grab).map((o) => o.from)).toEqual([['thing', 'venom'], ['wolverine', 'daredevil']])
     expect(moves.options(cat, 'magneto', grab)).toEqual([])
   })
+
+  it('offers other bases\' states the base lacks for adding', () => {
+    const up = moves.MOVE_IDS.get('WallClimbUp')!
+    const cat: moves.Catalog = {
+      thing: { body: 'brute', motions: {}, range: 3 },
+      spiderman: { body: 'male', motions: { wallclimbup: 'sp_up.nad' }, range: 3 },
+      venom: { body: 'brute', motions: { wallclimbup: 'vn_up.nad' }, range: 3 },
+      storm: { body: 'female', motions: {}, range: 3 },
+    }
+    expect(moves.options(cat, 'thing', up)).toEqual([])
+    expect(moves.addOptions(cat, 'thing', up).map((o) => [o.from, o.anims])).toEqual([[['spiderman'], ['sp_up.nad']], [['venom'], ['vn_up.nad']]])
+    expect(moves.addOptions(cat, 'venom', up).map((o) => o.from)).toEqual([['spiderman']])
+  })
 })

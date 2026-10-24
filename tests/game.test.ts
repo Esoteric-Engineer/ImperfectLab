@@ -700,6 +700,29 @@ describe.skipIf(!ISO)('moves', () => {
     expect(set.get('superthrow')!.anim).toMatch(/^Thing_SuperThrowMale_/)
   })
 
+  it('knows which bases climb walls', () => {
+    const t = new R.Templates(src().entry('Misc/Global.not'))
+    const climbers = R.keys().filter((k) => new R.BaseCharacter(src(), k, t).abilities & 0x2)
+    expect(climbers.sort()).toEqual([...imperfect.WALL_CLIMBERS].sort())
+  })
+
+  for (const from of ['venom', 'spiderman']) {
+    it(`gives the Thing ${from}'s wall climbing`, () => {
+      const c = tinted('thing')
+      c.aura = { ...c.aura, mode: 'base' }
+      c.gameplay = { wall_climb: true }
+      c.moves = Object.fromEntries(moves.WALL_STATES.filter((id) => moves.catalog(src())[from].motions[id.toLowerCase()]).map((id) => [id, from]))
+      expect(imperfect.problems(c).filter(([l]) => l === 'error')).toEqual([])
+      const r = new Builder(src(), c).build()
+      const set = nmstool.parse(r.adds.get('Motions/Synth.nms')!).motions()
+      const names = new Set(moves.SLOTS.flatMap((slot) => [...records(r.adds.get(`Bundles/synth${slot}.ngb`)!).keys()]))
+      for (const id of Object.keys(c.moves)) expect(names.has(set.get(id.toLowerCase())!.anim.toLowerCase())).toBe(true)
+      for (const id of moves.WALL_CLIMB) expect(set.has(id.toLowerCase())).toBe(true)
+      const t = new R.Templates(r.sets.get('Misc/Global.not')!)
+      for (const n of ['plr_Synth', 'plr_altSynth']) expect(R.u32(t.prop(n, R.P_ABILITIES))! & 0x2).toBe(0x2)
+    })
+  }
+
   it('builds two characters with moves in one patch', () => {
     const a = daredevil()
     a.moves = { SuperThrow: 'thing' }
