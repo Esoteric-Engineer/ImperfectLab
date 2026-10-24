@@ -667,6 +667,22 @@ describe.skipIf(!ISO)('moves', () => {
     expect(r.notes.some((n) => n.includes('Super throw') && n.includes('approximate'))).toBe(true)
   })
 
+  it('gives Elektra Wolverine\'s super air throw in every opponent\'s slot', () => {
+    const t = new R.Templates(src().entry('Misc/Global.not'))
+    const el = new R.BaseCharacter(src(), 'elektra', t)
+    const mf = moves.motionFiles(src(), el, 'Synth', { SuperAirThrow: 'wolverine' })
+    const set = nmstool.parse(mf.files.get('Motions/Synth.nms')!).motions()
+    const anim = set.get('superairthrow')!.anim
+    expect(anim).toMatch(/^Wolverine_SuperAirTa_[0-9a-f]{6}\.nad$/)
+    for (const s of ['superairthrowfemale', 'superairthrowbrute']) expect(set.get(s)!.anim).toBe(anim)
+    const map = moves.boneMap('male', 'female', 81)
+    for (let i = 0; i < 3; i++) {
+      const built = records(mf.files.get(`Bundles/synth-t${i}.ngb`)!)
+      const theirs = records(src().entry(`Bundles/wolverine-t${i}.ngb`))
+      expect(ngbtool.sameMotion(built.get(anim.toLowerCase())!, moves.remapRecord(theirs.get('wolverine_superairtackle.nad')!, map))).toBe(true)
+    }
+  })
+
   it('takes moves along with a long throw', () => {
     const c = daredevil()
     c.moves = { SuperThrow: 'thing', Attack1: 'spiderman' }

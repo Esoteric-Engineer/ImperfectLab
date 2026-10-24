@@ -275,13 +275,15 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
         continue
       }
       if (old) displaced.add(old.anim.toLowerCase())
-      let anim = m.anim
-      for (const slot of SLOTS) {
+      const found = SLOTS.flatMap((slot): [string, ngbtool.Record, ngbtool.Record][] => {
         const rec = theirBundles.get(slot)?.find((r) => r.name.toLowerCase() === m.anim.toLowerCase())
-        if (!rec) continue
-        const moved = VICTIM.test(state) ? rec : remapRecord(rec, map)
-        const copy = { ...moved, name: ngbtool.sameMotion(moved, rec) ? rec.name : ownName(moved) }
-        anim = copy.name
+        return rec ? [[slot, rec, VICTIM.test(state) ? rec : remapRecord(rec, map)]] : []
+      })
+      // One name in every slot: the set names one animation, and the game loads the slot for the opponent's body class, whose record can differ.
+      const changed = found.find(([, rec, moved]) => !ngbtool.sameMotion(moved, rec))
+      const anim = changed ? ownName(changed[2]) : (found[0]?.[1].name ?? m.anim)
+      for (const [slot, , moved] of found) {
+        const copy = { ...moved, name: anim }
         if (!bundles.has(slot)) bundles.set(slot, [])
         const into = bundles.get(slot)!
         if (!into.some((r) => r.name.toLowerCase() === copy.name.toLowerCase())) {
