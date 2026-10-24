@@ -68,6 +68,7 @@ export class Builder {
   model: Model | null
   selectId = ui.NEW_ID
   tint: string | null = null
+  moveFx: moves.EffectPlan | null = null
 
   constructor(source: GameSource, character: Character, progress?: Progress, model?: Model) {
     this.src = source
@@ -252,13 +253,18 @@ export class Builder {
     return [texture, ims[at]]
   }
 
-  // The aura tint's copies and the flames' blocks, in one effect file.
+  // The aura tint's copies, the flames' blocks and the swapped moves' recolored lines, in one effect file.
   effects(): [[string, string] | null, Map<number, string[]> | null, nottool.Template[], [string, string] | null] {
     const c = this.c
-    const tinted = c.aura.mode === 'tint', fire = flames.hasAny(c.flames)
-    if (!tinted && !fire) return [null, null, [], null]
+    const tinted = c.aura.mode === 'tint', fire = flames.hasAny(c.flames), theirs = Object.values(c.moveEffects).includes('theirs')
+    if (!tinted && !fire && !theirs) return [null, null, [], null]
     const fx = new effects.Effects(this.src.entry('Misc/game.nfx'))
     const before = fx.used()
+    if (theirs) {
+      const used = hasCutscenes(c.cutscenes) ? cutscenes.effectKs(this.src, this.base, c.cutscenes) : []
+      const prefixes: [string, string] = [effects.copyPrefix(c.internalName, false), effects.copyPrefix(c.internalName, true)]
+      this.moveFx = moves.planEffects(this.src, this.base, c.moveEffects, fx, c.moveLines, prefixes, used, moves.movedEffects(this.src, this.base, c.moves))
+    }
     const [effect1, power, extra] = tinted ? this.tinted(fx) : [null, null, []]
     const effect2 = flames.effectNames(fx, c.flames, c.internalName)
     if (fire) this.note(`flames: ${c.flames.body ? "over the whole body (Human Torch's body fire)" : `on the ${c.flames.parts.join(', ')}`}`)
@@ -324,11 +330,12 @@ export class Builder {
     const fields = tuningFields(c)
     const strings = new Map(power)
     if (hasCutscenes(c.cutscenes)) {
-      const cuts = cutscenes.plan(this.src, this.base, c)
+      const cuts = this.moveFx ? cutscenes.plan(this.src, this.base, c, this.moveFx.slots) : cutscenes.plan(this.src, this.base, c)
       for (const [fid, names] of cuts.fields) strings.set(fid, names)
       for (const [k, v] of cuts.files) this.r.adds.set(k, v)
       for (const n of cuts.notes) this.note(n)
     }
+    for (const [fid, names] of this.moveFx?.slots.fields() ?? []) strings.set(fid, names)
     if (!Object.keys(fields).length && !strings.size) return null
     const tun = new tuning.Tuning(this.src, this.base)
     const [name, nvb, listed] = tun.build(c.internalName, fields, strings)
@@ -342,7 +349,7 @@ export class Builder {
     const c = this.c
     if (!ownMotions(c)) return null
     const reach = c.baseMoves.throw_reach
-    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, reach)
+    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, reach, c.moveEffects, this.moveFx)
     for (const [k, v] of m.files) this.r.adds.set(k, v)
     if (reach !== undefined) this.note(`baton throw: reaches ${reach} m (${this.base.label}'s about 8)`)
     for (const n of m.notes) this.note(n)

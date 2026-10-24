@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import type { Catalog as CutsceneCatalog, EffectFit } from '../core/build/cutscenes'
-import type { Catalog } from '../core/build/moves'
+import type { Catalog, MoveEffectFit } from '../core/build/moves'
 import type { Joint, JointModel } from '../core/model/glb'
 import { Skeleton } from '../core/model/skeleton'
 import { type Character, copyCharacter, newCharacter, snapshotCharacter } from '../core/package/imperfect'
@@ -90,6 +90,7 @@ class Store {
   private moves: Catalog | 'loading' | null = null
   private cutscenes: CutsceneCatalog | Promise<CutsceneCatalog> | null = null
   private effectFits = new Map<string, EffectFit | 'loading'>()
+  private moveFits = new Map<string, Record<string, MoveEffectFit> | 'loading'>()
   private statusTimer = 0
   private fit: { key: string; problem: string | null } | null = null
   private fitAsked: string | null = null
@@ -252,6 +253,7 @@ class Store {
     this.moves = null
     this.cutscenes = null
     this.effectFits.clear()
+    this.moveFits.clear()
     this.touch('game', false)
   }
 
@@ -327,15 +329,35 @@ class Store {
   effectFit(): EffectFit | null {
     const c = this.character
     if (!this.game || !Object.keys(c.cutscenes).some((k) => k !== 'audio' && k !== 'effects')) return null
-    const picked = { ...c.cutscenes, audio: {} }
-    const key = JSON.stringify([c.base, picked, c.moves])
+    const picked = { moves: c.moves, moveEffects: c.moveEffects, moveLines: c.moveLines, cutscenes: { ...c.cutscenes, audio: {} } }
+    const key = JSON.stringify([c.base, picked])
     const d = this.effectFits.get(key)
     if (d === undefined) {
       this.effectFits.set(key, 'loading')
       const game = this.game
-      engine.call<EffectFit>('cutsceneEffects', [c.base, picked, c.moves]).then((v) => {
+      engine.call<EffectFit>('cutsceneEffects', [c.base, picked]).then((v) => {
         if (this.game !== game) return
         this.effectFits.set(key, v)
+        this.emit()
+      }, (e) => this.fail(e))
+      return null
+    }
+    return d === 'loading' ? null : d
+  }
+
+  // The swapped moves whose animations fire effects, and how many of those fit.
+  moveEffectFit(): Record<string, MoveEffectFit> | null {
+    const c = this.character
+    if (!this.game || !Object.keys(c.moves).length) return null
+    const picked = { moves: c.moves, moveEffects: c.moveEffects, moveLines: c.moveLines, cutscenes: { ...c.cutscenes, audio: {} } }
+    const key = JSON.stringify([c.base, picked])
+    const d = this.moveFits.get(key)
+    if (d === undefined) {
+      this.moveFits.set(key, 'loading')
+      const game = this.game
+      engine.call<Record<string, MoveEffectFit>>('moveEffects', [c.base, picked]).then((v) => {
+        if (this.game !== game) return
+        this.moveFits.set(key, v)
         this.emit()
       }, (e) => this.fail(e))
       return null

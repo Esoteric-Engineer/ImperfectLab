@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import * as cutscenes from '../src/core/build/cutscenes'
 import * as effects from '../src/core/build/effects'
+import { EFFECT_FIELDS } from '../src/core/build/effectslots'
 import * as flames from '../src/core/build/flames'
 import * as basemoves from '../src/core/build/basemoves'
 import * as moves from '../src/core/build/moves'
@@ -667,6 +669,22 @@ describe.skipIf(!ISO)('moves', () => {
     expect(r.notes.some((n) => n.includes('Super throw') && n.includes('approximate'))).toBe(true)
   })
 
+  it('gives Elektra Wolverine\'s super air throw in every opponent\'s slot', () => {
+    const t = new R.Templates(src().entry('Misc/Global.not'))
+    const el = new R.BaseCharacter(src(), 'elektra', t)
+    const mf = moves.motionFiles(src(), el, 'Synth', { SuperAirThrow: 'wolverine' })
+    const set = nmstool.parse(mf.files.get('Motions/Synth.nms')!).motions()
+    const anim = set.get('superairthrow')!.anim
+    expect(anim).toMatch(/^Wolverine_SuperAirTa_[0-9a-f]{6}\.nad$/)
+    for (const s of ['superairthrowfemale', 'superairthrowbrute']) expect(set.get(s)!.anim).toBe(anim)
+    const map = moves.boneMap('male', 'female', 81)
+    for (let i = 0; i < 3; i++) {
+      const built = records(mf.files.get(`Bundles/synth-t${i}.ngb`)!)
+      const theirs = records(src().entry(`Bundles/wolverine-t${i}.ngb`))
+      expect(ngbtool.sameMotion(built.get(anim.toLowerCase())!, moves.remapRecord(theirs.get('wolverine_superairtackle.nad')!, map))).toBe(true)
+    }
+  })
+
   it('takes moves along with a long throw', () => {
     const c = daredevil()
     c.moves = { SuperThrow: 'thing', Attack1: 'spiderman' }
@@ -695,6 +713,98 @@ describe.skipIf(!ISO)('moves', () => {
     const t = new R.Templates(r.sets.get('Misc/Global.not')!)
     expect(R.text(t.prop('plr_Other', R.P_MOTIONSET))).toBe('Other.nms')
     expect(r.notes.some((n) => n.startsWith('OTHER: moves: Throw from Storm') && n.includes('female animations on a male skeleton'))).toBe(true)
+  })
+
+  const tunedValues = (nvb: Uint8Array, fid: number) => {
+    const t = Object.create(tuning.Tuning.prototype) as tuning.Tuning
+    t.fields = nvbtool.parseNdb(src().entry('Misc/defaults.ndb')).fields('PLAYER')
+    t.nvb = nvbtool.parseNvb(nvb)
+    return Array.from({ length: tuning.SLOTS }, (_, s) => t.value(fid, s))
+  }
+  const wolverine = () => {
+    const c = tinted('wolverine')
+    c.aura = { ...c.aura, mode: 'base' }
+    c.moves = { SuperThrow: 'daredevil' }
+    return c
+  }
+  const grabEvents = (r: { adds: Map<string, Uint8Array> }) => {
+    const anim = nmstool.parse(r.adds.get('Motions/Synth.nms')!).motions().get('superthrow')!.anim.toLowerCase()
+    return [0, 1, 2].map((i) => records(r.adds.get(`Bundles/synth-t${i}.ngb`)!).get(anim)!.events.filter(([, t]) => [0x48, 0x49, 0x5d, 0x5e].includes(t)))
+  }
+
+  it('sets the super throw range in every tuning slot', () => {
+    const c = wolverine()
+    c.gameplay = { super_throw_range: 10 }
+    const r = new Builder(src(), c).build()
+    expect(tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, 28)).toEqual(new Array(tuning.SLOTS).fill(10))
+    expect(moves.catalog(src()).daredevil.range).toBe(10)
+    expect(moves.catalog(src()).thing.range).toBe(3)
+  })
+
+  it('plays Daredevil\'s cable when Wolverine takes his super throw', () => {
+    const c = wolverine()
+    c.moveEffects = { SuperThrow: 'theirs' }
+    const r = new Builder(src(), c).build()
+    const events = grabEvents(r)
+    const ks = new Set(events.flat().map(([, , k]) => k))
+    expect(ks.size).toBe(1)
+    const [k] = ks
+    expect(k).not.toBe(2)
+    const wolvKs = moves.baseEffects(src(), new R.BaseCharacter(src(), 'wolverine'))
+    expect(wolvKs).not.toContain(k)
+    expect(tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, EFFECT_FIELDS[k - 1])).toEqual(['ddNeckAtt', 'ddNeckAtt', 'ddNeckAtt', 'ddNeckAtt', 'ddNeckAtt', 'altDdNeckAtt'])
+    // the victim's side plays on the opponent and is left alone
+    const set = nmstool.parse(r.adds.get('Motions/Synth.nms')!).motions()
+    const dd = records(src().entry('Bundles/daredevil-t0.ngb'))
+    const victim = set.get('superthrowvictim')!.anim.toLowerCase()
+    expect(ngbtool.sameMotion(records(r.adds.get('Bundles/synth-t0.ngb')!).get(victim)!, dd.get(victim)!)).toBe(true)
+    expect(set.get('superthrow')!.opts).toContain('-1.00')
+    expect(r.notes.some((n) => n.includes("Super throw") && n.includes("1 of Daredevil's effects"))).toBe(true)
+    expect(r.sets.has('Misc/game.nfx')).toBe(false)
+  })
+
+  it('recolors a taken line per costume', () => {
+    const c = wolverine()
+    c.moveEffects = { SuperThrow: 'theirs' }
+    c.moveLines = { color: '#00FF00', alt_color: null }
+    const r = new Builder(src(), c).build()
+    const [k] = new Set(grabEvents(r).flat().map(([, , k]) => k))
+    const names = tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, EFFECT_FIELDS[k - 1]) as string[]
+    expect(names[5]).toBe('altDdNeckAtt')
+    expect(names[0]).not.toBe('ddNeckAtt')
+    expect(new Set(names.slice(0, 5)).size).toBe(1)
+    const fx = new effects.Effects(r.sets.get('Misc/game.nfx')!)
+    expect(fx.isLine(names[0])).toBe(true)
+    const lines = fx.by.get(names[0].toLowerCase())!.lines
+    expect(lines).toContain('startcol (255,0,255,0)')
+    expect(lines).toContain('endcol (255,0,255,0)')
+    expect(fx.used() - new effects.Effects(src().entry('Misc/game.nfx')).used()).toBeLessThan(256)
+  })
+
+  it('plays none of a taken move\'s effects when told to', () => {
+    const c = wolverine()
+    c.moveEffects = { SuperThrow: 'none' }
+    const r = new Builder(src(), c).build()
+    expect(grabEvents(r).flat()).toEqual([])
+    expect(r.notes.some((n) => n.includes('Super throw') && n.includes('no effects'))).toBe(true)
+  })
+
+  it('gives taken moves\' effects free slots before cutscenes\'', () => {
+    const jo = new R.BaseCharacter(src(), 'johnnyohm')
+    const moved = moves.movedEffects(src(), jo, { SuperThrow: 'spiderman' })
+    expect(moved.moves.get('SuperThrow')!.ks.sort()).toEqual([4, 5, 6])
+    const fresh = () => new effects.Effects(src().entry('Misc/game.nfx'))
+    const lines = { color: null, alt_color: null }
+    const alone = moves.effectFit(src(), jo, {}, lines, [], fresh, moved).SuperThrow
+    expect(alone.chosen).toBe(false)
+    expect(alone.line).toBe(true)
+    expect(alone.total).toBe(3)
+    expect(alone.fit).toBe(2)
+    const c = { moves: { SuperThrow: 'spiderman' }, moveEffects: { SuperThrow: 'theirs' as const }, moveLines: lines,
+      cutscenes: { finisher: 'ironman', audio: {}, effects: { finisher: 'theirs' as const } } }
+    const cuts = cutscenes.effectFit(src(), 'johnnyohm', c)
+    expect(cuts.finisher!.fit).toBe(0)
+    expect(cutscenes.effectFit(src(), 'johnnyohm', { ...c, moveEffects: {} }).finisher!.fit).toBeGreaterThan(0)
   })
 
   it('refuses a move from the base itself', () => {

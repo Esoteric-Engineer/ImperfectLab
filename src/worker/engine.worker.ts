@@ -3,7 +3,8 @@ import { LabError } from '../core/errors'
 import type { ReadAt, Sink } from '../core/game/disc'
 import { RgbaImage } from '../core/image/rgba'
 import type { Batch } from '../core/build/batch'
-import type { CutsceneKind, Cutscenes } from '../core/package/imperfect'
+import type { EffectChoices } from '../core/build/cutscenes'
+import type { CutsceneKind } from '../core/package/imperfect'
 import type { PatchTarget, Request, Response } from './protocol'
 import { Service } from './service'
 
@@ -78,7 +79,8 @@ const handlers: Record<string, (progress: (stage: string, done?: number, total?:
   baseDetails: (_p, key: string) => service.baseDetails(key),
   moveCatalog: () => service.moveCatalog(),
   cutsceneCatalog: () => service.cutsceneCatalog(),
-  cutsceneEffects: (_p, base: string, cutscenes: Cutscenes, moves: Record<string, string>) => service.cutsceneEffects(base, cutscenes, moves),
+  cutsceneEffects: (_p, base: string, c: EffectChoices) => service.cutsceneEffects(base, c),
+  moveEffects: (_p, base: string, c: EffectChoices) => service.moveEffects(base, c),
   cutscenePcm: (_p, base: string, kind: CutsceneKind, key: string) => service.cutscenePcm(base, kind, key),
   encodeCutsceneAudio: (_p, channels: Int16Array[], samples: number) => service.encodeCutsceneAudio(channels, samples),
   decodeCutsceneAudio: (_p, data: Uint8Array) => service.decodeCutsceneAudio(data),

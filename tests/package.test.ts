@@ -90,6 +90,29 @@ describe('round trip', () => {
     expect(d.moves).toEqual({ SuperThrow: 'thing', Attack1: 'spiderman' })
   })
 
+  it('saves and loads move effects, line colors and the super throw range', () => {
+    const c = character()
+    c.base = 'wolverine'
+    expect(imperfect.manifest(c).move_effects).toBeUndefined()
+    expect(imperfect.manifest(c).move_lines).toBeUndefined()
+    c.moves = { SuperThrow: 'daredevil', Attack1: 'spiderman' }
+    c.moveEffects = { SuperThrow: 'theirs', Attack1: 'none' }
+    c.moveLines = { color: '#C0C0C0', alt_color: '#40A0FF80' }
+    c.gameplay = { super_throw_range: 10 }
+    const d = imperfect.load(imperfect.save(c))
+    expect(d.moveEffects).toEqual(c.moveEffects)
+    expect(d.moveLines).toEqual(c.moveLines)
+    expect(d.gameplay.super_throw_range).toBe(10)
+    const m = imperfect.manifest(c) as Json
+    expect(() => imperfect.fromManifest({ ...m, move_effects: { Throw: 'theirs' } }, new Map())).toThrow(/base's own/)
+    expect(() => imperfect.fromManifest({ ...m, move_effects: { SuperThrow: 'mine' } }, new Map())).toThrow(/theirs or none/)
+    expect(() => imperfect.fromManifest({ ...m, move_lines: { color: 'grey' } }, new Map())).toThrow(LabError)
+    expect(() => imperfect.fromManifest({ ...m, move_lines: { texture: 'x' } }, new Map())).toThrow(/unknown key/)
+    expect(() => imperfect.fromManifest({ ...m, stats: { gameplay: { super_throw_range: 50 } } }, new Map())).toThrow(/from 1 to 20/)
+    c.moveEffects = { Throw: 'theirs' }
+    expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes("effects can't be changed"))).toBe(true)
+  })
+
   it('finds problems with moves', () => {
     const c = character()
     c.base = 'daredevil'

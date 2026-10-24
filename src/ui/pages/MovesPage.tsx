@@ -1,14 +1,26 @@
-import { animations, CATEGORIES, type Catalog, type Move, MOVES, options } from '../../core/build/moves'
+import { animations, CATEGORIES, type Catalog, type Move, MOVE_IDS, MOVES, options } from '../../core/build/moves'
 import { formatG } from '../../core/format'
 import { label } from '../../core/game/roster'
-import { BASE_MOVES, THROW_REACH } from '../../core/package/imperfect'
-import { Note, NumberInput, Warning } from '../components/common'
+import { BASE_MOVES, GAMEPLAY, type MoveEffect, THROW_REACH } from '../../core/package/imperfect'
+import { ColorButton, Note, NumberInput, Warning } from '../components/common'
 import { store, useStore } from '../store'
 
 // Categories shown open; the rest start folded.
 const OPEN = new Set(['Attacks', 'Super attacks', 'Air and wall attacks', 'Ranged attacks', 'Throws'])
 
 const stem = (anim: string | null) => (anim ?? '').replace(/\.nad$/i, '')
+const RANGE = GAMEPLAY.super_throw_range
+const effectCount = (n: number) => `${n} effect${n === 1 ? '' : 's'}`
+
+// Picking a super throw brings its range along, unless the range was set by hand.
+function pickSuperThrow(cat: Catalog, from: string | undefined) {
+  const c = store.character, gp = c.gameplay
+  const was = cat[c.moves.SuperThrow ?? c.base]?.range
+  if (gp.super_throw_range !== undefined && gp.super_throw_range !== was) return
+  const next = cat[from ?? c.base]?.range
+  if (from === undefined || next === undefined || next === cat[c.base]?.range) delete gp.super_throw_range
+  else gp.super_throw_range = next
+}
 
 export function MovesPage() {
   useStore()
@@ -33,7 +45,7 @@ export function MovesPage() {
       <h3>Moves</h3>
       <Note>
         Swap any of {label(c.base)}'s moves for another character's version of the move. The move's animations are copied into this character, along with the victim's side of a throw.<br />
-        What the move does stays {label(c.base)}'s: its damage, cost and reach, its sounds and effects (played from {label(c.base)}'s own), and whether the AI uses it.<br />
+        What the move does stays {label(c.base)}'s: its damage, cost and reach, its sounds, and whether the AI uses it. Its effects play from {label(c.base)}'s own unless you pick the other character's under Effects.<br />
         A match loads both fighters' animations, so every swapped move uses a little more of the memory a match has.
       </Note>
       {cross.length > 0 && (
@@ -54,13 +66,15 @@ export function MovesPage() {
             <details key={category} open={OPEN.has(category) || changed > 0}>
               <summary><b>{category}</b> <span className="muted">({rows.length}{changed ? `, ${changed} swapped` : ''})</span></summary>
               <table className="gameplay">
-                <thead><tr><th>Move</th><th>{label(c.base)}'s animation</th><th>Taken from</th></tr></thead>
+                <thead><tr><th>Move</th><th>{label(c.base)}'s animation</th><th>Taken from</th><th>Effects</th></tr></thead>
                 <tbody>{rows.map((m) => <MoveRow key={m.id} cat={cat} move={m} />)}</tbody>
               </table>
             </details>
           )
         })
       )}
+      {mine && <GrabRange cat={cat!} />}
+      <LineColors />
       {(BASE_MOVES[c.base] ?? []).length > 0 && <BaseMoves />}
     </div>
   )
@@ -83,8 +97,12 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
         <select value={at >= 0 ? opts[at].from[0] : (picked ?? '')} disabled={locked || (!opts.length && !picked)}
           title={locked ? 'The baton throw reach changes this move: untick it below to swap the move' : undefined}
           onChange={(e) => {
+            if (move.id === 'SuperThrow') pickSuperThrow(cat, e.target.value || undefined)
             if (e.target.value) c.moves[move.id] = e.target.value
-            else delete c.moves[move.id]
+            else {
+              delete c.moves[move.id]
+              delete c.moveEffects[move.id]
+            }
             store.touch('character')
           }}>
           <option value="">{label(c.base)} (base)</option>
@@ -97,7 +115,104 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
         </select>
         {!opts.length && !picked && <span className="muted"> no other version</span>}
       </td>
+      <td>{picked && <MoveEffects id={move.id} from={picked} />}</td>
     </tr>
+  )
+}
+
+function MoveEffects({ id, from }: { id: string; from: string }) {
+  const c = store.character
+  const fits = store.moveEffectFit()
+  if (!fits) return <span className="muted">...</span>
+  const fit = fits[id]
+  if (!fit) return <span className="muted">-</span>
+  const how = c.moveEffects[id] ?? ''
+  const missing = how === 'theirs' && fit.fit < fit.total
+  return (
+    <span>
+      <select value={how} onChange={(e) => {
+        if (e.target.value) c.moveEffects[id] = e.target.value as MoveEffect
+        else delete c.moveEffects[id]
+        store.touch('character')
+      }}>
+        <option value="">{label(c.base)}'s</option>
+        <option value="theirs">{label(from)}'s{fit.line ? ' (with its line)' : ''}</option>
+        <option value="none">None</option>
+      </select>
+      {how !== 'theirs' && fit.fit < fit.total && <span className="muted"> {label(from)}'s: only {fit.fit} of {effectCount(fit.total)} would fit</span>}
+      {missing && <span className="muted"> only {fit.fit} of {effectCount(fit.total)} fit: the rest play as {label(c.base)}'s</span>}
+    </span>
+  )
+}
+
+function GrabRange({ cat }: { cat: Catalog }) {
+  const c = store.character
+  const gp = c.gameplay
+  const have = gp.super_throw_range !== undefined
+  const from = c.moves.SuperThrow
+  const base = cat[c.base]?.range
+  if (base === undefined || !animations(cat, c.base, MOVE_IDS.get('SuperThrow')!)) return null
+  const edited = () => store.touch('character')
+  return (
+    <>
+      <h3>Super throw range</h3>
+      <Note>
+        How far away the opponent can be for the super throw (R + X grab) to start.
+        A long-range grab (Daredevil's cable, Spider-Man's web) starts where the character stands; a close one first moves the character to the opponent, so a long range makes it slide over.
+      </Note>
+      <table className="gameplay">
+        <thead><tr><th>Value</th><th>Base</th><th>New</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><label className="check"><input type="checkbox" checked={have} onChange={(e) => {
+              if (e.target.checked) gp.super_throw_range = from ? cat[from]?.range ?? base : base
+              else delete gp.super_throw_range
+              edited()
+            }} /> Super throw grab range</label></td>
+            <td>{formatG(base)} m{from && cat[from] && cat[from].range !== base ? ` (${label(from)}'s ${formatG(cat[from].range)} m)` : ''}</td>
+            <td><span><NumberInput disabled={!have} min={RANGE[0]} max={RANGE[1]} step={0.5} value={gp.super_throw_range ?? base} onChange={(v) => {
+              gp.super_throw_range = Math.round(v * 10) / 10
+              edited()
+            }} /> m</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </>
+  )
+}
+
+function LineColor({ color, onChange }: { color: string | null; onChange: (c: string | null) => void }) {
+  return (
+    <span className="check">
+      <select value={color === null ? 'theirs' : 'color'} onChange={(e) => onChange(e.target.value === 'theirs' ? null : '#C0C0C0')}>
+        <option value="theirs">As taken</option>
+        <option value="color">Recolored</option>
+      </select>
+      {color !== null && <ColorButton color={color} alpha onChange={onChange} />}
+    </span>
+  )
+}
+
+// Shown once a swapped move plays another character's line (cable, web).
+function LineColors() {
+  const c = store.character
+  const fits = store.moveEffectFit()
+  const lined = Object.entries(c.moveEffects).some(([id, how]) => how === 'theirs' && fits?.[id]?.line)
+  if (!lined && c.moveLines.color === null && c.moveLines.alt_color === null) return null
+  const edited = () => store.touch('character')
+  return (
+    <>
+      <h3>Grab line color</h3>
+      <Note>
+        The line a taken move draws from the hand to the opponent, such as Daredevil's cable or Spider-Man's web. A recolored line adds a small copy of it to the game's effects for each costume.
+      </Note>
+      <div className="row">
+        <label>Costume 1</label>
+        <LineColor color={c.moveLines.color} onChange={(v) => { c.moveLines.color = v; edited() }} />
+        <label>Costume 2</label>
+        <LineColor color={c.moveLines.alt_color} onChange={(v) => { c.moveLines.alt_color = v; edited() }} />
+      </div>
+    </>
   )
 }
 

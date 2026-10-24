@@ -72,7 +72,7 @@ export function tintPlans(source: GameSource, base: BaseCharacter): Record<strin
 }
 
 // How much several characters' tints and flames grow the cache together.
-export function sharedExtra(source: GameSource, tints: [BaseCharacter, string | null][], fires: (Flames | null)[] = []): number {
+export function sharedExtra(source: GameSource, tints: [BaseCharacter, string | null][], fires: (Flames | null)[] = [], more: (fx: Effects) => void = () => {}): number {
   const fx = new Effects(source.entry('Misc/game.nfx'))
   tints.forEach(([base, level], i) => {
     if (level === null) return
@@ -83,6 +83,7 @@ export function sharedExtra(source: GameSource, tints: [BaseCharacter, string | 
   fires.forEach((f, i) => {
     if (f) flames.effectNames(fx, f, `x${i}`)
   })
+  more(fx)
   return cacheSize(fx.used()) - nfxtool.CACHE_SIZE
 }
 
@@ -146,6 +147,23 @@ export function recolor(type: number, body: string[], color: string): string[] {
   return out
 }
 
+// Every color set to color, its AA scaling the alpha as a tint's does.
+export function paint(_type: number, body: string[], color: string): string[] {
+  const [r, g, b] = hexRgb(color), opacity = hexAlpha(color) / 255
+  return body.map((line) => {
+    const t = nfxtool.tokens(line)
+    const key = t.length ? t[0].toLowerCase() : ''
+    if (COLOR_KEYS.includes(key) && t.length >= 2) {
+      const vals = nfxtool.scanFloats(t[1], 4)
+      if (vals.length === 4) return `${t[0]} (${num(vals[0] * opacity)},${r},${g},${b})`
+    } else if (HEX_KEYS.includes(key) && t.length >= 2) {
+      const v = nfxtool.scanHex(t[1])
+      if (v) return `${t[0]} 0x${(roundHalfEven((v >>> 24) * opacity) * 0x1000000 + r * 0x10000 + g * 0x100 + b).toString(16).padStart(8, '0')}`
+    }
+    return line
+  })
+}
+
 function hasColor(b: nfxtool.Block): boolean {
   return b.lines.slice(1).some((line) => {
     const t = nfxtool.tokens(line)
@@ -158,6 +176,7 @@ function hasColor(b: nfxtool.Block): boolean {
 export class Effects {
   items: nfxtool.Item[]
   by = new Map<string, nfxtool.Block>()
+  paints = new Map<string, string>()
 
   constructor(data: Uint8Array) {
     this.items = nfxtool.readNfx(data)
@@ -205,6 +224,17 @@ export class Effects {
     return blocks.filter((b) => out.has(low(b)))
   }
 
+  // A grab line: a constraint drawn between the two fighters (ddNeckAtt, spidSupAttL).
+  isLine(name: string): boolean {
+    return this.tree([name]).some((b) => nfxtool.TYPES[b.type] === 'constraint')
+  }
+
+  painted(name: string, color: string, prefix: string): string {
+    const key = `${name.toLowerCase()} ${color.toLowerCase()}`
+    if (!this.paints.has(key)) this.paints.set(key, this.tinted([name], color, prefix, paint).get(name.toLowerCase()) ?? name)
+    return this.paints.get(key)!
+  }
+
   used(): number {
     return nfxtool.cacheUse(this.items)[1]
   }
@@ -240,7 +270,7 @@ export class Effects {
     for (const c of copies) if (!this.by.has(c.name.toLowerCase())) this.by.set(c.name.toLowerCase(), c)
   }
 
-  tinted(roots: (string | null)[], color: string, prefix: string): Map<string, string> {
+  tinted(roots: (string | null)[], color: string, prefix: string, how = recolor): Map<string, string> {
     const blocks = this.changed(roots)
     const names = new Map<string, string>()
     const taken = new Set<string>()
@@ -258,7 +288,7 @@ export class Effects {
         return REFERENCES.includes(key) && t.length >= 2 && names.has(t[1].toLowerCase()) ? `${t[0]} ${names.get(t[1].toLowerCase())}` : line
       })
       const name = names.get(b.name.toLowerCase())!
-      copies.push(new nfxtool.Block(b.type, name, [`${nfxtool.TYPES[b.type]} ${name}`, ...recolor(b.type, body, color), 'end'], true))
+      copies.push(new nfxtool.Block(b.type, name, [`${nfxtool.TYPES[b.type]} ${name}`, ...how(b.type, body, color), 'end'], true))
     }
     this.append(copies)
     return names

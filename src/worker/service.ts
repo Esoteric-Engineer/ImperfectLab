@@ -183,8 +183,14 @@ export class Service {
     return cutscenes.catalog(this.src())
   }
 
-  cutsceneEffects(base: string, picked: imperfect.Cutscenes, moves: Record<string, string>): cutscenes.EffectFit {
-    return cutscenes.effectFit(this.src(), base, picked, moves)
+  cutsceneEffects(base: string, c: cutscenes.EffectChoices): cutscenes.EffectFit {
+    return cutscenes.effectFit(this.src(), base, c)
+  }
+
+  moveEffects(base: string, c: cutscenes.EffectChoices): Record<string, moves.MoveEffectFit> {
+    const src = this.src(), b = this.base(base)
+    return moves.effectFit(src, b, c.moveEffects, c.moveLines, cutscenes.effectKs(src, b, c.cutscenes), () => new effects.Effects(src.entry('Misc/game.nfx')),
+      moves.movedEffects(src, b, c.moves))
   }
 
   cutscenePcm(base: string, kind: imperfect.CutsceneKind, key: string): [Int16Array[], number] {

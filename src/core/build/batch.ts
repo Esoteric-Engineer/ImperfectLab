@@ -10,6 +10,7 @@ import * as mapping from '../model/mapping'
 import { Skeleton } from '../model/skeleton'
 import { type Character, hasCutscenes, problems as characterProblems, type Problem } from '../package/imperfect'
 import * as effects from './effects'
+import * as moves from './moves'
 import { motionSetName, SLOTS } from './moves'
 import { Builder, ownMotions, type PatchOutput, type Progress, Result, tuningFields, write } from './patch'
 import { templateNames } from './templates'
@@ -35,10 +36,14 @@ export function batchTints(source: GameSource, chars: Batch): [(string | null)[]
   const full = asked.flatMap((t, i) => (t === 'all' ? [i] : [])).reverse()
   const cut = (which: number[]) => asked.map((t, i) => (which.includes(i) ? lower(t) : t))
   const tries = [asked, ...full.map((i) => cut([i])), ...full.slice(1).map((_, k) => cut(full.slice(0, k + 2)))]
+  const lines = (fx: effects.Effects) => chars.forEach((c, i) => {
+    if ((c.moveLines.color === null && c.moveLines.alt_color === null) || !Object.values(c.moveEffects).includes('theirs')) return
+    moves.planEffects(source, bases[i], c.moveEffects, fx, c.moveLines, [`x${i}f`, `x${i}a`], [], moves.movedEffects(source, bases[i], c.moves))
+  })
   const seen = new Map<string, number>()
   for (const t of tries) {
     const key = t.join()
-    if (!seen.has(key)) seen.set(key, effects.sharedExtra(source, t.map((level, i) => [bases[i], level]), chars.map((c) => c.flames)))
+    if (!seen.has(key)) seen.set(key, effects.sharedExtra(source, t.map((level, i) => [bases[i], level]), chars.map((c) => c.flames), lines))
     if (seen.get(key)! <= effects.TINT_ALL_LIMIT) return [t, seen.get(key)!]
   }
   const last = tries[tries.length - 1]
@@ -145,7 +150,7 @@ function claims(c: Character): Set<string> {
 }
 
 // Whether the character gets its own tuning file, and so a line in Misc/nvblist.txt (Builder.tuning).
-const tuned = (c: Character) => c.aura.mode === 'tint' || Object.keys(tuningFields(c)).length > 0 || hasCutscenes(c.cutscenes)
+const tuned = (c: Character) => c.aura.mode === 'tint' || Object.keys(tuningFields(c)).length > 0 || hasCutscenes(c.cutscenes) || Object.values(c.moveEffects).includes('theirs')
 
 const gameBundle = (source: GameSource, name: string) => ['ngm', 'tpl'].reduce((n, ext) => n + (source.index.byName.get(`bundles/${name}.${ext}`)?.size ?? 0), 0)
 const builtBundle = (adds: Map<string, Uint8Array>, name: string) => ['ngm', 'tpl'].reduce((n, ext) => n + (adds.get(`Bundles/${name}.${ext}`)?.length ?? 0), 0)

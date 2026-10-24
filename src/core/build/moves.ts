@@ -10,7 +10,11 @@ import * as ngbtool from '../mnroi/ngbtool'
 import * as ngmtool from '../mnroi/ngmtool'
 import * as nmstool from '../mnroi/nmstool'
 import { loadTable } from '../model/skeleton'
+import type { MoveEffect, MoveLines } from '../package/imperfect'
 import * as basemoves from './basemoves'
+import type { Effects } from './effects'
+import { effectNames, OWN_EFFECTS, Slots } from './effectslots'
+import * as tuning from './tuning'
 
 export const SLOTS = ['', '-t0', '-t1', '-t2']
 const VICTIM = /victim/i
@@ -130,10 +134,11 @@ function resolved(src: GameSource, own: nmstool.MotionSet, has: (anim: string) =
   return out
 }
 
-// Each base's animations by lowercased state, for the Moves page.
+// Each base's animations by lowercased state, and its super throw range, for the Moves page.
 export interface BaseMotions {
   body: string
   motions: Record<string, string>
+  range: number
 }
 export type Catalog = Record<string, BaseMotions>
 
@@ -149,7 +154,8 @@ export function catalog(src: GameSource): Catalog {
         if (src.has(`Bundles/${stem}${slot}.ngb`)) for (const n of ngbtool.names(src.entry(`Bundles/${stem}${slot}.ngb`))) names.add(n.toLowerCase())
       }
       const m = resolved(src, nmstool.parse(src.entry(`Motions/${set}`)), (a) => names.has(a.toLowerCase()))
-      out[key] = { body: base.body, motions: Object.fromEntries([...m].map(([k, v]) => [k, v.anim])) }
+      const range = new tuning.Tuning(src, base).num(tuning.FIELDS.super_throw_range)
+      out[key] = { body: base.body, motions: Object.fromEntries([...m].map(([k, v]) => [k, v.anim])), range }
     } catch (e) {
       if (!(e instanceof LabError)) throw e
     }
@@ -235,13 +241,113 @@ const holds = (bundles: Map<string, ngbtool.Record[]>) => {
   return (anim: string) => names.has(anim.toLowerCase())
 }
 
+interface Source {
+  other: R.BaseCharacter
+  bundles: Map<string, ngbtool.Record[]>
+  motions: Map<string, nmstool.Motion>
+}
+
+function source(src: GameSource, base: R.BaseCharacter, from: string): Source {
+  const other = new R.BaseCharacter(src, from, base.t)
+  const set = motionSetOf(other)
+  const bundles = loadBundles(src, stemOf(set))
+  return { other, bundles, motions: resolved(src, nmstool.parse(src.entry(`Motions/${set}`)), holds(bundles)) }
+}
+
+const effectKs = (recs: ngbtool.Record[]) => recs.flatMap((r) => r.events.filter(([, t]) => OWN_EFFECTS.has(t)).map(([, , k]) => k))
+
+// Every k the base's own animations fire.
+export function baseEffects(src: GameSource, base: R.BaseCharacter): number[] {
+  return effectKs([...loadBundles(src, stemOf(motionSetOf(base))).values()].flat())
+}
+
+export interface Moved {
+  from: R.BaseCharacter
+  ks: number[]
+}
+
+export interface MovedEffects {
+  own: number[]
+  moves: Map<string, Moved>
+}
+
+// The k the base's animations fire, and each swapped move's on the thrower's side; the victim's side plays on the opponent.
+export function movedEffects(src: GameSource, base: R.BaseCharacter, moves: Record<string, string>): MovedEffects {
+  const out: MovedEffects = { own: baseEffects(src, base), moves: new Map() }
+  for (const [id, from] of Object.entries(moves)) {
+    const move = MOVE_IDS.get(id)
+    if (!move) continue
+    const s = source(src, base, from)
+    const anims = new Set(move.states.filter((st) => !VICTIM.test(st)).flatMap((st) => s.motions.get(st.toLowerCase())?.anim.toLowerCase() ?? []))
+    out.moves.set(id, { from: s.other, ks: [...new Set(effectKs([...s.bundles.values()].flat().filter((r) => anims.has(r.name.toLowerCase()))))] })
+  }
+  return out
+}
+
+export interface MoveFit {
+  fit: number
+  total: number
+  line: boolean
+}
+
+export interface EffectPlan {
+  slots: Slots
+  retargets: Map<string, Map<number, number>>
+  fits: Map<string, MoveFit>
+}
+
+// Gives the 'theirs' moves' effects free slots before anything else; used holds the k the character's cutscenes fire.
+// A line in a color of lines is copied in that color into fx, prefixes naming the copies per costume.
+export function planEffects(src: GameSource, base: R.BaseCharacter, choice: Record<string, MoveEffect>, fx: Effects, lines: MoveLines,
+  prefixes: [string, string], used: Iterable<number>, moved: MovedEffects): EffectPlan {
+  const slots = new Slots(new tuning.Tuning(src, base), [...moved.own, ...[...moved.moves.values()].flatMap((m) => m.ks), ...used])
+  const out: EffectPlan = { slots, retargets: new Map(), fits: new Map() }
+  const alt = tuning.SLOTS - 1
+  const rename = (names: string[]) => names.map((n, s) => {
+    const color = s === alt ? lines.alt_color : lines.color
+    return n && color && fx.isLine(n) ? fx.painted(n, color, prefixes[s === alt ? 1 : 0]) : n
+  })
+  for (const [id, m] of moved.moves) {
+    const from = new tuning.Tuning(src, m.from)
+    const line = m.ks.some((k) => effectNames(from, k).some((n) => n && fx.isLine(n)))
+    if (choice[id] !== 'theirs') {
+      out.fits.set(id, { fit: 0, total: 0, line })
+      continue
+    }
+    const [map, missed] = slots.assign(from, m.ks, rename)
+    out.retargets.set(id, map)
+    out.fits.set(id, { fit: map.size, total: map.size + missed, line })
+  }
+  return out
+}
+
+export interface MoveEffectFit extends MoveFit {
+  chosen: boolean
+}
+
+// For each swapped move whose animations fire effects: how many of them get a slot, chosen or as if chosen.
+export function effectFit(src: GameSource, base: R.BaseCharacter, choice: Record<string, MoveEffect>, lines: MoveLines, used: number[],
+  fresh: () => Effects, moved: MovedEffects): Record<string, MoveEffectFit> {
+  const prefixes: [string, string] = ['xxf', 'xxa']
+  const plan = planEffects(src, base, choice, fresh(), lines, prefixes, used, moved)
+  const out: Record<string, MoveEffectFit> = {}
+  for (const [id, f] of plan.fits) {
+    if (!moved.moves.get(id)!.ks.length) continue
+    const chosen = choice[id] === 'theirs'
+    const fit = chosen ? f : planEffects(src, base, { ...choice, [id]: 'theirs' }, fresh(), lines, prefixes, used, moved).fits.get(id)!
+    if (fit.total || fit.line) out[id] = { ...fit, chosen }
+  }
+  return out
+}
+
 export interface MotionFiles {
   motionSet: string
   files: Map<string, Uint8Array>
   notes: string[]
 }
 
-export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: string, moves: Record<string, string>, reach?: number): MotionFiles {
+export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: string, moves: Record<string, string>, reach?: number,
+  choice: Record<string, MoveEffect> = {}, plan: EffectPlan | null = null): MotionFiles {
   const set = motionSetOf(base), stem = stemOf(set), name = internal.toLowerCase()
   const own = nmstool.parse(src.entry(`Motions/${set}`))
   const bundles = loadBundles(src, stem)
@@ -262,11 +368,14 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
   for (const [id, from] of Object.entries(moves)) {
     const move = MOVE_IDS.get(id)
     if (!move) throw new LabError(`there is no move ${id}`)
-    const other = new R.BaseCharacter(src, from, base.t)
-    const oset = motionSetOf(other)
-    const theirBundles = loadBundles(src, stemOf(oset))
-    const theirs = resolved(src, nmstool.parse(src.entry(`Motions/${oset}`)), holds(theirBundles))
+    const { other, bundles: theirBundles, motions: theirs } = source(src, base, from)
     const map = boneMap(other.body, base.body, models[0].nodes.length)
+    const how = choice[id], to = plan?.retargets.get(id)
+    const effects = (rec: ngbtool.Record): ngbtool.Record => {
+      if (how === 'none') return { ...rec, events: rec.events.filter(([, t]) => !OWN_EFFECTS.has(t)) }
+      if (!to?.size) return rec
+      return { ...rec, events: rec.events.map(([f, t, k, v]): ngbtool.Event => [f, t, OWN_EFFECTS.has(t) ? (to.get(k) ?? k) : k, v]) }
+    }
     let copied = 0
     for (const state of move.states) {
       const m = theirs.get(state.toLowerCase()), old = mine.get(state.toLowerCase())
@@ -275,13 +384,15 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
         continue
       }
       if (old) displaced.add(old.anim.toLowerCase())
-      let anim = m.anim
-      for (const slot of SLOTS) {
+      const found = SLOTS.flatMap((slot): [string, ngbtool.Record, ngbtool.Record][] => {
         const rec = theirBundles.get(slot)?.find((r) => r.name.toLowerCase() === m.anim.toLowerCase())
-        if (!rec) continue
-        const moved = VICTIM.test(state) ? rec : remapRecord(rec, map)
-        const copy = { ...moved, name: ngbtool.sameMotion(moved, rec) ? rec.name : ownName(moved) }
-        anim = copy.name
+        return rec ? [[slot, rec, VICTIM.test(state) ? rec : effects(remapRecord(rec, map))]] : []
+      })
+      // One name in every slot: the set names one animation, and the game loads the slot for the opponent's body class, whose record can differ.
+      const changed = found.find(([, rec, moved]) => !ngbtool.sameMotion(moved, rec))
+      const anim = changed ? ownName(changed[2]) : (found[0]?.[1].name ?? m.anim)
+      for (const [slot, , moved] of found) {
+        const copy = { ...moved, name: anim }
         if (!bundles.has(slot)) bundles.set(slot, [])
         const into = bundles.get(slot)!
         if (!into.some((r) => r.name.toLowerCase() === copy.name.toLowerCase())) {
@@ -292,7 +403,11 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       own.set({ state: m.state, anim, opts: m.opts })
     }
     const cross = other.body !== base.body ? `; ${other.body} animations on a ${base.body} skeleton, so approximate` : ''
-    notes.push(`moves: ${move.label} from ${other.label} (${copied} animation${copied === 1 ? '' : 's'} copied${cross})`)
+    const fit = plan?.fits.get(id)
+    let fx = ''
+    if (how === 'none') fx = '; no effects'
+    else if (how === 'theirs' && fit?.total) fx = `; ${fit.fit} of ${other.label}'s effects${fit.total > fit.fit ? `, ${fit.total - fit.fit} more left as ${base.label}'s (no free effect slot)` : ''}`
+    notes.push(`moves: ${move.label} from ${other.label} (${copied} animation${copied === 1 ? '' : 's'} copied${cross}${fx})`)
   }
   // the base's records the moves replaced, unless another state still plays them
   const used = new Set([...resolved(src, own, () => true).values()].map((m) => m.anim.toLowerCase()))

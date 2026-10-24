@@ -35,6 +35,7 @@ export const LIFT = ['light', 'medium', 'heavy']
 export const GAMEPLAY: Record<string, [number, number, boolean]> = {
   damage_taken: [0.1, 3.0, false], health: [10, 1000, true], run_speed: [1.0, 30.0, false],
   sprint_speed: [1.0, 40.0, false], rage_per_super: [0.0, 100.0, false], rage_duration: [1000, 120000, true],
+  super_throw_range: [1.0, 20.0, false],
 }
 export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable'] }
 export const THROW_REACH: [number, number] = [8, 35]
@@ -71,7 +72,7 @@ export interface Credit {
   url: string
 }
 
-export type Gameplay = Partial<Record<'damage_taken' | 'health' | 'run_speed' | 'sprint_speed' | 'rage_per_super' | 'rage_duration', number>> & {
+export type Gameplay = Partial<Record<'damage_taken' | 'health' | 'run_speed' | 'sprint_speed' | 'rage_per_super' | 'rage_duration' | 'super_throw_range', number>> & {
   lift?: string
   wire_swing?: boolean
 }
@@ -88,6 +89,13 @@ export interface Flames {
   alt_color: string | null
   size: number
   base_effect: boolean
+}
+
+export const MOVE_EFFECTS = ['theirs', 'none'] as const
+export type MoveEffect = (typeof MOVE_EFFECTS)[number]
+export interface MoveLines {
+  color: string | null
+  alt_color: string | null
 }
 
 export const CUTSCENE_EFFECTS = ['theirs', 'none'] as const
@@ -111,6 +119,8 @@ export interface Character {
   gameplay: Gameplay
   baseMoves: BaseMoves
   moves: Record<string, string>
+  moveEffects: Record<string, MoveEffect>
+  moveLines: MoveLines
   cutscenes: Cutscenes
   ui: { select: Partial<Record<Pose, Placement>>; fade: number; strip_scale: number | null; ready_voice: string | null; banner: boolean }
   files: Map<string, Uint8Array>
@@ -154,6 +164,8 @@ export function newCharacter(): Character {
     gameplay: {},
     baseMoves: {},
     moves: {},
+    moveEffects: {},
+    moveLines: { color: null, alt_color: null },
     cutscenes: { audio: {}, effects: {} },
     ui: { select: {}, fade: 36, strip_scale: null, ready_voice: null, banner: true },
     files: new Map(),
@@ -210,6 +222,8 @@ export function manifest(c: Character): Json {
     ui: c.ui,
     base_moves: c.baseMoves,
     moves: c.moves,
+    move_effects: Object.keys(c.moveEffects).length ? c.moveEffects : undefined,
+    move_lines: c.moveLines.color !== null || c.moveLines.alt_color !== null ? c.moveLines : undefined,
     cutscenes: hasCutscenes(c.cutscenes) ? { ...c.cutscenes, effects: Object.keys(c.cutscenes.effects).length ? c.cutscenes.effects : undefined } : undefined,
     files: Object.fromEntries([...files].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, v]) => [k, sha(v)])),
   }
@@ -235,6 +249,7 @@ export function problems(c: Character): Problem[] {
     else if (!Object.hasOwn(BASES, from)) out.push(['error', `${move.label} is taken from an unknown character`])
     else if (from === c.base) out.push(['error', `${move.label} is taken from ${BASES[from][0]}, the base itself: set it back to the base's on the Moves page`])
   }
+  for (const id of Object.keys(c.moveEffects)) if (!c.moves[id]) out.push(['error', `${MOVE_IDS.get(id)?.label ?? id} is the base's own, so its effects can't be changed`])
   if (c.moves.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach changes the base\'s own super attack far: set that move back to the base\'s, or untick the reach'])
   if (c.flames.body && c.flames.parts.length) out.push(['error', 'flames are on the whole body or on chosen parts, not both: pick one on the Aura page'])
   for (const kind of CUTSCENE_KINDS) {
@@ -295,7 +310,7 @@ function upgrade(m: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Character {
-  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'stats', 'ui', 'base_moves', 'moves', 'cutscenes', 'files'], 'the manifest')
+  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'cutscenes', 'files'], 'the manifest')
   if (m.format !== FORMAT) throw new LabError('not a .imperfect file')
   upgrade(m)
   if (m.game !== GAME) throw new LabError(`this file is for ${m.game}, not ${GAME}`)
@@ -426,6 +441,17 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     if (!Object.hasOwn(BASES, key)) throw new LabError(`manifest: moves.${id} names an unknown base character`)
     if (key === c.base) throw new LabError(`manifest: moves.${id} is taken from the base itself`)
     c.moves[id] = key
+  }
+  c.moveEffects = {}
+  for (const [id, how] of Object.entries(typed<Record<string, unknown>>(m.move_effects ?? {}, 'object', 'move_effects'))) {
+    if (!MOVE_EFFECTS.includes(how as MoveEffect)) throw new LabError(`manifest: move_effects.${id.slice(0, 40)} is theirs or none`)
+    if (!c.moves[id]) throw new LabError(`manifest: move_effects names ${id.slice(0, 40)}, which is the base's own`)
+    c.moveEffects[id] = how as MoveEffect
+  }
+  const ln = keys(m.move_lines ?? {}, ['color', 'alt_color'], 'move_lines')
+  c.moveLines = {
+    color: ln.color === null || ln.color === undefined ? null : color(ln.color, 'move_lines.color'),
+    alt_color: ln.alt_color === null || ln.alt_color === undefined ? null : color(ln.alt_color, 'move_lines.alt_color'),
   }
   const cs = keys(m.cutscenes ?? {}, [...CUTSCENE_KINDS, 'audio', 'effects'], 'cutscenes')
   c.cutscenes = { audio: {}, effects: {} }
