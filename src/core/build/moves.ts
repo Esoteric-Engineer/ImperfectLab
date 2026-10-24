@@ -177,9 +177,7 @@ export interface MoveOption {
   anims: (string | null)[]
 }
 
-export function options(cat: Catalog, base: string, move: Move): MoveOption[] {
-  const mine = animations(cat, base, move)
-  if (!mine) return []
+function grouped(cat: Catalog, base: string, move: Move, mine: (string | null)[]): MoveOption[] {
   const out = new Map<string, MoveOption>()
   for (const key of R.keys()) {
     const theirs = key === base ? null : animations(cat, key, move)
@@ -191,6 +189,21 @@ export function options(cat: Catalog, base: string, move: Move): MoveOption[] {
     else out.set(id, { from: [key], body: cat[key].body, anims: theirs })
   }
   return [...out.values()]
+}
+
+export function options(cat: Catalog, base: string, move: Move): MoveOption[] {
+  const mine = animations(cat, base, move)
+  return mine ? grouped(cat, base, move, mine) : []
+}
+
+// Wall climbing and running for a base without them (manifest `stats.gameplay`): these states are added, not swapped. The jumps off a wall work with both.
+export const WALL_CLIMB = ['WallClimbUp', 'WallClimbDown', 'WallClimbLeft', 'WallClimbRight', 'WallClimbStand']
+export const WALL_RUN = ['WallRunUp', 'WallRunLeft', 'WallRunRight']
+export const WALL_JUMPS = ['WallJumpOff', 'WallJumpToWall', 'WallRunJumpOff']
+export const WALL_STATES = [...WALL_CLIMB, ...WALL_RUN, ...WALL_JUMPS]
+
+export function addOptions(cat: Catalog, base: string, move: Move): MoveOption[] {
+  return grouped(cat, base, move, move.states.map(() => null))
 }
 
 const boneKey = (name: string) => name.replace(/\s*\([LRC]\)$/, '').toLowerCase().replace(/hand marker$/, 'palm')

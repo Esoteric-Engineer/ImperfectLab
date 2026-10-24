@@ -20,7 +20,7 @@ import * as bundle from '../model/bundle'
 import { Fit, type MaterialSlots } from '../model/fit'
 import { Model } from '../model/glb'
 import { Skeleton } from '../model/skeleton'
-import { type Character, hasCutscenes, image as readImage, type Material, problems, type Placement } from '../package/imperfect'
+import { type Character, hasCutscenes, image as readImage, type Material, problems, type Placement, WALL, type WallKey } from '../package/imperfect'
 import * as cutscenes from './cutscenes'
 import * as effects from './effects'
 import * as basemoves from './basemoves'
@@ -34,6 +34,7 @@ import * as ui from './ui'
 
 const LIFT_BITS: Record<string, [number, number]> = { light: [0, 0x30], medium: [0x10, 0x20], heavy: [0x20, 0] }
 export const WIRE = 0x80
+const WALL_BITS: Record<WallKey, number> = { wall_climb: 0x2, wall_run: 0x4000000 }
 
 export type Progress = (stage: string, done?: number, total?: number) => void
 
@@ -369,6 +370,7 @@ export class Builder {
       if (gp.wire_swing) on |= WIRE
       else off |= WIRE
     }
+    for (const w of WALL) if (gp[w.key]) on |= WALL_BITS[w.key]
     const mode = c.aura.mode === 'swap' ? 'swap' : 'base'
     this.r.sets.set('Misc/Global.not', templates.build(this.src.entry('Misc/Global.not'), this.base, c.internalName, mode, effect1, description,
       on || off ? [on, off] : null, gp.health ?? null, extra, motionSet, (c.baseMoves.throw_cable ?? true) && c.flames.base_effect, effect2))

@@ -1,7 +1,8 @@
 import { dropUnfitAudio } from '../../core/build/cutscenes'
+import { WALL_JUMPS } from '../../core/build/moves'
 import * as R from '../../core/game/roster'
 import * as mapping from '../../core/model/mapping'
-import { type Credit, BASE_MOVES, type BaseMoves, CUTSCENE_KINDS, defaultStats } from '../../core/package/imperfect'
+import { type Credit, BASE_MOVES, type BaseMoves, CUTSCENE_KINDS, defaultStats, WALL } from '../../core/package/imperfect'
 import type { AutoMap } from '../../core/model/mapping'
 import { ColorButton, ImageView, Note } from '../components/common'
 import { engine } from '../engine'
@@ -24,6 +25,13 @@ export function CharacterPage() {
       c.base = key
       for (const k of Object.keys(c.baseMoves) as (keyof BaseMoves)[]) if (!(BASE_MOVES[key] ?? []).includes(k)) delete c.baseMoves[k]
       for (const [id, from] of Object.entries(c.moves)) if (from === key) delete c.moves[id]
+      const dropped = WALL.filter((w) => c.gameplay[w.key] && w.bases.includes(key))
+      for (const w of dropped) delete c.gameplay[w.key]
+      const ids = dropped.flatMap((w) => w.states).concat(dropped.length && !WALL.some((w) => c.gameplay[w.key]) ? WALL_JUMPS : [])
+      for (const id of ids) {
+        delete c.moves[id]
+        delete c.moveEffects[id]
+      }
       for (const kind of CUTSCENE_KINDS) if (c.cutscenes[kind] === key) delete c.cutscenes[kind]
       for (const kind of CUTSCENE_KINDS) if (c.cutscenes[kind] === undefined) delete c.cutscenes.effects[kind]
       if (s.game && Object.keys(c.cutscenes.audio).length) {
