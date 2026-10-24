@@ -68,6 +68,8 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
   "ui": {"select": {"ready": {"scale": 0.8, "anchor": [210, 75], "glow": "#3CFF5A6E"}}, "fade": 36, "strip_scale": null, "ready_voice": null, "banner": true},
   "base_moves": {},
   "moves": { "SuperThrow": "thing" },
+  "move_effects": { "SuperThrow": "theirs" },
+  "move_lines": { "color": "#C0C0C0", "alt_color": null },
   "cutscenes": { "finisher": "wolverine", "audio": { "finisher_1": "cutscenes/finisher_1.asf" } },
   "files": {"model/model.glb": "<sha256>", "ui/select_ready.png": "<sha256>"}
 }
@@ -127,6 +129,7 @@ Older ImperfectLab builds refuse a file with `flames`.
   - `damage_taken`: 0.1-3.0, the share of a hit's damage taken.
   - `lift`: `light`, `medium` or `heavy`.
   - `wire_swing`: a boolean.
+  - `super_throw_range`: 1-20, how far away, in meters, the opponent can be for the super throw (R + X grab) to start.
   - Experimental: `health` (integer 10-1000), `run_speed` (1-30), `sprint_speed` (1-40), `rage_per_super` (0-100)
     and `rage_duration` (integer 1000-120000).
 
@@ -163,6 +166,12 @@ Daredevil (`daredevil`):
 ### `moves`
 Moves taken from other bases: move id -> the base (not the character's own) whose animations it gets. Ids are motion-set state names, listed in `MOVES` in `src/core/build/moves.ts`; a throw or a sequence is one id covering its parts (`SuperThrow` includes the female, brute and victim versions).
 `SuperAttackFar` cannot be combined with `base_moves.throw_reach`. Older ImperfectLab builds refuse a non-empty `moves`.
+
+### `move_effects`
+Optional, and left out when every taken move plays the base's effects. Move id (one in `moves`) -> `theirs` (the effects that base's version of the move starts, such as Daredevil's cable on his super throw) or `none` (no effects). A move left out starts the base's effects in their place.
+
+### `move_lines`
+Optional. `color` and `alt_color` (each `null` or `#RRGGBB`/`#RRGGBBAA`, AA scaling the opacity): the color, per costume, of the lines (`constraint` effects such as Daredevil's cable or Spider-Man's web) that `theirs` moves draw. `null` keeps the line as it was taken.
 
 ### `cutscenes`
 Optional, and left out when the character keeps its base's cutscenes and audio.

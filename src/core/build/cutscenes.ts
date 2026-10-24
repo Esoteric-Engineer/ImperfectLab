@@ -6,10 +6,12 @@ import * as R from '../game/roster'
 import type { GameSource } from '../game/source'
 import * as asftool from '../mnroi/asftool'
 import * as cuttool from '../mnroi/cuttool'
-import * as ngbtool from '../mnroi/ngbtool'
 import * as ngmtool from '../mnroi/ngmtool'
 import { type Character, CUTSCENE_KINDS, type CutsceneKind, type Cutscenes } from '../package/imperfect'
-import { boneMap, motionSetOf, remapBone, SLOTS as MOVE_SLOTS, stemOf } from './moves'
+import * as fxs from './effects'
+import { OWN_EFFECTS, Slots } from './effectslots'
+import * as moves from './moves'
+import { boneMap, remapBone } from './moves'
 import * as tuning from './tuning'
 
 export const FIELDS: Record<CutsceneKind, number[]> = { intro: [170, 171, 172], victory: [173, 174, 175], finisher: [206, 207, 208] }
@@ -143,15 +145,6 @@ export interface Plan {
   notes: string[]
 }
 
-// Animation events start effects named by the performer's own tuning: param k (1-26) is field EFFECT_FIELDS[k - 1] (fn_8005A534).
-export const EFFECT_FIELDS = [80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 98, 99, 100, 101, 102, 94, 95, 96, 97, 71, 237, 238, 242, 243, 248, 249]
-// The events that name a field of the actor playing them (start, stop, and the same on the target).
-const OWN_EFFECTS = new Set([0x48, 0x49, 0x5d, 0x5e])
-// Fields the game also reads in play (fn_800E673C's 79 + n, fn_800F1644's 94 + n, the power-up's 98-102).
-const IN_PLAY = new Set([80, 81, 82, 83, 84, 85, 86, 94, 95, 96, 97, 98, 99, 100, 101, 102])
-// The only k a shipped victim animation or victim actor uses; those play on whoever is thrown (checked in the tests).
-export const VICTIM_SLOTS = [5]
-
 const performers = (cut: cuttool.Cut) => cut.chunks.flatMap((ch) => ch.actors.filter((a) => !FIXED.test(cuttool.recordName(a.record))))
 
 function* effectEvents(a: cuttool.Actor): Generator<number> {
@@ -199,26 +192,6 @@ function retarget(cut: cuttool.Cut, slots: Map<number, number>) {
 
 const usesAny = (cut: cuttool.Cut, slots: Map<number, number>) => performers(cut).some((a) => [...effectEvents(a)].some((i) => slots.has(param(a, i))))
 
-function freeSlots(src: GameSource, base: R.BaseCharacter, moves: Record<string, string>, tun: tuning.Tuning, cuts: cuttool.Cut[]): number[] {
-  const used = new Set(VICTIM_SLOTS)
-  const stems = new Set([base, ...Object.values(moves).map((k) => new R.BaseCharacter(src, k, base.t))].map((b) => stemOf(motionSetOf(b))))
-  for (const stem of stems) {
-    for (const slot of MOVE_SLOTS) {
-      const name = `Bundles/${stem}${slot}.ngb`
-      if (!src.has(name)) continue
-      for (const r of ngbtool.parse(src.entry(name))) for (const [, type, k] of r.events) if (OWN_EFFECTS.has(type)) used.add(k)
-    }
-  }
-  for (const cut of cuts) for (const a of performers(cut)) for (const i of effectEvents(a)) used.add(param(a, i))
-  return EFFECT_FIELDS.flatMap((fid, i) => {
-    const k = i + 1
-    const empty = Array.from({ length: tuning.SLOTS }, (_, s) => tun.value(fid, s)).every((v) => !v)
-    return !IN_PLAY.has(fid) && !used.has(k) && empty ? [k] : []
-  })
-}
-
-const effectNames = (tun: tuning.Tuning, k: number) => Array.from({ length: tuning.SLOTS }, (_, s) => tun.value(EFFECT_FIELDS[k - 1], s) as string)
-
 type Taken = { kind: CutsceneKind; from: R.BaseCharacter; names: string[][] }[]
 
 function taken(src: GameSource, r: Reader, base: R.BaseCharacter, cutscenes: Cutscenes): Taken {
@@ -233,69 +206,59 @@ interface Effects {
   // per kind, the source's k -> the k that names its effect for the character
   retargets: Map<CutsceneKind, Map<number, number>>
   missed: Map<CutsceneKind, number>
-  fields: Map<number, string[]>
 }
 
-function assignEffects(src: GameSource, r: Reader, base: R.BaseCharacter, tun: tuning.Tuning, kinds: Taken, theirs: CutsceneKind[], moves: Record<string, string>): Effects {
-  const out: Effects = { retargets: new Map(), missed: new Map(), fields: new Map() }
-  if (!theirs.length) return out
-  const free = freeSlots(src, base, moves, tun, kinds.flatMap((k) => k.names.flat().map((v) => r.cut(v))))
-  // the base's own slots first, as an effect it already names elsewhere costs no free one
-  const given = new Map<string, number>()
-  for (let k = EFFECT_FIELDS.length; k >= 1; k--) given.set(JSON.stringify(effectNames(tun, k)), k)
-  const owned = new Set(given.keys())
+const firedBy = (r: Reader, names: string[][]) => names.flat().flatMap((v) => performers(r.cut(v)).flatMap((a) => [...effectEvents(a)].map((i) => param(a, i))))
+
+function assignEffects(src: GameSource, r: Reader, slots: Slots, kinds: Taken, theirs: CutsceneKind[]): Effects {
+  const out: Effects = { retargets: new Map(), missed: new Map() }
   for (const { kind, from, names } of kinds) {
-    if (!theirs.includes(kind) || from === base) continue
-    const tunFrom = new tuning.Tuning(src, from)
-    const ks = new Set(names.flat().flatMap((v) => performers(r.cut(v)).flatMap((a) => [...effectEvents(a)].map((i) => param(a, i)))))
-    const map = new Map<number, number>()
-    for (const k of [...ks].filter((k) => k >= 1 && k <= EFFECT_FIELDS.length).sort((a, b) => a - b)) {
-      const want = effectNames(tunFrom, k)
-      if (want.every((v, s) => v === effectNames(tun, k)[s])) continue
-      const key = JSON.stringify(want)
-      const to = given.get(key) ?? free.shift()
-      if (to === undefined) {
-        out.missed.set(kind, (out.missed.get(kind) ?? 0) + 1)
-        continue
-      }
-      given.set(key, to)
-      map.set(k, to)
-    }
+    if (!theirs.includes(kind) || from.key === slots.tun.base.key) continue
+    const [map, missed] = slots.assign(new tuning.Tuning(src, from), firedBy(r, names))
+    if (missed) out.missed.set(kind, missed)
     out.retargets.set(kind, map)
-  }
-  for (const [key, k] of given) {
-    const names = JSON.parse(key) as string[]
-    if (!owned.has(key) && names.some(Boolean)) out.fields.set(EFFECT_FIELDS[k - 1], names)
   }
   return out
 }
 
+// Every k the character's cutscenes fire.
+export function effectKs(src: GameSource, base: R.BaseCharacter, cutscenes: Cutscenes): number[] {
+  const r = new Reader(src)
+  return taken(src, r, base, cutscenes).flatMap((k) => firedBy(r, k.names))
+}
+
+export type EffectChoices = Pick<Character, 'moves' | 'moveEffects' | 'moveLines' | 'cutscenes'>
+
+export function moveSlots(src: GameSource, base: R.BaseCharacter, c: EffectChoices): Slots {
+  const fx = new fxs.Effects(src.entry('Misc/game.nfx'))
+  return moves.planEffects(src, base, c.moveEffects, fx, c.moveLines, ['xxf', 'xxa'], effectKs(src, base, c.cutscenes), moves.movedEffects(src, base, c.moves)).slots
+}
+
 export type EffectFit = Partial<Record<CutsceneKind, { fit: number; total: number; chosen: boolean }>>
 
-export function effectFit(src: GameSource, baseKey: string, cutscenes: Cutscenes, moves: Record<string, string>): EffectFit {
+export function effectFit(src: GameSource, baseKey: string, c: EffectChoices): EffectFit {
   const r = new Reader(src)
   const base = new R.BaseCharacter(src, baseKey)
-  const tun = new tuning.Tuning(src, base)
+  const cutscenes = c.cutscenes
   const kinds = taken(src, r, base, cutscenes)
   const out: EffectFit = {}
   for (const { kind, from } of kinds) {
     if (from === base) continue
     const chosen = cutscenes.effects[kind] === 'theirs'
-    const e = assignEffects(src, r, base, tun, kinds, chosen ? theirKinds(cutscenes) : [...theirKinds(cutscenes), kind], moves)
+    const e = assignEffects(src, r, moveSlots(src, base, c), kinds, chosen ? theirKinds(cutscenes) : [...theirKinds(cutscenes), kind])
     const fit = e.retargets.get(kind)?.size ?? 0
     out[kind] = { fit, total: fit + (e.missed.get(kind) ?? 0), chosen }
   }
   return out
 }
 
-export function plan(src: GameSource, base: R.BaseCharacter, c: Character): Plan {
+export function plan(src: GameSource, base: R.BaseCharacter, c: Character, given = moveSlots(src, base, c)): Plan {
   const out: Plan = { fields: new Map(), files: new Map(), notes: [] }
   const r = new Reader(src)
   const prefix = c.internalName.toLowerCase()
-  const tun = new tuning.Tuning(src, base)
   const kinds = taken(src, r, base, c.cutscenes)
-  const { retargets, missed, fields } = assignEffects(src, r, base, tun, kinds, theirKinds(c.cutscenes), c.moves)
-  for (const [fid, names] of fields) out.fields.set(fid, names)
+  const { retargets, missed } = assignEffects(src, r, given, kinds, theirKinds(c.cutscenes))
+  for (const [fid, names] of given.fields()) out.fields.set(fid, names)
   let nodes: number | null = null
   for (const { kind, from, names } of kinds) {
     const clips = Object.entries(c.cutscenes.audio).filter(([k]) => k.startsWith(kind + '_'))

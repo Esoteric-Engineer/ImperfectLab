@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import * as eaxa from '../src/core/audio/eaxa'
 import { buildBatch, checkBatch } from '../src/core/build/batch'
 import * as cutscenes from '../src/core/build/cutscenes'
+import { EFFECT_FIELDS, VICTIM_SLOTS } from '../src/core/build/effectslots'
 import { Builder } from '../src/core/build/patch'
 import * as tuning from '../src/core/build/tuning'
 import { equal, u32le } from '../src/core/bytes'
@@ -76,6 +77,8 @@ describe('new cutscene audio', () => {
     expect(cutscenes.dropUnfitAudio(c, cat, 'intro')).toEqual(['intro_1'])
   })
 })
+
+const choices = (cutscenes: imperfect.Cutscenes) => ({ moves: {}, moveEffects: {}, moveLines: { color: null, alt_color: null }, cutscenes })
 
 describe.skipIf(!ISO)('cutscene files on the disc', () => {
   it('rebuilds every playable cutscene byte for byte', () => {
@@ -244,7 +247,7 @@ describe.skipIf(!ISO)('cutscenes', () => {
         for (let i = 0; i < a.events.length; i += 12) if (fx.has(a.events[i + 4] | (a.events[i + 5] << 8))) seen.add(a.events[i + 6] | (a.events[i + 7] << 8))
       }
     }
-    expect([...seen].sort((a, b) => a - b)).toEqual(cutscenes.VICTIM_SLOTS)
+    expect([...seen].sort((a, b) => a - b)).toEqual(VICTIM_SLOTS)
   })
 
   it('plays Iron Man\'s effects in his finisher on Daredevil', () => {
@@ -258,7 +261,7 @@ describe.skipIf(!ISO)('cutscenes', () => {
     const ddKs = new Set(['', '-t0', '-t1', '-t2'].flatMap((t) => ngbtool.parse(src().entry(`Bundles/daredevil${t}.ngb`)).flatMap((r) => r.events.filter((e) => [0x48, 0x49, 0x5d, 0x5e].includes(e[1])).map((e) => e[2]))))
     const performer = (cut: cuttool.Cut) => cut.chunks.flatMap((ch) => ch.actors.filter((a) => cuttool.recordName(a.record).toLowerCase() === 'ironman'))
     const events = (a: cuttool.Actor) => Array.from({ length: a.events.length / 12 }, (_, i) => [a.events[12 * i + 4] | (a.events[12 * i + 5] << 8), a.events[12 * i + 6] | (a.events[12 * i + 7] << 8)])
-    const effects = (t: tuning.Tuning, k: number) => Array.from({ length: tuning.SLOTS }, (_, s) => t.value(cutscenes.EFFECT_FIELDS[k - 1], s))
+    const effects = (t: tuning.Tuning, k: number) => Array.from({ length: tuning.SLOTS }, (_, s) => t.value(EFFECT_FIELDS[k - 1], s))
     let moved = 0
     for (const [i, body] of ['male', 'female', 'brute'].entries()) {
       const name = p.fields.get(206 + i)![0]
@@ -270,7 +273,7 @@ describe.skipIf(!ISO)('cutscenes', () => {
         moved++
         expect(ddKs.has(k)).toBe(false)
         expect(effects(own, k).every((v) => !v)).toBe(true)
-        expect(p.fields.get(cutscenes.EFFECT_FIELDS[k - 1])).toEqual(effects(im, was))
+        expect(p.fields.get(EFFECT_FIELDS[k - 1])).toEqual(effects(im, was))
       }))
     }
     expect(moved).toBeGreaterThan(0)
@@ -295,18 +298,18 @@ describe.skipIf(!ISO)('cutscenes', () => {
 
   it('says how many effects have room before and after they are chosen', () => {
     const none: imperfect.Cutscenes = { audio: {}, effects: {} }
-    expect(cutscenes.effectFit(src(), 'daredevil', none, {})).toEqual({})
-    const dd = cutscenes.effectFit(src(), 'daredevil', { ...none, finisher: 'ironman', intro: 'wolverine' }, {})
+    expect(cutscenes.effectFit(src(), 'daredevil', choices(none))).toEqual({})
+    const dd = cutscenes.effectFit(src(), 'daredevil', choices({ ...none, finisher: 'ironman', intro: 'wolverine' }))
     expect(dd.finisher!.chosen).toBe(false)
     expect(dd.finisher!.total).toBeGreaterThan(0)
     expect(dd.finisher!.fit).toBe(dd.finisher!.total)
     expect(dd.intro!.fit).toBe(dd.intro!.total)
-    expect(cutscenes.effectFit(src(), 'daredevil', { ...none, finisher: 'wolverine' }, {}).finisher).toEqual({ fit: 0, total: 0, chosen: false })
+    expect(cutscenes.effectFit(src(), 'daredevil', choices({ ...none, finisher: 'wolverine' })).finisher).toEqual({ fit: 0, total: 0, chosen: false })
     // Johnny Ohm has room for Iron Man's finisher alone, but not along with his intro and victory
-    const alone = cutscenes.effectFit(src(), 'johnnyohm', { ...none, finisher: 'ironman', effects: { finisher: 'theirs' } }, {})
+    const alone = cutscenes.effectFit(src(), 'johnnyohm', choices({ ...none, finisher: 'ironman', effects: { finisher: 'theirs' } }))
     expect(alone.finisher!.fit).toBe(alone.finisher!.total)
     const all: imperfect.Cutscenes = { intro: 'ironman', victory: 'ironman', finisher: 'ironman', audio: {}, effects: { intro: 'theirs', victory: 'theirs', finisher: 'theirs' } }
-    const jo = cutscenes.effectFit(src(), 'johnnyohm', all, {})
+    const jo = cutscenes.effectFit(src(), 'johnnyohm', choices(all))
     expect(jo.finisher!.chosen).toBe(true)
     expect(jo.finisher!.fit).toBeLessThan(jo.finisher!.total)
     const c = character('johnnyohm')

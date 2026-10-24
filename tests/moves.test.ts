@@ -84,11 +84,11 @@ describe('moves', () => {
     const grab = moves.MOVE_IDS.get('SuperThrow')!
     const all = (prefix: string) => Object.fromEntries(grab.states.map((s) => [s.toLowerCase(), `${prefix}_${s}.nad`]))
     const cat: moves.Catalog = {
-      daredevil: { body: 'male', motions: all('dd') },
-      thing: { body: 'brute', motions: all('thing') },
-      venom: { body: 'brute', motions: all('thing') },
-      wolverine: { body: 'male', motions: all('dd') },
-      storm: { body: 'female', motions: { superthrow: 'storm.nad' } },
+      daredevil: { body: 'male', motions: all('dd'), range: 3 },
+      thing: { body: 'brute', motions: all('thing'), range: 3 },
+      venom: { body: 'brute', motions: all('thing'), range: 3 },
+      wolverine: { body: 'male', motions: all('dd'), range: 3 },
+      storm: { body: 'female', motions: { superthrow: 'storm.nad' }, range: 3 },
     }
     const opts = moves.options(cat, 'daredevil', grab)
     expect(opts.map((o) => o.from)).toEqual([['thing', 'venom']])

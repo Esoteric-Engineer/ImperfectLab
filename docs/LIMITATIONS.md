@@ -56,10 +56,14 @@ A Daredevil-based character's `throw_reach` (`base_moves`, [`FORMAT.md`](FORMAT.
 
 Moves taken from other bases (`moves`, [`FORMAT.md`](FORMAT.md)):
 
-- **Only the animation changes.** Damage, cost, reach, sounds and effects stay the base's, and a cue the base has no effect for does nothing (the Thing's super throw on Daredevil has no hit flash).
+- **Only the animation changes.** Damage, cost, reach and sounds stay the base's. Effects stay the base's too unless taken (`move_effects`), and a cue the base has no effect for does nothing (the Thing's super throw on Daredevil has no hit flash).
 - **Other body classes are approximate.** Their animations are mapped bone by bone, but limbs differ: a brute's grab on a male character holds the opponent at arm's length.
 - **Memory and space.** The character has its own copy of the base's animations (about 1 to 3 MB on the disc), so a match against the base loads both.
 - **Finishing moves are not moves.** They are cutscenes (below), not motion-set animations.
+- **Taken effects (`theirs`) share the base's free effect slots with cutscene effects** (below). Moves get them first. A move with no free slot plays the base's effect of that number instead. The page and the patch notes say how many fit.
+- **Taken lines are plain colored strands that start at the hand, not at a prop.** The textured strand (`primitive 5`) stretches its texture once along the line rather than repeating it, so only colors are offered.
+- **A recolored line is a copy** of about 190 bytes per costume, out of the effect cache (above).
+- **The super throw range** (`super_throw_range`) needs the character's own tuning file, so a line in the tuning list (above). A long range with a close grab slides the character over to the opponent.
 
 ## Cutscenes
 
