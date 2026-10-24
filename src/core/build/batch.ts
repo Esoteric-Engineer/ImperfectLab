@@ -8,7 +8,7 @@ import * as nfxtool from '../mnroi/nfxtool'
 import { Model } from '../model/glb'
 import * as mapping from '../model/mapping'
 import { Skeleton } from '../model/skeleton'
-import { type Character, problems as characterProblems, type Problem } from '../package/imperfect'
+import { type Character, hasCutscenes, problems as characterProblems, type Problem } from '../package/imperfect'
 import * as effects from './effects'
 import { motionSetName, SLOTS } from './moves'
 import { Builder, ownMotions, type PatchOutput, type Progress, Result, tuningFields, write } from './patch'
@@ -145,7 +145,7 @@ function claims(c: Character): Set<string> {
 }
 
 // Whether the character gets its own tuning file, and so a line in Misc/nvblist.txt (Builder.tuning).
-const tuned = (c: Character) => c.aura.mode === 'tint' || Object.keys(tuningFields(c)).length > 0
+const tuned = (c: Character) => c.aura.mode === 'tint' || Object.keys(tuningFields(c)).length > 0 || hasCutscenes(c.cutscenes)
 
 const gameBundle = (source: GameSource, name: string) => ['ngm', 'tpl'].reduce((n, ext) => n + (source.index.byName.get(`bundles/${name}.${ext}`)?.size ?? 0), 0)
 const builtBundle = (adds: Map<string, Uint8Array>, name: string) => ['ngm', 'tpl'].reduce((n, ext) => n + (adds.get(`Bundles/${name}.${ext}`)?.length ?? 0), 0)
@@ -193,7 +193,7 @@ export function checkBatch(source: GameSource, chars: Batch, progress: Progress 
   const need = lines.reduce((n, i) => n + tuning.listCost(chars[i].internalName), 0)
   const room = tuning.listRoom(source.entry('Misc/nvblist.txt'))
   if (need > room) {
-    add('error', `${lines.map((i) => named[i]).join(', ')} each need their own tuning file (a tinted aura or changed gameplay), and their lines in the game's tuning list take ${need} bytes where it has ${room} free (a line costs its internal name's length plus 8): give some of them the Base or Swap aura and default gameplay, or shorter internal names`)
+    add('error', `${lines.map((i) => named[i]).join(', ')} each need their own tuning file (a tinted aura, changed gameplay or cutscenes), and their lines in the game's tuning list take ${need} bytes where it has ${room} free (a line costs its internal name's length plus 8): give some of them the Base or Swap aura, default gameplay and their base's cutscenes, or shorter internal names`)
   }
   if (errors()) return [out, null]
 

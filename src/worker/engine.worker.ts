@@ -3,13 +3,14 @@ import { LabError } from '../core/errors'
 import type { ReadAt, Sink } from '../core/game/disc'
 import { RgbaImage } from '../core/image/rgba'
 import type { Batch } from '../core/build/batch'
+import type { CutsceneKind, Cutscenes } from '../core/package/imperfect'
 import type { PatchTarget, Request, Response } from './protocol'
 import { Service } from './service'
 
 declare const self: DedicatedWorkerGlobalScope
 
 const service = new Service()
-const FRESH = new Set(['preview', 'materialThumbs', 'compose', 'layout', 'bases', 'stripOutlines'])
+const FRESH = new Set(['preview', 'materialThumbs', 'compose', 'layout', 'bases', 'stripOutlines', 'cutscenePcm', 'encodeCutsceneAudio', 'decodeCutsceneAudio'])
 
 function fileReader(file: Blob): ReadAt {
   const reader = new FileReaderSync()
@@ -76,6 +77,11 @@ const handlers: Record<string, (progress: (stage: string, done?: number, total?:
   bases: () => service.baseList(),
   baseDetails: (_p, key: string) => service.baseDetails(key),
   moveCatalog: () => service.moveCatalog(),
+  cutsceneCatalog: () => service.cutsceneCatalog(),
+  cutsceneEffects: (_p, base: string, cutscenes: Cutscenes, moves: Record<string, string>) => service.cutsceneEffects(base, cutscenes, moves),
+  cutscenePcm: (_p, base: string, kind: CutsceneKind, key: string) => service.cutscenePcm(base, kind, key),
+  encodeCutsceneAudio: (_p, channels: Int16Array[], samples: number) => service.encodeCutsceneAudio(channels, samples),
+  decodeCutsceneAudio: (_p, data: Uint8Array) => service.decodeCutsceneAudio(data),
   importModel: (_p, raw: Uint8Array) => service.importModel(raw),
   setModel: (_p, glb: Uint8Array | null) => service.setModel(glb),
   autoMap: (_p, key: string) => service.autoMap(key),

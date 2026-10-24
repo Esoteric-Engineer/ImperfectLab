@@ -40,9 +40,9 @@ What each base's full tint needs:
 
 ## Tuning
 
-Every character with changed stats or a tint gets its own tuning file. Each one listed in `Misc/nvblist.txt` takes 12,354 bytes when the game boots, and the list itself has room for about 53 more bytes (a line costs its two names plus 2, so `PLAYER <internal name>` costs the name's length plus 8).
+Every character with changed stats, a tint or changed cutscenes gets its own tuning file. Each one listed in `Misc/nvblist.txt` takes 12,354 bytes when the game boots, and the list itself has room for about 53 more bytes (a line costs its two names plus 2, so `PLAYER <internal name>` costs the name's length plus 8).
 
-So a patch of several characters fits only a few that need tuning: two with 10-letter internal names, five with 2-letter ones. The check on the **Multi-Character Patch** page adds the lines up before building. Characters with the base's or a swapped aura, the base's gameplay and no long baton throw need no line, so nine of those fit.
+So a patch of several characters fits only a few that need tuning: two with 10-letter internal names, five with 2-letter ones. The check on the **Multi-Character Patch** page adds the lines up before building. Characters with the base's or a swapped aura, the base's gameplay and cutscenes and no long baton throw need no line, so nine of those fit.
 
 ## Baton throw
 
@@ -59,7 +59,18 @@ Moves taken from other bases (`moves`, [`FORMAT.md`](FORMAT.md)):
 - **Only the animation changes.** Damage, cost, reach, sounds and effects stay the base's, and a cue the base has no effect for does nothing (the Thing's super throw on Daredevil has no hit flash).
 - **Other body classes are approximate.** Their animations are mapped bone by bone, but limbs differ: a brute's grab on a male character holds the opponent at arm's length.
 - **Memory and space.** The character has its own copy of the base's animations (about 1 to 3 MB on the disc), so a match against the base loads both.
-- **Finishing moves can't currently be swapped.** They are cutscenes, not motion-set animations.
+- **Finishing moves are not moves.** They are cutscenes (below), not motion-set animations.
+
+## Cutscenes
+
+Cutscenes and audio changed on the **Cutscenes** page (`cutscenes`, [`FORMAT.md`](FORMAT.md)):
+
+- **Effects come from the base unless moved.** A cutscene's effects are looked up on the character's tuning file, so by default the base's effect plays, which can look weird.
+- **`theirs` fits only so many effects.** It gives each effect a free slot in the character's tuning file, and a base has only 2 (Johnny Ohm) to 10 (Daredevil, Paradox, Elektra) of them. Taking every kind's effects from another base fits about 89% of them, a finisher's alone about 98%; the rest stay the base's. The page and the patch notes say how many fit.
+- **`none` removes only the cutscene's own effects.** The character's always-on effects, such as a glow, still show.
+- **Projectiles and sounds stay the base's.**
+- **Other body classes are approximate.** Their animations are mapped bone by bone, but limbs differ, as for swapped moves. The victim's side of a finisher is unchanged.
+- **New audio replaces the whole mix** (voice, music and sounds) and can be no longer than the track it replaces; a shorter one is padded with silence, because the cutscene keeps time with its audio.
 
 ## More characters
 

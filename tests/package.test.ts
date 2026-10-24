@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { LabError } from '../src/core/errors'
+import * as asftool from '../src/core/mnroi/asftool'
 import { Model } from '../src/core/model/glb'
 import * as imperfect from '../src/core/package/imperfect'
 import type { Json } from '../src/core/mnroi/gltf'
@@ -99,6 +100,45 @@ describe('round trip', () => {
     c.baseMoves = {}
     c.moves = { SuperThrow: 'daredevil' }
     expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes('the base itself'))).toBe(true)
+  })
+
+  it('saves and loads cutscenes and their audio, and leaves them out by default', () => {
+    const c = character()
+    expect(imperfect.manifest(c).cutscenes).toBeUndefined()
+    expect(imperfect.load(imperfect.save(c)).cutscenes).toEqual({ audio: {}, effects: {} })
+    const n = 3000
+    const audio = asftool.build(asftool.encode([new Int16Array(n), new Int16Array(n)]))
+    c.cutscenes = { finisher: 'thing', intro: 'storm', audio: { finisher_1: 'cutscenes/finisher_1.asf' }, effects: {} }
+    c.files.set('cutscenes/finisher_1.asf', audio)
+    const d = imperfect.load(imperfect.save(c))
+    expect(d.cutscenes).toEqual(c.cutscenes)
+    expect(d.files.get('cutscenes/finisher_1.asf')).toEqual(audio)
+  })
+
+  it('finds problems with cutscenes, and refuses bad ones in a file', () => {
+    const c = character()
+    c.cutscenes = { victory: 'wolverine', audio: { intro_1: 'cutscenes/x.asf' }, effects: {} }
+    const errors = () => imperfect.problems(c).filter(([l]) => l === 'error').map(([, m]) => m)
+    expect(errors().some((m) => m.includes('victory') && m.includes('the base itself'))).toBe(true)
+    expect(errors().some((m) => m.includes('intro 1') && m.includes('missing'))).toBe(true)
+    c.cutscenes = { audio: {}, effects: {} }
+    expect(errors()).toEqual([])
+    c.cutscenes = { audio: {}, effects: { intro: 'theirs' } }
+    expect(errors().some((m) => m.includes("effects can't be changed"))).toBe(true)
+    c.cutscenes = { intro: 'storm', audio: {}, effects: { intro: 'theirs' } }
+    expect(imperfect.load(imperfect.save(c)).cutscenes).toEqual(c.cutscenes)
+    c.cutscenes = { audio: {}, effects: {} }
+    const m = imperfect.manifest(c) as Json
+    expect(() => imperfect.fromManifest({ ...m, cutscenes: { audio: {}, effects: { intro: 'theirs' } } }, new Map())).toThrow(/base's own/)
+    expect(() => imperfect.fromManifest({ ...m, cutscenes: { intro: 'storm', audio: {}, effects: { intro: 'mine' } } }, new Map())).toThrow(/theirs or none/)
+    // the first form, a list of kinds
+    expect(imperfect.fromManifest({ ...m, cutscenes: { intro: 'storm', finisher: 'thing', audio: {}, effects: ['intro', 'finisher'] } }, new Map()).cutscenes.effects).toEqual({ intro: 'theirs', finisher: 'theirs' })
+    expect(() => imperfect.fromManifest({ ...m, cutscenes: { intro: 'nobody', audio: {} } }, new Map())).toThrow(/unknown base/)
+    expect(() => imperfect.fromManifest({ ...m, cutscenes: { intro: 'constructor', audio: {} } }, new Map())).toThrow(/unknown base/)
+    expect(() => imperfect.fromManifest({ ...m, moves: { SuperAttackFar: 'toString' } }, new Map())).toThrow(/unknown base/)
+    expect(() => imperfect.fromManifest({ ...m, cutscenes: { audio: { outro_1: 'cutscenes/a.asf' } } }, new Map())).toThrow(/unknown cutscene audio/)
+    expect(() => imperfect.fromManifest({ ...m, cutscenes: { audio: { intro_1: 'cutscenes/a.asf' } } }, new Map())).toThrow(/lacks/)
+    expect(() => imperfect.checkMember('cutscenes/a.asf', pngBytes())).toThrow(LabError)
   })
 
   it('saves and loads flames, and leaves them out at their defaults', () => {

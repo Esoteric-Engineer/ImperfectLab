@@ -16,6 +16,15 @@ const THING_TO_DD = new Map<number, number>([
 const SET = '; a set\r\nbasedon male\r\nStand          A_Stand.nad   lowpriority\r\nSuperThrow     A_Grab.nad    dist -1.00 noloop ; pulls\r\n' +
   'SuperThrow     A_Grab.nad    noloop\r\noverlay wield\r\nStand          A_WieldStand.nad\r\nTail           never_read.nad'
 
+describe('bone remapping', () => {
+  it('maps a bone word\'s node and keeps its flags', () => {
+    const map = new Map([[0, 3], [5, 9]])
+    expect(moves.remapBone(5, map)).toBe(9)
+    expect(moves.remapBone(0x20000, map)).toBe(0x20003)
+    expect(moves.remapBone(0x20001, map)).toBeUndefined()
+  })
+})
+
 describe('motion sets', () => {
   it('reads lines as the game does', () => {
     const s = nmstool.parse(encodeLatin1(SET))

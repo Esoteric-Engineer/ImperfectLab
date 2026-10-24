@@ -121,7 +121,7 @@ export class BaseCharacter {
   description: string | null
 
   constructor(source: GameSource, key: string, templates?: Templates) {
-    if (!(key in BASES)) throw new LabError(`unknown base character ${JSON.stringify(key)}`)
+    if (!Object.hasOwn(BASES, key)) throw new LabError(`unknown base character ${JSON.stringify(key)}`)
     this.key = key
     let stem: string
     ;[this.label, this.selectId, this.rosterIndex, this.typeId, stem, this.auraIndex] = BASES[key]
