@@ -1,7 +1,7 @@
-import { addOptions, animations, CATEGORIES, type Catalog, type Move, MOVE_IDS, MOVES, options, WALL_CLIMB, WALL_STATES } from '../../core/build/moves'
+import { addOptions, animations, CATEGORIES, type Catalog, type Move, MOVE_IDS, MOVES, options, WALL_JUMPS } from '../../core/build/moves'
 import { formatG } from '../../core/format'
-import { label } from '../../core/game/roster'
-import { BASE_MOVES, GAMEPLAY, type MoveEffect, THROW_REACH, WALL_CLIMBERS } from '../../core/package/imperfect'
+import { keys, label } from '../../core/game/roster'
+import { BASE_MOVES, GAMEPLAY, type MoveEffect, THROW_REACH, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
 import { ColorButton, Note, NumberInput, Warning } from '../components/common'
 import { store, useStore } from '../store'
 
@@ -38,7 +38,7 @@ export function MovesPage() {
   }
   const mine = cat?.[c.base]
   const cross = mine ? Object.entries(c.moves).filter(([, from]) => cat![from] && cat![from].body !== mine.body).map(([id]) => id) : []
-  const added = c.gameplay.wall_climb ? new Set(WALL_STATES) : new Set<string>()
+  const added = new Set(cat && mine ? wallRows(cat).map((r) => r.id) : [])
   const swapped = Object.keys(c.moves).filter((id) => !added.has(id)).length
 
   return (
@@ -77,7 +77,7 @@ export function MovesPage() {
           )
         })
       )}
-      {mine && !WALL_CLIMBERS.includes(c.base) && <WallClimbing cat={cat!} />}
+      {mine && WALL.some((w) => !w.bases.includes(c.base)) && <WallMoves cat={cat!} />}
       {mine && <GrabRange cat={cat!} />}
       <LineColors />
       {(BASE_MOVES[c.base] ?? []).length > 0 && <BaseMoves />}
@@ -150,11 +150,22 @@ function MoveEffects({ id, from }: { id: string; from: string }) {
   )
 }
 
-const CLIMB_FROM: Record<string, string> = { male: 'spiderman', female: 'elektra', brute: 'venom' }
+const WALL_FROM: Record<WallKey, Record<string, string>> = {
+  wall_climb: { male: 'spiderman', female: 'elektra', brute: 'venom' },
+  wall_run: { male: 'wolverine', female: 'elektra', brute: 'wolverine' },
+}
 
-function takeAll(cat: Catalog, from: string) {
+// The states added to the base: those of each ability it is given, and the jumps off a wall it has none of.
+function wallRows(cat: Catalog): { id: string; required: boolean }[] {
   const c = store.character
-  for (const id of WALL_STATES) {
+  const given = WALL.filter((w) => c.gameplay[w.key] && !w.bases.includes(c.base))
+  const jumps = given.length ? WALL_JUMPS.filter((id) => !animations(cat, c.base, MOVE_IDS.get(id)!)) : []
+  return [...given.flatMap((w) => w.states.map((id) => ({ id, required: true }))), ...jumps.map((id) => ({ id, required: false }))]
+}
+
+function takeAll(cat: Catalog, from: string, ids: string[]) {
+  const c = store.character
+  for (const id of ids) {
     if (animations(cat, from, MOVE_IDS.get(id)!)) c.moves[id] = from
     else {
       delete c.moves[id]
@@ -163,70 +174,75 @@ function takeAll(cat: Catalog, from: string) {
   }
 }
 
-function setClimbing(cat: Catalog, on: boolean) {
+function setWall(cat: Catalog, w: Wall, on: boolean) {
   const c = store.character
-  if (on) {
-    c.gameplay.wall_climb = true
-    const from = CLIMB_FROM[cat[c.base].body]
-    takeAll(cat, cat[from] ? from : 'spiderman')
-    return
-  }
-  delete c.gameplay.wall_climb
-  for (const id of WALL_STATES) {
+  const before = new Set(wallRows(cat).map((r) => r.id))
+  if (on) c.gameplay[w.key] = true
+  else delete c.gameplay[w.key]
+  const after = wallRows(cat).map((r) => r.id)
+  for (const id of before) {
+    if (after.includes(id)) continue
     delete c.moves[id]
     delete c.moveEffects[id]
   }
+  if (!on) return
+  const pick = WALL_FROM[w.key][cat[c.base].body]
+  const from = cat[pick] ? pick : w.bases.find((k) => cat[k])
+  if (from) takeAll(cat, from, after.filter((id) => !before.has(id)))
 }
 
-// Shown for a base that can't climb walls; the climbing states are added to its motion set.
-function WallClimbing({ cat }: { cat: Catalog }) {
+// Shown for a base missing wall climbing or running.
+function WallMoves({ cat }: { cat: Catalog }) {
   const c = store.character
-  const on = Boolean(c.gameplay.wall_climb)
   const edited = () => store.touch('character')
-  const climbers = WALL_CLIMBERS.filter((k) => cat[k])
-  const froms = new Set(WALL_STATES.flatMap((id) => c.moves[id] ?? []))
+  const offered = WALL.filter((w) => !w.bases.includes(c.base))
+  const rows = wallRows(cat)
+  const required = rows.filter((r) => r.required).map((r) => r.id)
+  const froms = keys().filter((k) => k !== c.base && cat[k] && required.every((id) => animations(cat, k, MOVE_IDS.get(id)!)))
+  const picked = new Set(rows.flatMap((r) => c.moves[r.id] ?? []))
   return (
     <>
-      <h3>Wall climbing</h3>
+      <h3>Wall moves</h3>
       <Note>
-        Lets {label(c.base)} climb walls like Spider-Man: jump at a wall to stick to it. The CPU climbs too.<br />
-        Each climbing action plays the animation picked here, copied into this character. The three jumps off the wall are optional: Venom has animations for only one of them.
+        Lets {label(c.base)} {offered.map((w) => (w.key === 'wall_climb' ? 'climb walls like Spider-Man' : 'run along walls like Wolverine')).join(' or ')}.<br />
+        Each action plays the animation picked here, copied into this character. The jumps off the wall are optional: Venom has animations for only one of them.
       </Note>
       <div className="row">
-        <label className="check"><input type="checkbox" checked={on} onChange={(e) => {
-          setClimbing(cat, e.target.checked)
-          edited()
-        }} /> Wall climbing (experimental)</label>
-        {on && (
+        {offered.map((w) => (
+          <label key={w.key} className="check"><input type="checkbox" checked={Boolean(c.gameplay[w.key])} onChange={(e) => {
+            setWall(cat, w, e.target.checked)
+            edited()
+          }} /> {w.label[0].toUpperCase() + w.label.slice(1)}</label>
+        ))}
+        {rows.length > 0 && (
           <>
             <label>Take all from</label>
-            <select value={froms.size === 1 ? [...froms][0] : ''} onChange={(e) => {
+            <select value={picked.size === 1 ? [...picked][0] : ''} onChange={(e) => {
               if (!e.target.value) return
-              takeAll(cat, e.target.value)
+              takeAll(cat, e.target.value, rows.map((r) => r.id))
               edited()
             }}>
-              {froms.size !== 1 && <option value="">(mixed)</option>}
-              {climbers.map((k) => <option key={k} value={k}>{label(k)}{cat[k].body !== cat[c.base].body ? ` (${cat[k].body}, approximate)` : ''}</option>)}
+              {picked.size !== 1 && <option value="">(mixed)</option>}
+              {froms.map((k) => <option key={k} value={k}>{label(k)}{cat[k].body !== cat[c.base].body ? ` (${cat[k].body}, approximate)` : ''}</option>)}
             </select>
           </>
         )}
       </div>
-      {on && (
+      {rows.length > 0 && (
         <table className="gameplay">
           <thead><tr><th>Action</th><th>Taken from</th><th>Effects</th></tr></thead>
-          <tbody>{WALL_STATES.map((id) => <ClimbRow key={id} cat={cat} move={MOVE_IDS.get(id)!} />)}</tbody>
+          <tbody>{rows.map((r) => <WallRow key={r.id} cat={cat} move={MOVE_IDS.get(r.id)!} required={r.required} />)}</tbody>
         </table>
       )}
     </>
   )
 }
 
-function ClimbRow({ cat, move }: { cat: Catalog; move: Move }) {
+function WallRow({ cat, move, required }: { cat: Catalog; move: Move; required: boolean }) {
   const c = store.character
   const opts = addOptions(cat, c.base, move)
   const picked = c.moves[move.id]
   const at = picked ? opts.findIndex((o) => o.from.includes(picked)) : -1
-  const required = WALL_CLIMB.includes(move.id)
   return (
     <tr>
       <td>{move.label}</td>

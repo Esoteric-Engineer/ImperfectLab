@@ -146,6 +146,28 @@ describe('round trip', () => {
     expect(() => imperfect.fromManifest({ ...imperfect.manifest(c), stats: { gameplay: { wall_climb: 'yes' } } }, new Map())).toThrow(/wall_climb/)
   })
 
+  it('finds problems with wall running, and keeps a base\'s own wall jumps apart', () => {
+    const c = character()
+    const errors = () => imperfect.problems(c).filter(([l]) => l === 'error').map(([, m]) => m)
+    const unplayed = () => imperfect.problems(c).some(([l, m]) => l === 'warning' && m.includes('never play'))
+    c.base = 'spiderman'
+    c.gameplay = { wall_run: true }
+    expect(errors().filter((m) => m.startsWith('wall running needs')).length).toBe(3)
+    c.moves = Object.fromEntries(moves.WALL_RUN.map((id) => [id, 'wolverine']))
+    expect(errors()).toEqual([])
+    expect(imperfect.fromManifest(imperfect.manifest(c), new Map(c.files)).gameplay.wall_run).toBe(true)
+    c.gameplay = {}
+    expect(unplayed()).toBe(true)
+    c.base = 'daredevil'
+    c.moves = { WallJumpOff: 'spiderman' }
+    expect(unplayed()).toBe(false)
+    c.gameplay = { wall_run: true }
+    expect(errors().some((m) => m.includes('already runs on walls'))).toBe(true)
+    c.base = 'thing'
+    c.gameplay = {}
+    expect(unplayed()).toBe(true)
+  })
+
   it('saves and loads cutscenes and their audio, and leaves them out by default', () => {
     const c = character()
     expect(imperfect.manifest(c).cutscenes).toBeUndefined()

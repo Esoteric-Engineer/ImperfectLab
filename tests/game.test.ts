@@ -700,26 +700,38 @@ describe.skipIf(!ISO)('moves', () => {
     expect(set.get('superthrow')!.anim).toMatch(/^Thing_SuperThrowMale_/)
   })
 
-  it('knows which bases climb walls', () => {
+  it('knows which bases climb walls and run on them', () => {
     const t = new R.Templates(src().entry('Misc/Global.not'))
-    const climbers = R.keys().filter((k) => new R.BaseCharacter(src(), k, t).abilities & 0x2)
-    expect(climbers.sort()).toEqual([...imperfect.WALL_CLIMBERS].sort())
+    for (const [key, bit] of [['wall_climb', 0x2], ['wall_run', 0x4000000]] as const) {
+      const have = R.keys().filter((k) => new R.BaseCharacter(src(), k, t).abilities & bit)
+      expect(have.sort()).toEqual([...imperfect.WALL.find((w) => w.key === key)!.bases].sort())
+    }
   })
 
-  for (const from of ['venom', 'spiderman']) {
-    it(`gives the Thing ${from}'s wall climbing`, () => {
-      const c = tinted('thing')
+  const walls: [string, imperfect.Gameplay, Record<string, string>, number][] = [
+    ['thing', { wall_climb: true }, { climb: 'venom' }, 0x2],
+    ['thing', { wall_climb: true }, { climb: 'spiderman' }, 0x2],
+    ['thing', { wall_run: true }, { run: 'wolverine' }, 0x4000000],
+    ['thing', { wall_climb: true, wall_run: true }, { climb: 'venom', run: 'biohazard' }, 0x4000002],
+    ['spiderman', { wall_run: true }, { run: 'elektra' }, 0x4000000],
+  ]
+  for (const [base, gameplay, from, bits] of walls) {
+    it(`gives ${base} ${Object.entries(from).map(([k, v]) => `${v}'s wall ${k}`).join(' and ')}`, () => {
+      const c = tinted(base)
       c.aura = { ...c.aura, mode: 'base' }
-      c.gameplay = { wall_climb: true }
-      c.moves = Object.fromEntries(moves.WALL_STATES.filter((id) => moves.catalog(src())[from].motions[id.toLowerCase()]).map((id) => [id, from]))
-      expect(imperfect.problems(c).filter(([l]) => l === 'error')).toEqual([])
+      c.gameplay = gameplay
+      const cat = moves.catalog(src())
+      const has = (k: string, id: string) => Boolean(cat[k].motions[id.toLowerCase()])
+      const ids: [string[], string][] = [[moves.WALL_CLIMB, from.climb], [moves.WALL_RUN, from.run], [moves.WALL_JUMPS, from.climb ?? from.run]]
+      c.moves = Object.fromEntries(ids.flatMap(([states, k]) => (k ? states.filter((id) => has(k, id) && !has(base, id)).map((id) => [id, k]) : [])))
+      expect(imperfect.problems(c).filter(([l, m]) => l === 'error' || m.includes('never play'))).toEqual([])
       const r = new Builder(src(), c).build()
       const set = nmstool.parse(r.adds.get('Motions/Synth.nms')!).motions()
       const names = new Set(moves.SLOTS.flatMap((slot) => [...records(r.adds.get(`Bundles/synth${slot}.ngb`)!).keys()]))
       for (const id of Object.keys(c.moves)) expect(names.has(set.get(id.toLowerCase())!.anim.toLowerCase())).toBe(true)
-      for (const id of moves.WALL_CLIMB) expect(set.has(id.toLowerCase())).toBe(true)
+      for (const w of imperfect.WALL) if (gameplay[w.key]) for (const id of w.states) expect(set.has(id.toLowerCase())).toBe(true)
       const t = new R.Templates(r.sets.get('Misc/Global.not')!)
-      for (const n of ['plr_Synth', 'plr_altSynth']) expect(R.u32(t.prop(n, R.P_ABILITIES))! & 0x2).toBe(0x2)
+      for (const n of ['plr_Synth', 'plr_altSynth']) expect(R.u32(t.prop(n, R.P_ABILITIES))! & bits).toBe(bits)
     })
   }
 

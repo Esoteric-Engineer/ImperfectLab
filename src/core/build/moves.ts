@@ -196,10 +196,11 @@ export function options(cat: Catalog, base: string, move: Move): MoveOption[] {
   return mine ? grouped(cat, base, move, mine) : []
 }
 
-// Wall climbing for a base without it (manifest `stats.gameplay.wall_climb`, ability bit 0x2): these states are added, not swapped.
+// Wall climbing and running for a base without them (manifest `stats.gameplay`): these states are added, not swapped. The jumps off a wall work with both.
 export const WALL_CLIMB = ['WallClimbUp', 'WallClimbDown', 'WallClimbLeft', 'WallClimbRight', 'WallClimbStand']
+export const WALL_RUN = ['WallRunUp', 'WallRunLeft', 'WallRunRight']
 export const WALL_JUMPS = ['WallJumpOff', 'WallJumpToWall', 'WallRunJumpOff']
-export const WALL_STATES = [...WALL_CLIMB, ...WALL_JUMPS]
+export const WALL_STATES = [...WALL_CLIMB, ...WALL_RUN, ...WALL_JUMPS]
 
 export function addOptions(cat: Catalog, base: string, move: Move): MoveOption[] {
   return grouped(cat, base, move, move.states.map(() => null))
