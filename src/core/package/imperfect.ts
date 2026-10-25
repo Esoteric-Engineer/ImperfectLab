@@ -5,7 +5,7 @@ import { LabError } from '../errors'
 import { decodeImage } from '../image/decode'
 import { encodePng, pngSize } from '../image/png'
 import type { RgbaImage } from '../image/rgba'
-import { MOVE_IDS, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
+import { MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
 import { DISTANCE, JUMP_DISTANCE, JUMPS, type Limb, LIMBS } from '../build/reach'
 import { BASES } from '../game/roster'
 import * as asftool from '../mnroi/asftool'
@@ -38,7 +38,7 @@ export const GAMEPLAY: Record<string, [number, number, boolean]> = {
   sprint_speed: [1.0, 40.0, false], rage_per_super: [0.0, 100.0, false], rage_duration: [1000, 120000, true],
   super_throw_range: [1.0, 20.0, false],
 }
-export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable'] }
+export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable', 'range_grab'] }
 export type WallKey = 'wall_climb' | 'wall_run'
 export interface Wall {
   key: WallKey
@@ -96,6 +96,7 @@ export type Gameplay = Partial<Record<'damage_taken' | 'health' | 'run_speed' | 
 export interface BaseMoves {
   throw_reach?: number
   throw_cable?: boolean
+  range_grab?: boolean
 }
 
 export interface Flames {
@@ -286,6 +287,9 @@ export function problems(c: Character): Problem[] {
       out.push(['warning', 'wall jump animations are picked but neither wall climbing nor wall running is on, so they never play'])
     }
   }
+  if (c.baseMoves.range_grab) {
+    if (!c.moves.WirePull) out.push(['error', 'the range grab needs the ranged pickup: pick it on the Moves page'])
+  } else if ((BASE_MOVES[c.base] ?? []).includes('range_grab') && RANGE_GRAB.some((id) => c.moves[id])) out.push(['warning', 'ranged pickup animations are picked but the range grab is off, so they never play'])
   if (c.moves.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach changes the base\'s own super attack far: set that move back to the base\'s, or untick the reach'])
   if (c.moveReach.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach and a stretch both change super attack far: untick one of them on the Moves page'])
   else if (c.moveReach.SuperRiseAttack && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach and a stretched super rise attack both need the baton\'s long hit segment: untick one of them on the Moves page'])
@@ -465,11 +469,12 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
       glow: p.glow ? color(p.glow, 'glow') : null,
     }
   }
-  const mv = keys(m.base_moves ?? {}, ['throw_reach', 'throw_cable'], 'base_moves')
+  const mv = keys(m.base_moves ?? {}, ['throw_reach', 'throw_cable', 'range_grab'], 'base_moves')
   c.baseMoves = {}
   const reach = num(mv.throw_reach, 'base_moves.throw_reach', THROW_REACH[0], THROW_REACH[1])
   if (reach !== null) c.baseMoves.throw_reach = reach
   if (mv.throw_cable !== null && mv.throw_cable !== undefined) c.baseMoves.throw_cable = typed<boolean>(mv.throw_cable, 'boolean', 'base_moves.throw_cable')
+  if (mv.range_grab !== null && mv.range_grab !== undefined) c.baseMoves.range_grab = typed<boolean>(mv.range_grab, 'boolean', 'base_moves.range_grab')
   for (const k of Object.keys(c.baseMoves)) {
     if (!(BASE_MOVES[c.base] ?? []).includes(k as keyof BaseMoves)) throw new LabError(`manifest: base_moves.${k} only applies to a ${movesBases(k)} base`)
   }

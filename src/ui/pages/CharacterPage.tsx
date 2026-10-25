@@ -1,5 +1,5 @@
 import { dropUnfitAudio } from '../../core/build/cutscenes'
-import { WALL_JUMPS } from '../../core/build/moves'
+import { RANGE_GRAB, WALL_JUMPS } from '../../core/build/moves'
 import * as R from '../../core/game/roster'
 import * as mapping from '../../core/model/mapping'
 import { type Credit, BASE_MOVES, type BaseMoves, CUTSCENE_KINDS, defaultStats, WALL } from '../../core/package/imperfect'
@@ -23,7 +23,15 @@ export function CharacterPage() {
     await store.edit(async () => {
       const old = s.game ? s.skeleton(c.base) : null
       c.base = key
+      const grabbed = c.baseMoves.range_grab
       for (const k of Object.keys(c.baseMoves) as (keyof BaseMoves)[]) if (!(BASE_MOVES[key] ?? []).includes(k)) delete c.baseMoves[k]
+      if (grabbed && !c.baseMoves.range_grab) {
+        for (const id of RANGE_GRAB) {
+          delete c.moves[id]
+          delete c.moveEffects[id]
+          delete c.moveReach[id]
+        }
+      }
       for (const [id, from] of Object.entries(c.moves)) if (from === key) delete c.moves[id]
       const dropped = WALL.filter((w) => c.gameplay[w.key] && w.bases.includes(key))
       for (const w of dropped) delete c.gameplay[w.key]

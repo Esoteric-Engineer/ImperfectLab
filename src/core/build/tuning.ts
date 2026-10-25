@@ -11,6 +11,7 @@ const RESISTANCE = [134, 135, 136, 137, 138]
 export const FIELDS: Record<string, number> = { run_speed: 104, sprint_speed: 157, rage_per_super: 189, rage_duration: 192, super_throw_range: 28 }
 export const POWER_EFFECTS = [98, 99]
 export const AIM_RANGE = 2
+export const PICKUP_RANGE = 240
 const LIST_BUFFER = 0x200
 
 type Value = number | string
@@ -113,6 +114,8 @@ export class Tuning {
 
     const reach = gameplay.throw_reach as number | undefined
     if (reach !== null && reach !== undefined) this.set(nvb, AIM_RANGE, new Array(SLOTS).fill(reach))
+    const pickup = gameplay.pickup_range as number | undefined
+    if (pickup !== null && pickup !== undefined) this.set(nvb, PICKUP_RANGE, new Array(SLOTS).fill(pickup))
     for (const [fid, names] of strings ?? []) this.set(nvb, fid, names)
     return [`Misc/PLAYER_${internal}.nvb`, nvbtool.buildNvb(nvb), this.listed(internal)]
   }

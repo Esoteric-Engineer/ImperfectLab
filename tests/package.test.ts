@@ -75,6 +75,26 @@ describe('round trip', () => {
     expect(d.baseMoves).toEqual({ throw_reach: 35, throw_cable: false })
   })
 
+  it('saves and loads the range grab', () => {
+    const c = character()
+    c.base = 'daredevil'
+    c.baseMoves = { range_grab: true }
+    c.moves = { WirePull: 'spiderman' }
+    const d = imperfect.load(imperfect.save(c))
+    expect(d.baseMoves).toEqual({ range_grab: true })
+    expect(imperfect.problems(d).filter(([l]) => l === 'error')).toEqual([])
+  })
+
+  it('asks the range grab for its animation', () => {
+    const c = character()
+    c.base = 'daredevil'
+    c.baseMoves = { range_grab: true }
+    expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes('ranged pickup'))).toBe(true)
+    c.baseMoves = {}
+    c.moves = { WirePull: 'spiderman' }
+    expect(imperfect.problems(c).some(([l, m]) => l === 'warning' && m.includes('never play'))).toBe(true)
+  })
+
   it('keeps base moves to the bases that have them', () => {
     const c = character()
     c.baseMoves = { throw_reach: 20 }
@@ -317,6 +337,8 @@ describe('hostile files', () => {
       (m) => ((m.base = 'daredevil'), (m.base_moves = { throw_reach: 100 })),
       (m) => ((m.base = 'daredevil'), (m.base_moves = { throw_cable: 'no' })),
       (m) => ((m.base = 'daredevil'), (m.base_moves = { grab: 'thing' })),
+      (m) => ((m.base = 'daredevil'), (m.base_moves = { range_grab: 'yes' })),
+      (m) => (m.base_moves = { range_grab: true }),
       (m) => (m.moves = { NotAMove: 'thing' }),
       (m) => (m.moves = { SuperThrow: 'galactus' }),
       (m) => (m.moves = { SuperThrow: 3 }),

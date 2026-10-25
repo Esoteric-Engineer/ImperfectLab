@@ -224,6 +224,7 @@ export const WALL_CLIMB = ['WallClimbUp', 'WallClimbDown', 'WallClimbLeft', 'Wal
 export const WALL_RUN = ['WallRunUp', 'WallRunLeft', 'WallRunRight']
 export const WALL_JUMPS = ['WallJumpOff', 'WallJumpToWall', 'WallRunJumpOff']
 export const WALL_STATES = [...WALL_CLIMB, ...WALL_RUN, ...WALL_JUMPS]
+export const RANGE_GRAB = ['WirePull']
 
 export function addOptions(cat: Catalog, base: string, move: Move): MoveOption[] {
   return grouped(cat, base, move, move.states.map(() => null))

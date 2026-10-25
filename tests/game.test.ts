@@ -935,6 +935,33 @@ describe.skipIf(!ISO)('stretching limbs', () => {
     expect(r.notes).toContain('reach: Super attack far (R + attack at range) stretches the right arm 12 m ahead, coming back from where it hits')
     expect(r.notes).toContain("reach: Wire swing stretches the right arm out to the wire's end")
     expect(r.notes).toContain('reach: Wire pull stretches the right arm 4 m out to the object')
+    expect(tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, tuning.PICKUP_RANGE)).toEqual(new Array(tuning.SLOTS).fill(4))
+  })
+
+  it('gives Daredevil a range grab that stretches', () => {
+    const c = tinted('daredevil')
+    c.aura = { ...c.aura, mode: 'base' }
+    c.baseMoves = { range_grab: true }
+    c.moves = { WirePull: 'spiderman' }
+    c.moveReach = { WirePull: { distance: 12 } }
+    expect(imperfect.problems(c).filter(([l]) => l === 'error')).toEqual([])
+    const r = new Builder(src(), c).build()
+    const t = new R.Templates(r.sets.get('Misc/Global.not')!)
+    for (const n of ['plr_Synth', 'plr_altSynth']) expect(R.u32(t.prop(n, R.P_ABILITIES))! & 0x2000).toBe(0x2000)
+    expect(R.u32(t.prop('plr_Daredevil', R.P_ABILITIES))! & 0x2000).toBe(0)
+    const set = nmstool.parse(r.adds.get('Motions/Synth.nms')!).motions()
+    const main = records(r.adds.get('Bundles/synth.ngb')!)
+    const pull = main.get(set.get('wirepull')!.anim.toLowerCase())!
+    expect(at(model(), pull, pull.events.find(([, t]) => t === 0x05)![0])[1]).toBeCloseTo(12, 1)
+    expect(tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, tuning.PICKUP_RANGE)).toEqual(new Array(tuning.SLOTS).fill(12))
+    expect(r.notes).toContain('pickup: props can be grabbed from 12 m away')
+  })
+
+  it('leaves Daredevil without the range grab alone', () => {
+    const c = tinted('daredevil')
+    c.aura = { ...c.aura, mode: 'base' }
+    const t = new R.Templates(new Builder(src(), c).build().sets.get('Misc/Global.not')!)
+    expect(R.u32(t.prop('plr_Synth', R.P_ABILITIES))! & 0x2000).toBe(0)
   })
 
   it('moves Daredevil\'s long hit segment from the club to a stretched arm', () => {

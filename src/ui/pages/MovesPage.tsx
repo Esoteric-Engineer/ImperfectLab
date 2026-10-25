@@ -1,4 +1,4 @@
-import { addOptions, animations, CATEGORIES, type Catalog, type Move, MOVE_IDS, MOVES, options, WALL_JUMPS } from '../../core/build/moves'
+import { addOptions, animations, CATEGORIES, type Catalog, type Move, MOVE_IDS, MOVES, options, RANGE_GRAB, WALL_JUMPS } from '../../core/build/moves'
 import * as reach from '../../core/build/reach'
 import { formatG } from '../../core/format'
 import { keys, label } from '../../core/game/roster'
@@ -39,7 +39,7 @@ export function MovesPage() {
   }
   const mine = cat?.[c.base]
   const cross = mine ? Object.entries(c.moves).filter(([, from]) => cat![from] && cat![from].body !== mine.body).map(([id]) => id) : []
-  const added = new Set(cat && mine ? wallRows(cat).map((r) => r.id) : [])
+  const added = new Set(cat && mine ? [...wallRows(cat).map((r) => r.id), ...(c.baseMoves.range_grab ? RANGE_GRAB : [])] : [])
   const swapped = Object.keys(c.moves).filter((id) => !added.has(id)).length
 
   return (
@@ -82,7 +82,7 @@ export function MovesPage() {
       {mine && <GrabRange cat={cat!} />}
       {mine && <Stretching cat={cat!} />}
       <LineColors cat={cat} />
-      {(BASE_MOVES[c.base] ?? []).length > 0 && <BaseMoves />}
+      {(BASE_MOVES[c.base] ?? []).length > 0 && <BaseMoves cat={cat} />}
     </div>
   )
 }
@@ -364,7 +364,7 @@ function stretchOf(cat: Catalog, move: Move): reach.Summary | null {
   return found ? reach.forMove(move.id, found) : null
 }
 
-const defaultDistance = (move: Move, kind: reach.Kind) => (kind === 'jump' ? 0.75 : kind === 'line' ? (reach.PULLS.includes(move.id) ? 4 : 5) : move.id === 'SuperAttackFar' ? 12 : 1.5)
+const defaultDistance = (move: Move, kind: reach.Kind) => (kind === 'jump' ? 0.75 : kind === 'line' ? (reach.PULLS.includes(move.id) ? 10 : 5) : move.id === 'SuperAttackFar' ? 12 : 1.5)
 const limbNames = (limbs: reach.Limb[]) => limbs.map((l) => reach.LIMB_LABELS[l]).join(' and ')
 
 function freshReach(move: Move, plan: reach.Summary) {
@@ -389,7 +389,7 @@ function Stretching({ cat }: { cat: Catalog }) {
           <li>A hit reaches further ahead than the move does, at about a meter a frame so it can't pass through the opponent</li>
           <li>A wire move goes out to where the wire would reach</li>
           <li>A grab steps the character to its distance from the opponent</li>
-          <li>A pickup keeps time with the wire, but the reach can be near or farther than the distance.</li>
+          <li>A pickup keeps time with the wire, and its distance is also how far away a prop can be</li>
           <li>A jump lengthens the legs along the shin without changing how high or far it goes</li>
         </ul>
       </Note>
@@ -456,7 +456,7 @@ function StretchRow({ move, plan }: { move: Move; plan: reach.Summary | null }) 
 }
 
 // Options for one base's own moves; only Daredevil's baton throw so far.
-function BaseMoves() {
+function BaseMoves({ cat }: { cat: Catalog | null }) {
   const c = store.character
   const bv = store.baseDetails()
   const mv = c.baseMoves
@@ -464,6 +464,7 @@ function BaseMoves() {
   const reach = mv.throw_reach !== undefined
   const cable = mv.throw_cable !== undefined
   const farSwapped = Boolean(c.moves.SuperAttackFar), farStretched = Boolean(c.moveReach.SuperAttackFar)
+  const grab = BASE_MOVES[c.base].includes('range_grab')
   return (
     <>
       <h3>{label(c.base)}-specific moves</h3>
@@ -500,6 +501,51 @@ function BaseMoves() {
           </tr>
         </tbody>
       </table>
+      {grab && cat && <RangeGrab cat={cat} />}
+    </>
+  )
+}
+
+const RANGE_GRAB_FROM = 'spiderman'
+
+function setRangeGrab(cat: Catalog, on: boolean) {
+  const c = store.character
+  if (on) {
+    c.baseMoves.range_grab = true
+    const from = cat[RANGE_GRAB_FROM] ? RANGE_GRAB_FROM : keys().find((k) => k !== c.base && animations(cat, k, MOVE_IDS.get('WirePull')!))
+    if (from) takeAll(cat, from, RANGE_GRAB)
+    return
+  }
+  delete c.baseMoves.range_grab
+  for (const id of RANGE_GRAB) {
+    delete c.moves[id]
+    delete c.moveEffects[id]
+    delete c.moveReach[id]
+  }
+}
+
+// Grabbing props from a distance, as Spider-Man does.
+function RangeGrab({ cat }: { cat: Catalog }) {
+  const c = store.character
+  const on = Boolean(c.baseMoves.range_grab)
+  return (
+    <>
+      <div className="row">
+        <label className="check"><input type="checkbox" checked={on} onChange={(e) => {
+          setRangeGrab(cat, e.target.checked)
+          store.touch('character')
+        }} /> Range grab</label>
+      </div>
+      <Note>
+        Lets {label(c.base)} pick up props from a distance. The animation is copied into this character like a swapped move.<br />
+        Lift strength on the Stats page affects which objects can be picked up. Reach defaults to 10m, but can also be adjusted by setting a stretch for the move.
+      </Note>
+      {on && (
+        <table className="gameplay">
+          <thead><tr><th>Action</th><th>Taken from</th><th>Effects</th></tr></thead>
+          <tbody>{RANGE_GRAB.map((id) => <WallRow key={id} cat={cat} move={MOVE_IDS.get(id)!} required />)}</tbody>
+        </table>
+      )}
     </>
   )
 }

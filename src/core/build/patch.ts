@@ -36,6 +36,7 @@ import * as ui from './ui'
 const LIFT_BITS: Record<string, [number, number]> = { light: [0, 0x30], medium: [0x10, 0x20], heavy: [0x20, 0] }
 export const WIRE = 0x80
 const WALL_BITS: Record<WallKey, number> = { wall_climb: 0x2, wall_run: 0x4000000 }
+const RANGE_GRAB_BIT = 0x2000
 
 export type Progress = (stage: string, done?: number, total?: number) => void
 
@@ -344,6 +345,7 @@ export class Builder {
     const c = this.c
     const fields = tuningFields(c)
     const strings = new Map(power)
+    if (fields.pickup_range !== undefined) this.note(`pickup: props can be grabbed from ${fields.pickup_range} m away`)
     if (hasCutscenes(c.cutscenes)) {
       const cuts = this.moveFx ? cutscenes.plan(this.src, this.base, c, this.moveFx.slots) : cutscenes.plan(this.src, this.base, c)
       for (const [fid, names] of cuts.fields) strings.set(fid, names)
@@ -386,6 +388,7 @@ export class Builder {
       else off |= WIRE
     }
     for (const w of WALL) if (gp[w.key]) on |= WALL_BITS[w.key]
+    if (c.baseMoves.range_grab) on |= RANGE_GRAB_BIT
     if (stretchReturns(c)) on |= reach.RETURN_ABILITY
     const mode = c.aura.mode === 'swap' ? 'swap' : 'base'
     this.r.sets.set('Misc/Global.not', templates.build(this.src.entry('Misc/Global.not'), this.base, c.internalName, mode, effect1, description,
@@ -512,6 +515,8 @@ export function tuningFields(c: Character): Record<string, unknown> {
   if (c.baseMoves.throw_reach !== undefined) out.throw_reach = c.baseMoves.throw_reach
   const far = c.moveReach.SuperAttackFar?.distance
   if (far !== undefined) out.throw_reach = far
+  const pickup = reach.PULLS.map((id) => c.moveReach[id]?.distance).find((d) => d !== undefined)
+  if (pickup !== undefined) out.pickup_range = pickup
   return out
 }
 

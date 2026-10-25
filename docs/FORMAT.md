@@ -165,6 +165,7 @@ Options for moves only one base has. Each key belongs to particular bases, and a
 Daredevil (`daredevil`):
 - `throw_reach`: 8-35, how far the baton throw reaches, in meters.
 - `throw_cable`: a boolean, default `true`. `false` removes the cable drawn from the forearm to the club.
+- `range_grab`: `true` lets him grab props from a distance as Spider-Man does.
 
 ### `moves`
 Moves taken from other bases: move id -> the base (not the character's own) whose animations it gets. Ids are motion-set state names, listed in `MOVES` in `src/core/build/moves.ts`; a throw or a sequence is one id covering its parts (`SuperThrow` includes the female, brute and victim versions).
@@ -182,7 +183,7 @@ Optional, left out when no move stretches. Move id (the base's own move or one i
 - a **hit** (a fist's or a foot's hit volume): `distance` meters further than the move reaches, at most 1 m a frame, the move slowed to fit. On `SuperAttackFar` and `SuperRiseAttack` the arm also gets the long hit volume (attachments 43 and 44) and the baton throw's return, and `SuperAttackFar`'s `distance` is its target range too.
 - the **wire** (`WireSwing`, `WireExtend`): out to the wire's end, held until the wire lets go. No `distance`.
 - a **jump** (`Jump`, `RunJump`, `SuperJump`, `SuperRunJump`): the legs' feet `distance` meters further along the shin, growing from nothing at takeoff to full in the middle of the animation and back by its end, or with `hold` held at full for most of it. The jump itself is unchanged.
-- a **line** from the forearm (a long grab, such as Spider-Man's web or Daredevil's cable): out to the opponent, who the grab puts `distance` meters away, and held on the line's end on them until it lets go. A ranged pickup (`WirePull`, `WirePullFly`) goes out to the object at `distance` and back with it.
+- a **line** from the forearm (a long grab, such as Spider-Man's web or Daredevil's cable): out to the opponent, who the grab puts `distance` meters away, and held on the line's end on them until it lets go. A ranged pickup (`WirePull`, `WirePullFly`) goes out to the object at `distance` and back with it, and `distance` is also how far away a prop can be (the tuning's pickup range, 10 m by default).
 
 Keys: `distance` (1-35, needed for a hit or a line; 0.25-3 for a jump), `limbs` (optional): any of `right_arm left_arm right_leg left_leg`, by default every limb the move uses; one it doesn't use is refused, and `hold` (optional, jumps only): `true` to hold the stretch instead of easing it in and out.
 Not allowed on `SuperAttackFar` with `base_moves.throw_reach`. See [`LIMITATIONS.md`](LIMITATIONS.md).
