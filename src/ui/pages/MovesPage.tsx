@@ -1,4 +1,5 @@
 import { addOptions, animations, CATEGORIES, type Catalog, type Move, MOVE_IDS, MOVES, options, WALL_JUMPS } from '../../core/build/moves'
+import * as reach from '../../core/build/reach'
 import { formatG } from '../../core/format'
 import { keys, label } from '../../core/game/roster'
 import { BASE_MOVES, GAMEPLAY, type MoveEffect, THROW_REACH, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
@@ -79,7 +80,8 @@ export function MovesPage() {
       )}
       {mine && WALL.some((w) => !w.bases.includes(c.base)) && <WallMoves cat={cat!} />}
       {mine && <GrabRange cat={cat!} />}
-      <LineColors />
+      {mine && <Stretching cat={cat!} />}
+      <LineColors cat={cat} />
       {(BASE_MOVES[c.base] ?? []).length > 0 && <BaseMoves />}
     </div>
   )
@@ -305,30 +307,36 @@ function GrabRange({ cat }: { cat: Catalog }) {
   )
 }
 
+const HIDDEN = '#00000000'
+
 function LineColor({ color, onChange }: { color: string | null; onChange: (c: string | null) => void }) {
+  const how = color === null ? 'theirs' : color.length === 9 && color.endsWith('00') ? 'hidden' : 'color'
   return (
     <span className="check">
-      <select value={color === null ? 'theirs' : 'color'} onChange={(e) => onChange(e.target.value === 'theirs' ? null : '#C0C0C0')}>
-        <option value="theirs">As taken</option>
+      <select value={how} onChange={(e) => onChange(e.target.value === 'theirs' ? null : e.target.value === 'hidden' ? HIDDEN : '#C0C0C0')}>
+        <option value="theirs">As they are</option>
         <option value="color">Recolored</option>
+        <option value="hidden">Hidden</option>
       </select>
-      {color !== null && <ColorButton color={color} alpha onChange={onChange} />}
+      {how === 'color' && <ColorButton color={color!} alpha onChange={onChange} />}
     </span>
   )
 }
 
-// Shown once a swapped move plays another character's line (cable, web).
-function LineColors() {
+// Shown once a swapped move plays another character's line (cable, web), or a stretched move draws one.
+function LineColors({ cat }: { cat: Catalog | null }) {
   const c = store.character
   const fits = store.moveEffectFit()
   const lined = Object.entries(c.moveEffects).some(([id, how]) => how === 'theirs' && fits?.[id]?.line)
-  if (!lined && c.moveLines.color === null && c.moveLines.alt_color === null) return null
+  const stretched = cat !== null && Object.keys(c.moveReach).some((id) => MOVE_IDS.has(id) && (stretchOf(cat, MOVE_IDS.get(id)!)?.kind ?? 'hit') !== 'hit')
+  if (!lined && !stretched && c.moveLines.color === null && c.moveLines.alt_color === null) return null
   const edited = () => store.touch('character')
   return (
     <>
-      <h3>Grab line color</h3>
+      <h3>Line color</h3>
       <Note>
-        The line a taken move draws from the hand to the opponent, such as Daredevil's cable or Spider-Man's web. A recolored line adds a small copy of it to the game's effects for each costume.
+        The line a taken or stretched move draws from the hand, such as Daredevil's cable or Spider-Man's web. A recolored or hidden line adds a small copy of it to the game's effects for each costume.<br />
+        A stretched move's line is changed in every move that draws it.
       </Note>
       <div className="row">
         <label>Costume 1</label>
@@ -340,6 +348,102 @@ function LineColors() {
   )
 }
 
+const VICTIM = /victim/i
+
+// What the move's animation, the base's or the one taken, can stretch.
+function stretchOf(cat: Catalog, move: Move): reach.Summary | null {
+  const c = store.character
+  const owner = c.moves[move.id] ?? c.base
+  const anims = animations(cat, owner, move)
+  const at = move.states.findIndex((s, i) => !VICTIM.test(s) && anims?.[i])
+  const found = at < 0 ? null : cat[owner]?.reach?.[anims![at]!.toLowerCase()]
+  return found ? reach.forMove(move.id, found) : null
+}
+
+const defaultDistance = (move: Move, kind: reach.Kind) => (kind === 'line' ? (reach.PULLS.includes(move.id) ? 4 : 5) : move.id === 'SuperAttackFar' ? 12 : 1.5)
+const limbNames = (limbs: reach.Limb[]) => limbs.map((l) => reach.LIMB_LABELS[l]).join(' and ')
+
+function freshReach(move: Move, plan: reach.Summary) {
+  return plan.kind === 'wire' ? {} : { distance: defaultDistance(move, plan.kind) }
+}
+
+// A stretch set for another animation than the move has now.
+function stale(plan: reach.Summary, want: { distance?: number; limbs?: reach.Limb[] }) {
+  return (plan.kind === 'wire') !== (want.distance === undefined) || (want.limbs ?? []).some((l) => !plan.limbs.includes(l))
+}
+
+function Stretching({ cat }: { cat: Catalog }) {
+  const c = store.character
+  const rows = MOVES.map((m): [Move, reach.Summary | null] => [m, stretchOf(cat, m)]).filter(([m, p]) => p || c.moveReach[m.id])
+  if (!rows.length) return null
+  return (
+    <>
+      <h3>Stretching Limbs</h3>
+      <Note>
+        A stretched move sends a limb out and brings it back within the move.<br />
+        <ul>
+          <li>A hit reaches further ahead than the move does, at about a meter a frame so it can't pass through the opponent</li>
+          <li>A wire move goes out to where the wire would reach</li>
+          <li>A grab steps the character to its distance from the opponent</li>
+          <li>A pickup keeps time with the wire, but the reach can be near or farther than the distance.</li>
+        </ul>
+      </Note>
+      {CATEGORIES.map((category) => {
+        const mine = rows.filter(([m]) => m.category === category)
+        if (!mine.length) return null
+        const on = mine.filter(([m]) => c.moveReach[m.id]).length
+        return (
+          <details key={category} open={on > 0}>
+            <summary><b>{category}</b> <span className="muted">({mine.length}{on ? `, ${on} stretched` : ''})</span></summary>
+            <table className="gameplay">
+              <thead><tr><th>Move</th><th>Limb</th><th>How far</th></tr></thead>
+              <tbody>{mine.map(([m, p]) => <StretchRow key={m.id} move={m} plan={p} />)}</tbody>
+            </table>
+          </details>
+        )
+      })}
+    </>
+  )
+}
+
+function StretchRow({ move, plan }: { move: Move; plan: reach.Summary | null }) {
+  const c = store.character
+  const want = c.moveReach[move.id]
+  const edited = () => store.touch('character')
+  const far = (kind: reach.Kind) => (kind === 'line' ? (reach.PULLS.includes(move.id) ? 'out to the object' : 'out to the opponent') : 'further')
+  const baton = move.id === 'SuperAttackFar' && c.baseMoves.throw_reach !== undefined
+  return (
+    <tr>
+      <td><label className="check" title={baton ? 'The baton throw reach changes this move: untick it below to stretch the move' : undefined}><input type="checkbox" checked={Boolean(want)} disabled={(!plan || baton) && !want} onChange={(e) => {
+        if (e.target.checked && plan) c.moveReach[move.id] = freshReach(move, plan)
+        else delete c.moveReach[move.id]
+        edited()
+      }} /> {move.label}</label></td>
+      <td>
+        {!plan ? <span className="muted">-</span> : plan.limbs.length < 2 ? limbNames(plan.limbs) : (
+          <select disabled={!want} value={want?.limbs?.length === 1 ? want.limbs[0] : ''} onChange={(e) => {
+            if (e.target.value) want.limbs = [e.target.value as reach.Limb]
+            else delete want.limbs
+            edited()
+          }}>
+            <option value="">{limbNames(plan.limbs)}</option>
+            {plan.limbs.map((l) => <option key={l} value={l}>{reach.LIMB_LABELS[l]}</option>)}
+          </select>
+        )}
+      </td>
+      <td>
+        {!plan ? <span className="muted">The move's animation can't stretch now: untick it.</span>
+          : want && stale(plan, want) ? <span className="muted">Set for the move's other animation. <button onClick={() => { c.moveReach[move.id] = freshReach(move, plan); edited() }}>Reset</button></span>
+          : plan.kind === 'wire' ? "Out to the wire's end"
+          : <span><NumberInput disabled={!want} min={reach.DISTANCE[0]} max={reach.DISTANCE[1]} step={0.5} value={want?.distance ?? defaultDistance(move, plan.kind)} onChange={(v) => {
+            want.distance = Math.round(v * 10) / 10
+            edited()
+          }} /> m {far(plan.kind)}{plan.kind === 'hit' && reach.RETURNS.includes(move.id) ? ', back from a hit' : ''}</span>}
+      </td>
+    </tr>
+  )
+}
+
 // Options for one base's own moves; only Daredevil's baton throw so far.
 function BaseMoves() {
   const c = store.character
@@ -348,7 +452,7 @@ function BaseMoves() {
   const edited = () => store.touch('character')
   const reach = mv.throw_reach !== undefined
   const cable = mv.throw_cable !== undefined
-  const farSwapped = Boolean(c.moves.SuperAttackFar)
+  const farSwapped = Boolean(c.moves.SuperAttackFar), farStretched = Boolean(c.moveReach.SuperAttackFar)
   return (
     <>
       <h3>{label(c.base)}-specific moves</h3>
@@ -356,12 +460,13 @@ function BaseMoves() {
         Whatever is fixed to game bone 39, the club/baton, is what flies: on the Materials page, fix a prop to that bone.<br />
         The cable is drawn from the forearm to the baton all the time.
         {farSwapped && <><br />Super attack far is swapped above, so the reach can't be changed.</>}
+        {farStretched && <><br />Super attack far is stretched above, so the reach can't be changed.</>}
       </Note>
       <table className="gameplay">
         <thead><tr><th>Value</th><th>Base</th><th>New</th></tr></thead>
         <tbody>
           <tr>
-            <td><label className="check"><input type="checkbox" checked={reach} disabled={farSwapped && !reach} onChange={(e) => {
+            <td><label className="check"><input type="checkbox" checked={reach} disabled={(farSwapped || farStretched) && !reach} onChange={(e) => {
               if (e.target.checked) mv.throw_reach = 35
               else delete mv.throw_reach
               edited()

@@ -13,7 +13,7 @@ const STEP = 2.0
 export const HIT_REACH = 1.25
 const HIT_KINDS = [43, 44]
 // On a hit the game skips to event 0x53; at the turn beside a 0x7E, main.dol mirrors that skip (dol.ts, mirrorSkip).
-const RETURN_EVENT = 0x53
+export const RETURN_EVENT = 0x53
 export const MIRROR_EVENT = 0x7e
 
 export function longThrow(rec: ngbtool.Record, model: Pick<ngmtool.Model, 'nodes'>, reach: number): ngbtool.Record {
@@ -25,17 +25,12 @@ export function longThrow(rec: ngbtool.Record, model: Pick<ngmtool.Model, 'nodes
   const out: ngbtool.Record = { ...rec, tracks, length: rec.length + shift }
   const i39 = tracks.findIndex(([bone, ch]) => bone === CLUB && ch === 1)
   if (i39 < 0) throw new LabError(`${rec.name} has no translation track on the club bone ${CLUB}`)
-  const parent = model.nodes[CLUB][2]
-  const bind = model.nodes[CLUB][0]
   const start = ngbtool.pose(model, out, a)[CLUB][1]
   const old = tracks[i39][2]
   const keys: ngbtool.Key[] = old.filter(([f]) => f <= a)
   for (let i = 1; i < 2 * n; i++) {
     const u = (i <= n ? i : 2 * n - i) / n
-    const p = [start[0], start[1] + reach * u, start[2]]
-    const [pr, pt] = ngbtool.pose(model, out, a + i)[parent]
-    const local = [0, 1, 2].map((c) => [0, 1, 2].reduce((s, r) => s + pr[r][c] * (p[r] - pt[r]), 0) - bind[c]) as ngbtool.Vec3
-    keys.push([a + i, ngbtool.encodeTranslation(local)])
+    keys.push([a + i, ngbtool.placeAt(model, out, CLUB, a + i, [start[0], start[1] + reach * u, start[2]])])
   }
   keys.push(...old.filter(([f]) => f >= a + 2 * n))
   tracks[i39] = [CLUB, 1, keys]

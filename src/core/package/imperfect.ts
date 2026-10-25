@@ -6,6 +6,7 @@ import { decodeImage } from '../image/decode'
 import { encodePng, pngSize } from '../image/png'
 import type { RgbaImage } from '../image/rgba'
 import { MOVE_IDS, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
+import { DISTANCE, type Limb, LIMBS } from '../build/reach'
 import { BASES } from '../game/roster'
 import * as asftool from '../mnroi/asftool'
 import { GLB, type Json } from '../mnroi/gltf'
@@ -112,6 +113,10 @@ export interface MoveLines {
   color: string | null
   alt_color: string | null
 }
+export interface MoveReach {
+  distance?: number
+  limbs?: Limb[]
+}
 
 export const CUTSCENE_EFFECTS = ['theirs', 'none'] as const
 export type CutsceneEffects = (typeof CUTSCENE_EFFECTS)[number]
@@ -136,6 +141,7 @@ export interface Character {
   moves: Record<string, string>
   moveEffects: Record<string, MoveEffect>
   moveLines: MoveLines
+  moveReach: Record<string, MoveReach>
   cutscenes: Cutscenes
   ui: { select: Partial<Record<Pose, Placement>>; fade: number; strip_scale: number | null; ready_voice: string | null; banner: boolean }
   files: Map<string, Uint8Array>
@@ -181,6 +187,7 @@ export function newCharacter(): Character {
     moves: {},
     moveEffects: {},
     moveLines: { color: null, alt_color: null },
+    moveReach: {},
     cutscenes: { audio: {}, effects: {} },
     ui: { select: {}, fade: 36, strip_scale: null, ready_voice: null, banner: true },
     files: new Map(),
@@ -239,6 +246,7 @@ export function manifest(c: Character): Json {
     moves: c.moves,
     move_effects: Object.keys(c.moveEffects).length ? c.moveEffects : undefined,
     move_lines: c.moveLines.color !== null || c.moveLines.alt_color !== null ? c.moveLines : undefined,
+    move_reach: Object.keys(c.moveReach).length ? c.moveReach : undefined,
     cutscenes: hasCutscenes(c.cutscenes) ? { ...c.cutscenes, effects: Object.keys(c.cutscenes.effects).length ? c.cutscenes.effects : undefined } : undefined,
     files: Object.fromEntries([...files].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, v]) => [k, sha(v)])),
   }
@@ -278,6 +286,9 @@ export function problems(c: Character): Problem[] {
     }
   }
   if (c.moves.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach changes the base\'s own super attack far: set that move back to the base\'s, or untick the reach'])
+  if (c.moveReach.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach and a stretch both change super attack far: untick one of them on the Moves page'])
+  else if (c.moveReach.SuperRiseAttack && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach and a stretched super rise attack both need the baton\'s long hit segment: untick one of them on the Moves page'])
+  for (const id of Object.keys(c.moveReach)) if (!MOVE_IDS.has(id)) out.push(['error', `there is no move ${id} to stretch`])
   if (c.flames.body && c.flames.parts.length) out.push(['error', 'flames are on the whole body or on chosen parts, not both: pick one on the Aura page'])
   for (const kind of CUTSCENE_KINDS) {
     const from = c.cutscenes[kind]
@@ -337,7 +348,7 @@ function upgrade(m: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Character {
-  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'cutscenes', 'files'], 'the manifest')
+  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'cutscenes', 'files'], 'the manifest')
   if (m.format !== FORMAT) throw new LabError('not a .imperfect file')
   upgrade(m)
   if (m.game !== GAME) throw new LabError(`this file is for ${m.game}, not ${GAME}`)
@@ -480,6 +491,22 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   c.moveLines = {
     color: ln.color === null || ln.color === undefined ? null : color(ln.color, 'move_lines.color'),
     alt_color: ln.alt_color === null || ln.alt_color === undefined ? null : color(ln.alt_color, 'move_lines.alt_color'),
+  }
+  c.moveReach = {}
+  for (const [id, v] of Object.entries(typed<Record<string, unknown>>(m.move_reach ?? {}, 'object', 'move_reach'))) {
+    if (!MOVE_IDS.has(id)) throw new LabError(`manifest: unknown move ${JSON.stringify(id.slice(0, 40))}`)
+    const r = keys(v, ['distance', 'limbs'], `move_reach.${id}`)
+    const out: MoveReach = {}
+    const distance = num(r.distance, `move_reach.${id}.distance`, DISTANCE[0], DISTANCE[1])
+    if (distance !== null) out.distance = distance
+    if (r.limbs !== null && r.limbs !== undefined) {
+      const limbs = typed<unknown[]>(r.limbs, 'array', `move_reach.${id}.limbs`)
+      if (!limbs.length || limbs.some((l) => !LIMBS.includes(l as Limb)) || new Set(limbs).size !== limbs.length) {
+        throw new LabError(`manifest: move_reach.${id}.limbs is a list of ${LIMBS.join(', ')}`)
+      }
+      out.limbs = limbs as Limb[]
+    }
+    c.moveReach[id] = out
   }
   const cs = keys(m.cutscenes ?? {}, [...CUTSCENE_KINDS, 'audio', 'effects'], 'cutscenes')
   c.cutscenes = { audio: {}, effects: {} }

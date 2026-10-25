@@ -3,21 +3,29 @@
 // The thrower's records are remapped onto the base's skeleton by bone name; the victim's are already on the opponent's. The game keeps the first of two records with one name (fn_8019E7D4), so a changed record gets a new one.
 import { sha256 } from '@noble/hashes/sha2.js'
 import { toHex } from '../bytes'
+import { formatG } from '../format'
 import { LabError } from '../errors'
 import * as R from '../game/roster'
 import type { GameSource } from '../game/source'
 import * as ngbtool from '../mnroi/ngbtool'
 import * as ngmtool from '../mnroi/ngmtool'
 import * as nmstool from '../mnroi/nmstool'
-import { loadTable } from '../model/skeleton'
-import type { MoveEffect, MoveLines } from '../package/imperfect'
+import { loadTable, Skeleton } from '../model/skeleton'
+import type { MoveEffect, MoveLines, MoveReach } from '../package/imperfect'
 import * as basemoves from './basemoves'
 import type { Effects } from './effects'
-import { effectNames, OWN_EFFECTS, Slots } from './effectslots'
+import { EFFECT_FIELDS, effectNames, OWN_EFFECTS, Slots } from './effectslots'
+import * as reach from './reach'
 import * as tuning from './tuning'
 
 export const SLOTS = ['', '-t0', '-t1', '-t2']
 const VICTIM = /victim/i
+const placedAt = (opts: string[], d: number): string[] => {
+  const i = opts.findIndex((o) => o.toLowerCase() === 'dist')
+  return i >= 0 && Number(opts[i + 1]) < 0 ? opts.map((o, j) => (j === i + 1 ? d.toFixed(2) : o)) : opts
+}
+// the opponent class each throw bundle's victim records play on
+const VICTIM_BODIES: Record<string, string> = { '-t0': 'male', '-t1': 'female', '-t2': 'brute' }
 
 // Every state the 18 characters' motion sets and their base sets use; FinishingMove is left out (it is a cutscene).
 const STATES = (
@@ -134,28 +142,43 @@ function resolved(src: GameSource, own: nmstool.MotionSet, has: (anim: string) =
   return out
 }
 
-// Each base's animations by lowercased state, and its super throw range, for the Moves page.
+// Each base's animations by lowercased state, its super throw range, and what each animation can stretch (by lowercased name), for the Moves page.
 export interface BaseMotions {
   body: string
   motions: Record<string, string>
   range: number
+  reach?: Record<string, reach.Summary>
 }
 export type Catalog = Record<string, BaseMotions>
 
-export function catalog(src: GameSource): Catalog {
+// The lines effect k draws for a performer whose tuning is tun.
+export const linesOf = (fx: Effects, tun: tuning.Tuning, given: Map<number, string[]> = new Map()) => (k: number): reach.Line[] => {
+  if (k < 1 || k > EFFECT_FIELDS.length) return []
+  return fx.lines((given.get(EFFECT_FIELDS[k - 1]) ?? effectNames(tun, k))[0])
+}
+
+export function catalog(src: GameSource, fx: Effects): Catalog {
   const t = new R.Templates(src.entry('Misc/Global.not'))
   const out: Catalog = {}
   for (const key of R.keys()) {
     try {
       const base = new R.BaseCharacter(src, key, t)
       const set = motionSetOf(base), stem = stemOf(set)
+      const tun = new tuning.Tuning(src, base)
+      const lines = linesOf(fx, tun)
       const names = new Set<string>()
+      const plans: Record<string, reach.Summary> = {}
       for (const slot of SLOTS) {
-        if (src.has(`Bundles/${stem}${slot}.ngb`)) for (const n of ngbtool.names(src.entry(`Bundles/${stem}${slot}.ngb`))) names.add(n.toLowerCase())
+        if (!src.has(`Bundles/${stem}${slot}.ngb`)) continue
+        for (const [n, length, events] of ngbtool.events(src.entry(`Bundles/${stem}${slot}.ngb`))) {
+          names.add(n.toLowerCase())
+          const p = plans[n.toLowerCase()] ? null : reach.plan(events, length, lines)
+          if (p) plans[n.toLowerCase()] = reach.summary(p)
+        }
       }
       const m = resolved(src, nmstool.parse(src.entry(`Motions/${set}`)), (a) => names.has(a.toLowerCase()))
-      const range = new tuning.Tuning(src, base).num(tuning.FIELDS.super_throw_range)
-      out[key] = { body: base.body, motions: Object.fromEntries([...m].map(([k, v]) => [k, v.anim])), range }
+      const range = tun.num(tuning.FIELDS.super_throw_range)
+      out[key] = { body: base.body, motions: Object.fromEntries([...m].map(([k, v]) => [k, v.anim])), range, reach: plans }
     } catch (e) {
       if (!(e instanceof LabError)) throw e
     }
@@ -309,17 +332,21 @@ export interface EffectPlan {
   fits: Map<string, MoveFit>
 }
 
+function painted(fx: Effects, names: string[], lines: MoveLines, prefixes: [string, string]): string[] {
+  const alt = tuning.SLOTS - 1
+  return names.map((n, s) => {
+    const color = s === alt ? lines.alt_color : lines.color
+    return n && color && fx.isLine(n) ? fx.painted(n, color, prefixes[s === alt ? 1 : 0]) : n
+  })
+}
+
 // Gives the 'theirs' moves' effects free slots before anything else; used holds the k the character's cutscenes fire.
 // A line in a color of lines is copied in that color into fx, prefixes naming the copies per costume.
 export function planEffects(src: GameSource, base: R.BaseCharacter, choice: Record<string, MoveEffect>, fx: Effects, lines: MoveLines,
   prefixes: [string, string], used: Iterable<number>, moved: MovedEffects): EffectPlan {
   const slots = new Slots(new tuning.Tuning(src, base), [...moved.own, ...[...moved.moves.values()].flatMap((m) => m.ks), ...used])
   const out: EffectPlan = { slots, retargets: new Map(), fits: new Map() }
-  const alt = tuning.SLOTS - 1
-  const rename = (names: string[]) => names.map((n, s) => {
-    const color = s === alt ? lines.alt_color : lines.color
-    return n && color && fx.isLine(n) ? fx.painted(n, color, prefixes[s === alt ? 1 : 0]) : n
-  })
+  const rename = (names: string[]) => painted(fx, names, lines, prefixes)
   for (const [id, m] of moved.moves) {
     const from = new tuning.Tuning(src, m.from)
     const line = m.ks.some((k) => effectNames(from, k).some((n) => n && fx.isLine(n)))
@@ -353,14 +380,73 @@ export function effectFit(src: GameSource, base: R.BaseCharacter, choice: Record
   return out
 }
 
+// The base's own effect fields that name the lines of stretched moves.
+export function reachLineFields(src: GameSource, base: R.BaseCharacter, stretches: Record<string, MoveReach>, moves: Record<string, string>,
+  choice: Record<string, MoveEffect>, fx: Effects): number[] {
+  const tun = new tuning.Tuning(src, base)
+  const sources = new Map<string, Source>()
+  const out = new Set<number>()
+  for (const id of Object.keys(stretches)) {
+    const move = MOVE_IDS.get(id)
+    if (!move) continue
+    const from = moves[id] ?? base.key
+    if (!sources.has(from)) sources.set(from, source(src, base, from))
+    const s = sources.get(from)!
+    const anims = new Set(move.states.filter((st) => !VICTIM.test(st)).flatMap((st) => s.motions.get(st.toLowerCase())?.anim.toLowerCase() ?? []))
+    for (const rec of [...s.bundles.values()].flat().filter((r) => anims.has(r.name.toLowerCase()))) {
+      if (rec.events.some(([, t]) => t === reach.WIRE_ON)) out.add(reach.WIRE_FIELD)
+      if (choice[id]) continue
+      for (const [, t, k] of rec.events) if (t === reach.EFFECT_ON && k >= 1 && k <= EFFECT_FIELDS.length && fx.isLine(effectNames(tun, k)[0])) out.add(EFFECT_FIELDS[k - 1])
+    }
+  }
+  return [...out].sort((a, b) => a - b)
+}
+
+// Each field's lines painted in the colors of lines, from the names the tuning gives them now (current) or the base's.
+export function paintLines(fx: Effects, tun: tuning.Tuning, fids: number[], lines: MoveLines, prefixes: [string, string],
+  current: Map<number, string[]> = new Map()): Map<number, string[]> {
+  const out = new Map<number, string[]>()
+  for (const fid of fids) {
+    const names = current.get(fid) ?? Array.from({ length: tuning.SLOTS }, (_, s) => tun.value(fid, s) as string)
+    const next = painted(fx, names, lines, prefixes)
+    if (next.some((n, s) => n !== names[s])) out.set(fid, next)
+  }
+  return out
+}
+
+// The arm that carries the long hit volume: the first stretched super attack far's or super rise attack's.
+export function farLimb(src: GameSource, base: R.BaseCharacter, stretches: Record<string, MoveReach>, moves: Record<string, string>): reach.Limb | null {
+  for (const id of reach.RETURNS) {
+    const want = stretches[id]
+    if (!want) continue
+    const s = source(src, base, moves[id] ?? base.key)
+    const anim = MOVE_IDS.get(id)!.states.map((st) => s.motions.get(st.toLowerCase())?.anim.toLowerCase()).find(Boolean)
+    const rec = [...s.bundles.values()].flat().find((r) => r.name.toLowerCase() === anim)
+    const p = rec ? reach.plan(rec.events, rec.length) : null
+    const arm = p?.kind === 'hit' ? (want.limbs ?? reach.limbsOf(p)).find((l) => l.endsWith('_arm') && p.windows.some((w) => w.limb === l)) : undefined
+    if (arm) return arm
+  }
+  return null
+}
+
+function reachFor(move: Move, p: reach.Plan, want: MoveReach, far: reach.Limb | null, pull: number): reach.Reach {
+  const limbs = want.limbs ?? reach.limbsOf(p)
+  const unused = limbs.filter((l) => !p.windows.some((w) => w.limb === l))
+  if (unused.length) throw new LabError(`${move.label} doesn't use the ${unused.map((l) => reach.LIMB_LABELS[l]).join(' or ')}, so it can't stretch`)
+  if (p.kind === 'wire' && want.distance !== undefined) throw new LabError(`${move.label} stretches out to the wire's end, so it takes no distance`)
+  if (p.kind !== 'wire' && want.distance === undefined) throw new LabError(`${move.label} needs a distance to stretch`)
+  const returns = p.kind === 'hit' && reach.RETURNS.includes(move.id)
+  return { distance: want.distance ?? 0, limbs, returns, far: returns ? far : null, pull }
+}
+
 export interface MotionFiles {
   motionSet: string
   files: Map<string, Uint8Array>
   notes: string[]
 }
 
-export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: string, moves: Record<string, string>, reach?: number,
-  choice: Record<string, MoveEffect> = {}, plan: EffectPlan | null = null): MotionFiles {
+export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: string, moves: Record<string, string>, throwReach?: number,
+  choice: Record<string, MoveEffect> = {}, plan: EffectPlan | null = null, stretches: Record<string, MoveReach> = {}, fx: Effects | null = null): MotionFiles {
   const set = motionSetOf(base), stem = stemOf(set), name = internal.toLowerCase()
   const own = nmstool.parse(src.entry(`Motions/${set}`))
   const bundles = loadBundles(src, stem)
@@ -369,11 +455,11 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
   const mine = resolved(src, own, holds(bundles))
   const notes: string[] = []
   const displaced = new Set<string>()
-  if (reach !== undefined) {
+  if (throwReach !== undefined) {
     const main = bundles.get('') ?? []
     const at = main.findIndex((r) => r.name.toLowerCase() === basemoves.THROW)
     if (at < 0) throw new LabError(`${base.label}'s animations have no ${basemoves.THROW}`)
-    const rec = basemoves.longThrow(main[at], models[0], reach)
+    const rec = basemoves.longThrow(main[at], models[0], throwReach)
     rec.name = ownName(rec)
     own.rename(main[at].name, rec.name)
     main[at] = rec
@@ -421,6 +507,72 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     if (how === 'none') fx = '; no effects'
     else if (how === 'theirs' && fit?.total) fx = `; ${fit.fit} of ${other.label}'s effects${fit.total > fit.fit ? `, ${fit.total - fit.fit} more left as ${base.label}'s (no free effect slot)` : ''}`
     notes.push(`moves: ${move.label} from ${other.label} (${copied} animation${copied === 1 ? '' : 's'} copied${cross}${fx})`)
+  }
+  if (Object.keys(stretches).length) {
+    const bones = reach.bonesOf(new Skeleton(models[0], base.body))
+    const far = farLimb(src, base, stretches, moves)
+    const tun = new tuning.Tuning(src, base)
+    const lines = fx ? linesOf(fx, tun, plan?.slots.fields()) : () => []
+    const pull = tun.num(reach.PULL_SPEED_FIELD)
+    const now = resolved(src, own, holds(bundles))
+    const standIns = new Map<string, reach.Victim['model'] | null>()
+    const standIn = (body: string) => {
+      if (!standIns.has(body)) {
+        const t = new R.Templates(src.entry('Misc/Global.not'))
+        const key = R.keys().find((k) => {
+          try {
+            return new R.BaseCharacter(src, k, t).body === body
+          } catch (e) {
+            if (!(e instanceof LabError)) throw e
+            return false
+          }
+        })
+        standIns.set(body, key ? ngmtool.read(new R.BaseCharacter(src, key, t).bundleFiles()[0])[1][0] : null)
+      }
+      return standIns.get(body)!
+    }
+    for (const [id, want] of Object.entries(stretches)) {
+      const move = MOVE_IDS.get(id)
+      if (!move) throw new LabError(`there is no move ${id}`)
+      const states = move.states.filter((st) => !VICTIM.test(st))
+      const anims = new Set(states.flatMap((st) => now.get(st.toLowerCase())?.anim.toLowerCase() ?? []))
+      if (!anims.size) throw new LabError(`${base.label} has no ${move.label.toLowerCase()} to stretch`)
+      const victimAnims = new Set(move.states.filter((st) => VICTIM.test(st)).flatMap((st) => now.get(st.toLowerCase())?.anim.toLowerCase() ?? []))
+      const victimOf = (slot: string): reach.Victim | null => {
+        const rec = victimAnims.size && VICTIM_BODIES[slot] ? bundles.get(slot)?.find((r) => victimAnims.has(r.name.toLowerCase())) : undefined
+        const model = rec ? standIn(VICTIM_BODIES[slot]) : null
+        return rec && model ? { rec, model } : null
+      }
+      let used: [reach.Plan, reach.Reach] | null = null
+      for (const anim of anims) {
+        const found = SLOTS.flatMap((slot): [string, ngbtool.Record][] => {
+          const rec = bundles.get(slot)?.find((r) => r.name.toLowerCase() === anim)
+          return rec ? [[slot, rec]] : []
+        })
+        const out = found.map(([slot, rec]) => {
+          const found = reach.plan(rec.events, rec.length, lines)
+          if (!found) throw new LabError(`${move.label} (${rec.name}) switches on no hit, wire or line to stretch a limb with`)
+          const p = reach.forMove(id, found)
+          const r = reachFor(move, p, want, far, pull)
+          used ??= [p, r]
+          return reach.stretch(rec, models[0], bones, p, r, p.kind === 'line' ? victimOf(slot) : null)
+        })
+        const named = ownName(out[0])
+        found.forEach(([slot], i) => {
+          const into = bundles.get(slot)!
+          if (!into.some((r) => r.name.toLowerCase() === named.toLowerCase())) into.push({ ...out[i], name: named })
+        })
+        for (const st of states) {
+          const m = now.get(st.toLowerCase())
+          if (m && m.anim.toLowerCase() === anim) own.set({ state: m.state, anim: named, opts: used![0].kind === 'line' ? placedAt(m.opts, used![1].distance) : m.opts })
+        }
+        displaced.add(anim)
+      }
+      const [p, r] = used!
+      const to = reach.PULLS.includes(id) ? 'out to the object' : 'out to the opponent'
+      const how = p.kind === 'wire' ? "out to the wire's end" : `${formatG(r.distance)} m ${p.kind === 'line' ? to : 'ahead'}`
+      notes.push(`reach: ${move.label} stretches the ${r.limbs.map((l) => reach.LIMB_LABELS[l]).join(' and ')} ${how}${r.returns ? ', coming back from where it hits' : ''}`)
+    }
   }
   // the base's records the moves replaced, unless another state still plays them
   const used = new Set([...resolved(src, own, () => true).values()].map((m) => m.anim.toLowerCase()))

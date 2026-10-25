@@ -42,7 +42,7 @@ What each base's full tint needs:
 
 Every character with changed stats, a tint or changed cutscenes gets its own tuning file. Each one listed in `Misc/nvblist.txt` takes 12,354 bytes when the game boots, and the list itself has room for about 53 more bytes (a line costs its two names plus 2, so `PLAYER <internal name>` costs the name's length plus 8).
 
-So a patch of several characters fits only a few that need tuning: two with 10-letter internal names, five with 2-letter ones. The check on the **Multi-Character Patch** page adds the lines up before building. Characters with the base's or a swapped aura, the base's gameplay and cutscenes and no long baton throw need no line, so nine of those fit.
+So a patch of several characters fits only a few that need tuning: two with 10-letter internal names, five with 2-letter ones. The check on the **Multi-Character Patch** page adds the lines up before building. Characters with the base's or a swapped aura, the base's gameplay and cutscenes, no long baton throw, no stretched super attack far and no recolored stretched lines need no line, so nine of those fit.
 
 ## Baton throw
 
@@ -72,6 +72,20 @@ A base that can't climb walls or run on them given wall climbing (`wall_climb`) 
 - **The CPU climbs and runs too**, since every AI profile reads the same bits.
 - **The animations are added like swapped moves:** the same memory cost, and other body classes are approximate.
 - **No ranged attack on the wall** (`WallClimbRangedAttack`). Only Spider-Man and Venom have one, and it fires the base's own projectile.
+
+## Stretching limbs
+
+Moves that stretch a limb out and back (`move_reach`, [`FORMAT.md`](FORMAT.md)):
+
+- **A hit goes at most 1 m a frame**, as faster passes targets between frames, so a long reach slows the move: a 20 m super attack far takes 40 frames out and back.
+- **A stretched super attack far needs the character's own tuning file**, since its distance is also its target range: a line in the tuning list (above). On a Daredevil base the arm hit the opponent about 10 m out. On a Spider-Man base it hit nothing, as his far attack is a web pull.
+- **Daredevil's moves that hit with his club's long volume hit from the stretched arm instead**, and a long baton throw can't be combined with a stretched super attack far or super rise attack.
+- **The arm doesn't come back from where it hits.**
+- **A stretched grab moves the thrower to `distance` from the opponent**, so a grab started nearer or farther shifts the thrower back or forward.
+- **A long grab doesn't pull the opponent in.** Their side of the throw plays where they stood, and the hand follows the line's end on them, posed on a stand-in of their body class. It trails briefly when they're launched. Daredevil's opponent animation ends before his cable lets go, so the hand waits where they were.
+- **A pickup doesn't know where the object is**: it takes it to be `distance` ahead. A nearer object is overshot and a farther one is reached by the line, so recolor or hide it (`move_lines`). A short `distance` looks best.
+- **A swing's wire ends 3 m ahead and 10 m up** from where the character stood, wherever the wire actually lands.
+- **Memory and space** are as for swapped moves: the character has its own copy of the base's animations.
 
 ## Cutscenes
 

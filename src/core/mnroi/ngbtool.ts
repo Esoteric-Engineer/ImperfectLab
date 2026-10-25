@@ -69,6 +69,26 @@ export function names(d: Uint8Array): string[] {
   return out
 }
 
+// Each record's name, length and events, without reading its keys.
+export function events(d: Uint8Array): [string, number, Event[]][] {
+  const out: [string, number, Event[]][] = []
+  let o = 0
+  while (o + HEAD <= d.length) {
+    const name = cstring(d, o, o + 0x20)
+    const ntr = u32be(d, o + 0x2c), nev = u32be(d, o + 0x3c), nex = u32be(d, o + 0x44)
+    if (o + HEAD + 16 * ntr > d.length) throw new LabError(`animation ${name} runs past the end of the file`)
+    let keys = 0
+    for (let i = 0; i < ntr; i++) keys += u32be(d, o + HEAD + 16 * i + 8)
+    let p = o + HEAD + 16 * ntr + 12 * keys
+    if (p + 12 * nev + 0x50 * nex > d.length) throw new LabError(`animation ${name} runs past the end of the file`)
+    const evs: Event[] = []
+    for (let e = 0; e < nev; e++, p += 12) evs.push([f32be(d, p), u16be(d, p + 4), u16be(d, p + 6), u32be(d, p + 8)])
+    out.push([name, f32be(d, o + 0x28), evs])
+    o = (p + 0x50 * nex + 3) & ~3
+  }
+  return out
+}
+
 // Whether two records move the same bones the same way, with the same events and extras (the pointer fields are fixed up at load).
 export function sameMotion(a: Record, b: Record): boolean {
   if (a.length !== b.length || a.tracks.length !== b.tracks.length || a.events.length !== b.events.length || a.extra.length !== b.extra.length) return false
@@ -169,4 +189,11 @@ export function pose(model: Pick<Model, 'nodes'>, rec: Record | null, t: number)
     out.push([[row(0), row(1), row(2)], [0, 1, 2].map((r) => PT[r] + PR[r][0] * T[0] + PR[r][1] * T[1] + PR[r][2] * T[2]) as Vec3])
   })
   return out
+}
+
+// The translation key that puts bone at p (model space) at frame t, with its parent posed by rec.
+export function placeAt(model: Pick<Model, 'nodes'>, rec: Record, bone: number, t: number, p: Vec3, posed = pose(model, rec, t)): Packed {
+  const [pr, pt] = posed[model.nodes[bone][2]]
+  const q = model.nodes[bone][0]
+  return encodeTranslation([0, 1, 2].map((c) => [0, 1, 2].reduce((s, r) => s + pr[r][c] * (p[r] - pt[r]), 0) - q[c]) as Vec3)
 }

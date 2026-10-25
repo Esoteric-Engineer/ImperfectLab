@@ -114,6 +114,25 @@ describe('round trip', () => {
     expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes("effects can't be changed"))).toBe(true)
   })
 
+  it('saves and loads stretched moves', () => {
+    const c = character()
+    expect(imperfect.manifest(c).move_reach).toBeUndefined()
+    c.moveReach = { SuperAttackFar: { distance: 15 }, WireSwing: {}, Attack1: { distance: 1.5, limbs: ['right_arm'] } }
+    const d = imperfect.load(imperfect.save(c))
+    expect(d.moveReach).toEqual(c.moveReach)
+    const m = imperfect.manifest(c) as Json
+    const bad = (move_reach: Json) => () => imperfect.fromManifest({ ...m, move_reach }, new Map())
+    expect(bad({ Nothing: {} })).toThrow(/unknown move/)
+    expect(bad({ Attack1: { distance: 50 } })).toThrow(/from 1 to 35/)
+    expect(bad({ Attack1: { limbs: ['tail'] } })).toThrow(/limbs is a list/)
+    expect(bad({ Attack1: { limbs: [] } })).toThrow(/limbs is a list/)
+    expect(bad({ Attack1: { limbs: ['left_arm', 'left_arm'] } })).toThrow(/limbs is a list/)
+    expect(bad({ Attack1: { speed: 2 } })).toThrow(/unknown key/)
+    c.base = 'daredevil'
+    c.baseMoves = { throw_reach: 30 }
+    expect(imperfect.problems(c).some(([l, msg]) => l === 'error' && msg.includes('stretch'))).toBe(true)
+  })
+
   it('finds problems with moves', () => {
     const c = character()
     c.base = 'daredevil'

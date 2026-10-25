@@ -5,6 +5,7 @@ import { EFFECT_FIELDS } from '../src/core/build/effectslots'
 import * as flames from '../src/core/build/flames'
 import * as basemoves from '../src/core/build/basemoves'
 import * as moves from '../src/core/build/moves'
+import * as reach from '../src/core/build/reach'
 import { buildBatch, checkBatch, ordinal } from '../src/core/build/batch'
 import { Builder, report } from '../src/core/build/patch'
 import * as templates from '../src/core/build/templates'
@@ -605,6 +606,7 @@ describe.skipIf(!ISO)('base moves', () => {
 
 describe.skipIf(!ISO)('moves', () => {
   const src = () => gameSource()
+  const catalog = () => moves.catalog(src(), new effects.Effects(src().entry('Misc/game.nfx')))
   const daredevil = () => {
     const c = tinted('daredevil')
     c.aura = { ...c.aura, mode: 'base' }
@@ -619,7 +621,7 @@ describe.skipIf(!ISO)('moves', () => {
   })
 
   it('lists every base\'s moves', () => {
-    const cat = moves.catalog(src())
+    const cat = catalog()
     expect(Object.keys(cat).sort()).toEqual(R.keys().sort())
     expect(cat.thing.body).toBe('brute')
     expect(cat.daredevil.motions.superthrow).toBe('daredevil_superThrow.nad')
@@ -694,7 +696,7 @@ describe.skipIf(!ISO)('moves', () => {
     const main = records(r.adds.get('Bundles/synth.ngb')!)
     expect(set.get('superattackfar')!.anim).toMatch(/^Daredevil_RangedAtta_/)
     const attack = set.get('attack1')!
-    expect(attack.anim.toLowerCase()).toBe(moves.catalog(src()).spiderman.motions.attack1.toLowerCase())
+    expect(attack.anim.toLowerCase()).toBe(catalog().spiderman.motions.attack1.toLowerCase())
     expect(main.has(attack.anim.toLowerCase())).toBe(true)
     expect(main.has('daredevil_ncombo_h1.nad')).toBe(false)
     expect(set.get('superthrow')!.anim).toMatch(/^Thing_SuperThrowMale_/)
@@ -720,7 +722,7 @@ describe.skipIf(!ISO)('moves', () => {
       const c = tinted(base)
       c.aura = { ...c.aura, mode: 'base' }
       c.gameplay = gameplay
-      const cat = moves.catalog(src())
+      const cat = catalog()
       const has = (k: string, id: string) => Boolean(cat[k].motions[id.toLowerCase()])
       const ids: [string[], string][] = [[moves.WALL_CLIMB, from.climb], [moves.WALL_RUN, from.run], [moves.WALL_JUMPS, from.climb ?? from.run]]
       c.moves = Object.fromEntries(ids.flatMap(([states, k]) => (k ? states.filter((id) => has(k, id) && !has(base, id)).map((id) => [id, k]) : [])))
@@ -772,8 +774,8 @@ describe.skipIf(!ISO)('moves', () => {
     c.gameplay = { super_throw_range: 10 }
     const r = new Builder(src(), c).build()
     expect(tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, 28)).toEqual(new Array(tuning.SLOTS).fill(10))
-    expect(moves.catalog(src()).daredevil.range).toBe(10)
-    expect(moves.catalog(src()).thing.range).toBe(3)
+    expect(catalog().daredevil.range).toBe(10)
+    expect(catalog().thing.range).toBe(3)
   })
 
   it('plays Daredevil\'s cable when Wolverine takes his super throw', () => {
@@ -846,5 +848,140 @@ describe.skipIf(!ISO)('moves', () => {
     const c = daredevil()
     c.moves = { SuperThrow: 'daredevil' }
     expect(() => new Builder(src(), c).build()).toThrow(LabError)
+  })
+})
+
+describe.skipIf(!ISO)('stretching limbs', () => {
+  const src = () => gameSource()
+  const records = (data: Uint8Array) => new Map(ngbtool.parse(data).map((r) => [r.name.toLowerCase(), r]))
+  const spiderman = () => {
+    const c = tinted('spiderman')
+    c.aura = { ...c.aura, mode: 'base' }
+    return c
+  }
+  const model = () => ngmtool.read(new R.BaseCharacter(src(), 'spiderman').bundleFiles()[0])[1][0]
+  const at = (m: ngmtool.Model, rec: ngbtool.Record, t: number) => ngbtool.pose(m, rec, t)[26][1]
+  const body = (rec: ngbtool.Record) => ({ ...rec, tracks: rec.tracks.filter(([b, ch]) => !(b === 26 && ch === 1)) })
+  const tunedValues = (nvb: Uint8Array, fid: number) => {
+    const t = Object.create(tuning.Tuning.prototype) as tuning.Tuning
+    t.fields = nvbtool.parseNdb(src().entry('Misc/defaults.ndb')).fields('PLAYER')
+    t.nvb = nvbtool.parseNvb(nvb)
+    return Array.from({ length: tuning.SLOTS }, (_, s) => t.value(fid, s))
+  }
+
+  it('finds what each base\'s moves can stretch', () => {
+    const cat = moves.catalog(src(), new effects.Effects(src().entry('Misc/game.nfx')))
+    const sp = cat.spiderman.reach!
+    expect(sp['spiderman_superattack1far.nad']).toEqual({ kind: 'hit', limbs: ['right_arm'] })
+    expect(sp['spiderman_attack1.nad']).toEqual({ kind: 'hit', limbs: ['right_arm'] })
+    expect(sp['spiderman_wireswing.nad']).toEqual({ kind: 'wire', limbs: ['right_arm'] })
+    expect(sp['spiderman_superthrow.nad']).toEqual({ kind: 'line', limbs: ['right_arm'] })
+    expect(cat.venom.reach!['venom_superthrow.nad']).toEqual({ kind: 'line', limbs: ['right_arm', 'left_arm'] })
+    expect(cat.daredevil.reach!['daredevil_superthrow.nad'].kind).toBe('line')
+    expect(cat.daredevil.reach!['daredevil_wireswing.nad'].kind).toBe('wire')
+  })
+
+  it('builds a stretched punch, far attack, grab and swing', () => {
+    const c = spiderman()
+    c.moveReach = { SuperAttackFar: { distance: 12 }, SuperThrow: { distance: 6 }, WireSwing: {}, Attack1: { distance: 1.5 }, WirePull: { distance: 4 } }
+    const r = new Builder(src(), c).build()
+    const m = model()
+    const set = nmstool.parse(r.adds.get('Motions/Synth.nms')!).motions()
+    const own = nmstool.parse(src().entry('Motions/SpiderMan.nms')).motions()
+    const main = records(r.adds.get('Bundles/synth.ngb')!)
+    for (const s of ['superattackfar', 'superthrow', 'wireswing', 'attack1']) expect(set.get(s)!.anim).not.toBe(own.get(s)!.anim)
+    const far = main.get(set.get('superattackfar')!.anim.toLowerCase())!
+    const turn = far.events.find(([, t]) => t === 0x53)![0]
+    expect(far.events.find(([, t]) => t === basemoves.MIRROR_EVENT)![0]).toBe(turn)
+    expect(at(m, far, turn)[1] - at(m, body(far), turn)[1]).toBeCloseTo(12, 1)
+    expect(far.events.filter(([, t]) => t === 0x56 || t === 0x57).map(([f, t]) => [f, t])).toEqual([[far.events.find(([, t]) => t === 0x39)![0], 0x56], [far.events.find(([, t]) => t === 0x3a)![0], 0x57]])
+    for (const costume of ['', '_alt']) {
+      const [, built] = ngmtool.read(r.adds.get(`Bundles/synth${costume}.ngm`)!)
+      expect(built[0].attachments.filter(([, k]) => k === 43 || k === 44).map(([n, k]) => [n, k])).toEqual([[26, 43], [26, 44]])
+    }
+    const pull = main.get(set.get('wirepull')!.anim.toLowerCase())!
+    expect(at(m, pull, pull.events.find(([, t]) => t === 0x05)![0])[1]).toBeCloseTo(4, 1)
+    const punch = main.get(set.get('attack1')!.anim.toLowerCase())!
+    const hit = (type: number) => punch.events.find(([, t]) => t === type)![0]
+    const peak = (hit(0x39) + hit(0x3a)) / 2
+    expect(at(m, punch, peak)[1] - at(m, body(punch), peak)[1]).toBeCloseTo(1.5, 1)
+    const swing = main.get(set.get('wireswing')!.anim.toLowerCase())!
+    const on = swing.events.find(([, t]) => t === 0x23)![0], off = swing.events.find(([, t]) => t === 0x24)![0]
+    for (const t of [Math.ceil(on) + 6, Math.round((on + off) / 2), off]) {
+      const p = at(m, swing, t)
+      expect(Math.hypot(p[0] - reach.WIRE_END[0], p[1] - reach.WIRE_END[1], p[2] - reach.WIRE_END[2])).toBeLessThan(0.01)
+    }
+    for (let i = 0; i < 3; i++) {
+      const slot = records(r.adds.get(`Bundles/synth-t${i}.ngb`)!)
+      const grab = slot.get(set.get('superthrow')!.anim.toLowerCase())!
+      const victim = set.get(['superthrowvictim', 'superthrowvictimfemale', 'superthrowvictimbrute'][i])!.anim.toLowerCase()
+      expect(ngbtool.sameMotion(slot.get(victim)!, records(src().entry(`Bundles/spiderman-t${i}.ngb`)).get(victim)!)).toBe(true)
+      const body = ['male', 'female', 'brute'][i]
+      const stand = ngmtool.read(new R.BaseCharacter(src(), R.keys().find((k) => new R.BaseCharacter(src(), k).body === body)!).bundleFiles()[0])[1][0]
+      const v = slot.get(victim)!, held = grab.events.find(([, t]) => t === 0x49)![0] / 2
+      const [n, , , mat] = stand.attachments.find(([, k, idx]) => k === 19 && idx === 2)!
+      const [rot, pos] = ngbtool.pose(stand, v, Math.round(held))[n]
+      const q = [0, 1, 2].map((c) => pos[c] + rot[c][0] * mat[12] + rot[c][1] * mat[13] + rot[c][2] * mat[14])
+      const hand = at(m, grab, Math.round(held))
+      expect(Math.hypot(hand[0] + q[0], hand[1] - (6 - q[1]), hand[2] - q[2])).toBeLessThan(0.01)
+    }
+    expect(set.get('superthrowvictim')).toEqual(own.get('superthrowvictim'))
+    for (const st of ['superthrow', 'superthrowfemale', 'superthrowbrute']) expect(set.get(st)!.opts.join(' ')).toBe(own.get(st)!.opts.join(' ').replace('dist -1.00', 'dist 6.00'))
+    expect(set.get('wirepull')!.opts).toEqual(own.get('wirepull')!.opts)
+    const t = new R.Templates(r.sets.get('Misc/Global.not')!)
+    for (const n of ['plr_Synth', 'plr_altSynth']) expect(R.u32(t.prop(n, R.P_ABILITIES))! & reach.RETURN_ABILITY).toBe(reach.RETURN_ABILITY)
+    expect(tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, tuning.AIM_RANGE)).toEqual(new Array(tuning.SLOTS).fill(12))
+    expect(() => D.mirrorSkip(r.dol!)).toThrow(LabError)
+    expect(r.notes).toContain('reach: Super attack far (R + attack at range) stretches the right arm 12 m ahead, coming back from where it hits')
+    expect(r.notes).toContain("reach: Wire swing stretches the right arm out to the wire's end")
+    expect(r.notes).toContain('reach: Wire pull stretches the right arm 4 m out to the object')
+  })
+
+  it('moves Daredevil\'s long hit segment from the club to a stretched arm', () => {
+    const c = tinted('daredevil')
+    c.aura = { ...c.aura, mode: 'base' }
+    c.moveReach = { SuperAttackFar: { distance: 20 } }
+    const r = new Builder(src(), c).build()
+    const [, built] = ngmtool.read(r.adds.get('Bundles/synth.ngm')!)
+    expect(built[0].attachments.filter(([, k]) => k === 43 || k === 44).map(([n, k]) => [n, k])).toEqual([[26, 43], [26, 44]])
+    expect(r.notes).toContain("reach: Daredevil's long hit segment (attachments 43 and 44) moves to the right arm, so moves that hit with it hit from there")
+    c.baseMoves = { throw_reach: 30 }
+    c.moveReach = { SuperRiseAttack: { distance: 5 } }
+    expect(imperfect.problems(c).some(([l, msg]) => l === 'error' && msg.includes('super rise attack'))).toBe(true)
+  })
+
+  it('leaves the far attack alone without a stretch on it', () => {
+    const c = spiderman()
+    c.moveReach = { Attack1: { distance: 2 } }
+    const r = new Builder(src(), c).build()
+    const t = new R.Templates(r.sets.get('Misc/Global.not')!)
+    expect(R.u32(t.prop('plr_Synth', R.P_ABILITIES))! & reach.RETURN_ABILITY).toBe(0)
+    expect(() => D.mirrorSkip(r.dol!)).not.toThrow()
+    expect(r.adds.has('Misc/PLAYER_Synth.nvb')).toBe(false)
+  })
+
+  it('recolors and hides a stretched move\'s own lines per costume', () => {
+    const c = spiderman()
+    c.moveReach = { WireSwing: {}, SuperThrow: { distance: 6 } }
+    c.moveLines = { color: '#00000000', alt_color: '#FF000080' }
+    const r = new Builder(src(), c).build()
+    const nvb = r.adds.get('Misc/PLAYER_Synth.nvb')!
+    const fx = new effects.Effects(r.sets.get('Misc/game.nfx')!)
+    const tun = new tuning.Tuning(src(), new R.BaseCharacter(src(), 'spiderman'))
+    for (const fid of [reach.WIRE_FIELD, EFFECT_FIELDS[3], EFFECT_FIELDS[4]]) {
+      const names = tunedValues(nvb, fid) as string[]
+      expect(names.every((n, s) => n !== tun.value(fid, s))).toBe(true)
+      expect(names.every((n) => fx.isLine(n))).toBe(true)
+      expect(fx.tree([names[0]]).some((b) => b.lines.includes('startcol (0,0,0,0)'))).toBe(true)
+      expect(fx.tree([names[5]]).some((b) => b.lines.some((l) => /^startcol \([\d.]+,255,0,0\)$/.test(l)))).toBe(true)
+    }
+  })
+
+  it('refuses a stretch the move can\'t do', () => {
+    const build = (moveReach: Record<string, imperfect.MoveReach>) => () => new Builder(src(), { ...spiderman(), moveReach }).build()
+    expect(build({ WireSwing: { distance: 5 } })).toThrow(/takes no distance/)
+    expect(build({ SuperAttackFar: {} })).toThrow(/needs a distance/)
+    expect(build({ SuperAttackFar: { distance: 5, limbs: ['left_leg'] } })).toThrow(/doesn't use the left leg/)
+    expect(build({ PowerOn: { distance: 5 } })).toThrow(LabError)
   })
 })

@@ -27,6 +27,7 @@ import * as basemoves from './basemoves'
 import * as flames from './flames'
 import * as moves from './moves'
 import * as portraits from './portraits'
+import * as reach from './reach'
 import * as shaders from './shaders'
 import * as templates from './templates'
 import * as tuning from './tuning'
@@ -111,7 +112,7 @@ export class Builder {
     this.r.dol = D.patch(this.src.dol, c.internalName, c.displayName, c.stats.normal, c.stats.alt)
     this.buildFiles()
     if (this.r.cache !== null) this.r.dol = D.growEffectCache(this.r.dol, this.r.cache)
-    if (c.baseMoves.throw_reach !== undefined) this.r.dol = D.mirrorSkip(this.r.dol)
+    if (mirrors(c)) this.r.dol = D.mirrorSkip(this.r.dol)
     return this.r
   }
 
@@ -170,6 +171,7 @@ export class Builder {
       if (m.bind !== null && m.bind >= sk.nodes.length) throw new LabError(`material ${m.name} is bound to game bone ${m.bind}, which ${base.label} does not have`)
     }
     const tris = f.triangles(slots)
+    const far = Object.keys(c.moveReach).length ? moves.farLimb(this.src, base, c.moveReach, c.moves) : null
     const imgs = this.materialImages(model)
     const normals = new bundle.NormalIndex(bundle.readNormals(this.src.entry('Misc/NormalTable.ngn')))
     const nsa = shaders.blocks(this.src.entry('Materials/Shaders/shaders.nsa'))
@@ -219,6 +221,9 @@ export class Builder {
       const render = bundle.renderModel(renderBase, copy, normals, nm.MODEL, mats,
         renderBase.meshes.length ? renderBase.meshes[0][5] : [0, 0, 0], stats)
       if (c.baseMoves.throw_reach !== undefined) basemoves.hitSegment(render)
+      if (far && reach.farVolume(render, far, reach.bonesOf(sk)[far]) && !alt) {
+        this.note(`reach: ${base.label}'s long hit segment (attachments 43 and 44) moves to the ${reach.LIMB_LABELS[far]}, so moves that hit with it hit from there`)
+      }
       if (c.flames.parts.length) {
         const empty = flames.markers(render, sk, copy, c.flames.parts)
         if (!alt && empty.length) this.note(`flames: no part of the model follows the ${empty.join(', ')} bone, so its flame sits on the bone itself`)
@@ -254,19 +259,28 @@ export class Builder {
     return [texture, ims[at]]
   }
 
-  // The aura tint's copies, the flames' blocks and the swapped moves' recolored lines, in one effect file.
+  // The aura tint's copies, the flames' blocks and the swapped and stretched moves' recolored lines, in one effect file.
   effects(): [[string, string] | null, Map<number, string[]> | null, nottool.Template[], [string, string] | null] {
     const c = this.c
-    const tinted = c.aura.mode === 'tint', fire = flames.hasAny(c.flames), theirs = Object.values(c.moveEffects).includes('theirs')
-    if (!tinted && !fire && !theirs) return [null, null, [], null]
+    const tinted = c.aura.mode === 'tint', fire = flames.hasAny(c.flames), theirs = Object.values(c.moveEffects).includes('theirs'), lined = paintsReach(c)
+    if (!tinted && !fire && !theirs && !lined) return [null, null, [], null]
     const fx = new effects.Effects(this.src.entry('Misc/game.nfx'))
     const before = fx.used()
+    const prefixes: [string, string] = [effects.copyPrefix(c.internalName, false), effects.copyPrefix(c.internalName, true)]
     if (theirs) {
       const used = hasCutscenes(c.cutscenes) ? cutscenes.effectKs(this.src, this.base, c.cutscenes) : []
-      const prefixes: [string, string] = [effects.copyPrefix(c.internalName, false), effects.copyPrefix(c.internalName, true)]
       this.moveFx = moves.planEffects(this.src, this.base, c.moveEffects, fx, c.moveLines, prefixes, used, moves.movedEffects(this.src, this.base, c.moves))
     }
-    const [effect1, power, extra] = tinted ? this.tinted(fx) : [null, null, []]
+    const [effect1, tintPower, extra] = tinted ? this.tinted(fx) : [null, null, []]
+    let power = tintPower
+    if (lined) {
+      const fids = moves.reachLineFields(this.src, this.base, c.moveReach, c.moves, c.moveEffects, fx)
+      const paints = moves.paintLines(fx, new tuning.Tuning(this.src, this.base), fids, c.moveLines, prefixes, power ?? new Map())
+      if (paints.size) {
+        power = new Map([...(power ?? []), ...paints])
+        this.note(`reach: ${paints.size} line effect${paints.size === 1 ? '' : 's'} recolored, in every move that draws ${paints.size === 1 ? 'it' : 'them'}`)
+      }
+    }
     const effect2 = flames.effectNames(fx, c.flames, c.internalName)
     if (fire) this.note(`flames: ${c.flames.body ? "over the whole body (Human Torch's body fire)" : `on the ${c.flames.parts.join(', ')}`}`)
     // the game's own body fire adds nothing
@@ -349,10 +363,11 @@ export class Builder {
   motions(): string | null {
     const c = this.c
     if (!ownMotions(c)) return null
-    const reach = c.baseMoves.throw_reach
-    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, reach, c.moveEffects, this.moveFx)
+    const thrown = c.baseMoves.throw_reach
+    const fx = Object.keys(c.moveReach).length ? new effects.Effects(this.src.entry('Misc/game.nfx')) : null
+    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx)
     for (const [k, v] of m.files) this.r.adds.set(k, v)
-    if (reach !== undefined) this.note(`baton throw: reaches ${reach} m (${this.base.label}'s about 8)`)
+    if (thrown !== undefined) this.note(`baton throw: reaches ${thrown} m (${this.base.label}'s about 8)`)
     for (const n of m.notes) this.note(n)
     return m.motionSet
   }
@@ -371,6 +386,7 @@ export class Builder {
       else off |= WIRE
     }
     for (const w of WALL) if (gp[w.key]) on |= WALL_BITS[w.key]
+    if (stretchReturns(c)) on |= reach.RETURN_ABILITY
     const mode = c.aura.mode === 'swap' ? 'swap' : 'base'
     this.r.sets.set('Misc/Global.not', templates.build(this.src.entry('Misc/Global.not'), this.base, c.internalName, mode, effect1, description,
       on || off ? [on, off] : null, gp.health ?? null, extra, motionSet, (c.baseMoves.throw_cable ?? true) && c.flames.base_effect, effect2))
@@ -480,13 +496,22 @@ export class Builder {
 
 // Whether the character gets its own motion set and animation bundles (Builder.motions).
 export function ownMotions(c: Character): boolean {
-  return c.baseMoves.throw_reach !== undefined || Object.keys(c.moves).length > 0
+  return c.baseMoves.throw_reach !== undefined || Object.keys(c.moves).length > 0 || Object.keys(c.moveReach).length > 0
 }
+
+// A stretched hit that comes back from where it lands needs RETURN_ABILITY and main.dol's mirrored skip.
+export const stretchReturns = (c: Character) => reach.RETURNS.some((id) => c.moveReach[id])
+export const mirrors = (c: Character) => c.baseMoves.throw_reach !== undefined || stretchReturns(c)
+
+// Whether stretched moves' own lines are recolored, which takes the character's tuning file.
+export const paintsReach = (c: Character) => Object.keys(c.moveReach).length > 0 && (c.moveLines.color !== null || c.moveLines.alt_color !== null)
 
 // The gameplay fields that go in the character's own tuning file.
 export function tuningFields(c: Character): Record<string, unknown> {
   const out: Record<string, unknown> = Object.fromEntries(Object.entries(c.gameplay).filter(([k]) => k in tuning.FIELDS || k === 'damage_taken'))
   if (c.baseMoves.throw_reach !== undefined) out.throw_reach = c.baseMoves.throw_reach
+  const far = c.moveReach.SuperAttackFar?.distance
+  if (far !== undefined) out.throw_reach = far
   return out
 }
 
@@ -540,7 +565,7 @@ export function report(characters: Character | Character[], result: Result): str
   lines.push('')
   if (chars.length === 1) lines.push('main.dol: roster record 19, select-screen limits 18 -> 19')
   else lines.push(`main.dol: roster records 19 to ${18 + chars.length} in a new data section, select-screen limits 18 -> ${18 + chars.length}`, `main.dol: arena starts at 0x${D.arenaLo(result.dol!).toString(16).toUpperCase()}`)
-  if (chars.some((c) => c.baseMoves.throw_reach !== undefined)) lines.push('main.dol: fn_8019DB24 mirrors a long baton throw\'s return on a hit')
+  if (chars.some(mirrors)) lines.push('main.dol: fn_8019DB24 mirrors a long throw\'s or stretch\'s return on a hit')
   const cache = result.dol ? D.readEffectCache(result.dol) : null
   if (cache && cache !== nfxtool.CACHE_SIZE) lines.push(`main.dol: effect cache ${nfxtool.CACHE_SIZE} -> ${cache} bytes`)
   const sorted = (m: Map<string, Uint8Array>) => [...m].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
