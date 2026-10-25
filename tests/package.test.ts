@@ -133,6 +133,18 @@ describe('round trip', () => {
     expect(imperfect.problems(c).some(([l, msg]) => l === 'error' && msg.includes('stretch'))).toBe(true)
   })
 
+  it('saves and loads stretched jumps', () => {
+    const c = character()
+    c.moveReach = { Jump: { distance: 0.8, hold: true }, SuperRunJump: { distance: 1.5, limbs: ['left_leg'] } }
+    expect(imperfect.load(imperfect.save(c)).moveReach).toEqual(c.moveReach)
+    const m = imperfect.manifest(c) as Json
+    const bad = (move_reach: Json) => () => imperfect.fromManifest({ ...m, move_reach }, new Map())
+    expect(bad({ Jump: { distance: 5 } })).toThrow(/from 0.25 to 3/)
+    expect(bad({ Attack1: { distance: 0.5 } })).toThrow(/from 1 to 35/)
+    expect(bad({ Attack1: { distance: 2, hold: true } })).toThrow(/jumps only/)
+    expect(bad({ Jump: { distance: 1, hold: 'yes' } })).toThrow(/wrong type/)
+  })
+
   it('finds problems with moves', () => {
     const c = character()
     c.base = 'daredevil'

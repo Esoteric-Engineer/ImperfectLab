@@ -168,4 +168,28 @@ describe('stretching', () => {
     expect(out.tracks.map(([b, ch]) => [b, ch])).toEqual([[2, 0], [6, 1]])
     expect(out.pointers).toEqual([7, 0])
   })
+
+  it('lengthens a jump\'s legs along the shin and back, in the jump\'s own time', () => {
+    const rec = record(20, [[1, 0x2f, 0, 0], [12, 0x30, 0, 0]])
+    const p = reach.jumpPlan(rec.length)
+    expect(reach.summary(p)).toEqual(reach.jumpSummary)
+    const out = reach.stretch(rec, MODEL, BONES, p, { distance: 2, limbs: ['left_leg'], returns: false })
+    const shin: V3 = [0.1, 0, -0.9].map((v) => v / Math.hypot(0.1, 0.9)) as V3
+    const grown = (t: number) => at(out, 6, t).map((v, i) => v - at(rec, 6, t)[i])
+    expect(grown(10).map((v, i) => v - shin[i] * 2).every((v) => Math.abs(v) < 0.01)).toBe(true)
+    for (const t of [0, 20]) expect(Math.hypot(...grown(t))).toBeLessThan(0.01)
+    expect(Math.hypot(...grown(5))).toBeCloseTo(2 * Math.sin(Math.PI / 4), 1)
+    expect(out.length).toBe(20)
+    expect(out.events).toEqual(rec.events)
+  })
+
+  it('holds a jump\'s stretch through the middle when asked', () => {
+    const rec = record(20, [])
+    const out = reach.stretch(rec, MODEL, BONES, reach.jumpPlan(rec.length), { distance: 2, limbs: ['left_leg'], returns: false, hold: true })
+    const grown = (t: number) => Math.hypot(...at(out, 6, t).map((v, i) => v - at(rec, 6, t)[i]))
+    expect(grown(2)).toBeCloseTo(1, 1)
+    for (const t of [4, 10, 16]) expect(grown(t)).toBeCloseTo(2, 1)
+    expect(grown(0)).toBeLessThan(0.01)
+    expect(grown(20)).toBeLessThan(0.01)
+  })
 })

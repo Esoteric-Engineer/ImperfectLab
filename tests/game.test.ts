@@ -984,4 +984,25 @@ describe.skipIf(!ISO)('stretching limbs', () => {
     expect(build({ SuperAttackFar: { distance: 5, limbs: ['left_leg'] } })).toThrow(/doesn't use the left leg/)
     expect(build({ PowerOn: { distance: 5 } })).toThrow(LabError)
   })
+
+  it('builds a jump with longer legs in the jump\'s own time', () => {
+    const c = spiderman()
+    c.moveReach = { Jump: { distance: 1 }, SuperJump: { distance: 0.5, limbs: ['left_leg'], hold: true } }
+    const r = new Builder(src(), c).build()
+    const m = model()
+    const foot = Skeleton.ofBase(new R.BaseCharacter(src(), 'spiderman')).node('R.foot')!
+    const set = nmstool.parse(r.adds.get('Motions/Synth.nms')!).motions()
+    const own = nmstool.parse(src().entry('Motions/SpiderMan.nms')).motions()
+    const main = records(r.adds.get('Bundles/synth.ngb')!)
+    const base = records(src().entry('Bundles/spiderman.ngb'))
+    for (const s of ['jump', 'superjump']) expect(set.get(s)!.anim).not.toBe(own.get(s)!.anim)
+    expect(set.get('runjump')!.anim).toBe(own.get('runjump')!.anim)
+    const was = base.get(own.get('jump')!.anim.toLowerCase())!
+    const now = main.get(set.get('jump')!.anim.toLowerCase())!
+    const grown = (t: number) => Math.hypot(...ngbtool.pose(m, now, t)[foot][1].map((v, i) => v - ngbtool.pose(m, was, t)[foot][1][i]))
+    expect(now.length).toBe(was.length)
+    expect(grown(was.length / 2)).toBeCloseTo(1, 1)
+    expect(grown(0)).toBeLessThan(0.01)
+    expect(r.notes.some((n) => n.includes('Jump stretches the right leg and left leg 1 m longer'))).toBe(true)
+  })
 })

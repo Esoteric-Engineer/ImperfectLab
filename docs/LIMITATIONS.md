@@ -85,6 +85,7 @@ Moves that stretch a limb out and back (`move_reach`, [`FORMAT.md`](FORMAT.md)):
 - **A long grab doesn't pull the opponent in.** Their side of the throw plays where they stood, and the hand follows the line's end on them, posed on a stand-in of their body class. It trails briefly when they're launched. Daredevil's opponent animation ends before his cable lets go, so the hand waits where they were.
 - **A pickup doesn't know where the object is**: it takes it to be `distance` ahead. A nearer object is overshot and a farther one is reached by the line, so recolor or hide it (`move_lines`). A short `distance` looks best.
 - **A swing's wire ends 3 m ahead and 10 m up** from where the character stood, wherever the wire actually lands.
+- **A stretched jump only changes how the legs look**: how high and far it goes, its timing and the character's collision are the base's. The feet can pass through a ledge or thin floor at the peak, and the landing and falling animations are not stretched.
 - **Memory and space** are as for swapped moves: the character has its own copy of the base's animations.
 
 ## Cutscenes

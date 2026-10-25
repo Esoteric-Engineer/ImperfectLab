@@ -328,7 +328,10 @@ function LineColors({ cat }: { cat: Catalog | null }) {
   const c = store.character
   const fits = store.moveEffectFit()
   const lined = Object.entries(c.moveEffects).some(([id, how]) => how === 'theirs' && fits?.[id]?.line)
-  const stretched = cat !== null && Object.keys(c.moveReach).some((id) => MOVE_IDS.has(id) && (stretchOf(cat, MOVE_IDS.get(id)!)?.kind ?? 'hit') !== 'hit')
+  const stretched = cat !== null && Object.keys(c.moveReach).some((id) => {
+    const kind = MOVE_IDS.has(id) ? stretchOf(cat, MOVE_IDS.get(id)!)?.kind : undefined
+    return kind === 'line' || kind === 'wire'
+  })
   if (!lined && !stretched && c.moveLines.color === null && c.moveLines.alt_color === null) return null
   const edited = () => store.touch('character')
   return (
@@ -355,12 +358,13 @@ function stretchOf(cat: Catalog, move: Move): reach.Summary | null {
   const c = store.character
   const owner = c.moves[move.id] ?? c.base
   const anims = animations(cat, owner, move)
+  if (reach.JUMPS.includes(move.id)) return anims?.some(Boolean) ? reach.jumpSummary : null
   const at = move.states.findIndex((s, i) => !VICTIM.test(s) && anims?.[i])
   const found = at < 0 ? null : cat[owner]?.reach?.[anims![at]!.toLowerCase()]
   return found ? reach.forMove(move.id, found) : null
 }
 
-const defaultDistance = (move: Move, kind: reach.Kind) => (kind === 'line' ? (reach.PULLS.includes(move.id) ? 4 : 5) : move.id === 'SuperAttackFar' ? 12 : 1.5)
+const defaultDistance = (move: Move, kind: reach.Kind) => (kind === 'jump' ? 0.75 : kind === 'line' ? (reach.PULLS.includes(move.id) ? 4 : 5) : move.id === 'SuperAttackFar' ? 12 : 1.5)
 const limbNames = (limbs: reach.Limb[]) => limbs.map((l) => reach.LIMB_LABELS[l]).join(' and ')
 
 function freshReach(move: Move, plan: reach.Summary) {
@@ -368,7 +372,7 @@ function freshReach(move: Move, plan: reach.Summary) {
 }
 
 // A stretch set for another animation than the move has now.
-function stale(plan: reach.Summary, want: { distance?: number; limbs?: reach.Limb[] }) {
+function stale(plan: reach.Summary, want: { distance?: number; limbs?: reach.Limb[]; hold?: boolean }) {
   return (plan.kind === 'wire') !== (want.distance === undefined) || (want.limbs ?? []).some((l) => !plan.limbs.includes(l))
 }
 
@@ -386,6 +390,7 @@ function Stretching({ cat }: { cat: Catalog }) {
           <li>A wire move goes out to where the wire would reach</li>
           <li>A grab steps the character to its distance from the opponent</li>
           <li>A pickup keeps time with the wire, but the reach can be near or farther than the distance.</li>
+          <li>A jump lengthens the legs along the shin without changing how high or far it goes</li>
         </ul>
       </Note>
       {CATEGORIES.map((category) => {
@@ -410,7 +415,8 @@ function StretchRow({ move, plan }: { move: Move; plan: reach.Summary | null }) 
   const c = store.character
   const want = c.moveReach[move.id]
   const edited = () => store.touch('character')
-  const far = (kind: reach.Kind) => (kind === 'line' ? (reach.PULLS.includes(move.id) ? 'out to the object' : 'out to the opponent') : 'further')
+  const far = (kind: reach.Kind) => (kind === 'line' ? (reach.PULLS.includes(move.id) ? 'out to the object' : 'out to the opponent') : kind === 'jump' ? 'longer' : 'further')
+  const range = plan?.kind === 'jump' ? reach.JUMP_DISTANCE : reach.DISTANCE
   const baton = move.id === 'SuperAttackFar' && c.baseMoves.throw_reach !== undefined
   return (
     <tr>
@@ -435,10 +441,15 @@ function StretchRow({ move, plan }: { move: Move; plan: reach.Summary | null }) 
         {!plan ? <span className="muted">The move's animation can't stretch now: untick it.</span>
           : want && stale(plan, want) ? <span className="muted">Set for the move's other animation. <button onClick={() => { c.moveReach[move.id] = freshReach(move, plan); edited() }}>Reset</button></span>
           : plan.kind === 'wire' ? "Out to the wire's end"
-          : <span><NumberInput disabled={!want} min={reach.DISTANCE[0]} max={reach.DISTANCE[1]} step={0.5} value={want?.distance ?? defaultDistance(move, plan.kind)} onChange={(v) => {
-            want.distance = Math.round(v * 10) / 10
+          : <span><NumberInput disabled={!want} min={range[0]} max={range[1]} step={plan.kind === 'jump' ? 0.05 : 0.5} value={want?.distance ?? defaultDistance(move, plan.kind)} onChange={(v) => {
+            want.distance = Math.round(v * 100) / 100
             edited()
-          }} /> m {far(plan.kind)}{plan.kind === 'hit' && reach.RETURNS.includes(move.id) ? ', back from a hit' : ''}</span>}
+          }} /> m {far(plan.kind)}{plan.kind === 'hit' && reach.RETURNS.includes(move.id) ? ', back from a hit' : ''}
+            {plan.kind === 'jump' && <> <label className="check"><input type="checkbox" disabled={!want} checked={Boolean(want?.hold)} onChange={(e) => {
+              if (e.target.checked) want.hold = true
+              else delete want.hold
+              edited()
+            }} /> Hold while airborne</label></>}</span>}
       </td>
     </tr>
   )

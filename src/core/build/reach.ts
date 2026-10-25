@@ -13,6 +13,8 @@ export type Limb = (typeof LIMBS)[number]
 export const LIMB_LABELS: Record<Limb, string> = { right_arm: 'right arm', left_arm: 'left arm', right_leg: 'right leg', left_leg: 'left leg' }
 const ROLES: Record<Limb, string> = { right_arm: 'R.forearm_twist', left_arm: 'L.forearm_twist', right_leg: 'R.foot', left_leg: 'L.foot' }
 export const DISTANCE: [number, number] = [1, 35]
+export const JUMP_DISTANCE: [number, number] = [0.25, 3]
+export const JUMPS = ['Jump', 'RunJump', 'SuperJump', 'SuperRunJump']
 // With RETURN_ABILITY a hit in these skips ahead to event 0x53 (fn_800E7A4C).
 export const RETURNS = ['SuperAttackFar', 'SuperRiseAttack']
 export const RETURN_ABILITY = 0x20000000
@@ -42,8 +44,10 @@ export const WIRE_END: Vec3 = [0, 3, 10]
 export const STEP = 1.0
 // meters a frame out to the wire's end or a grab's victim
 const FLY = 2.0
+// share of a held jump stretch's animation spent growing, and again shrinking
+const JUMP_RAMP = 0.2
 
-export type Kind = 'hit' | 'wire' | 'line'
+export type Kind = 'hit' | 'wire' | 'line' | 'jump'
 
 export interface Window {
   limb: Limb
@@ -82,10 +86,15 @@ export interface Reach {
   far?: Limb | null
   // m/s a pickup's object flies back at
   pull?: number
+  // a jump's legs stay at full length through the middle of the animation
+  hold?: boolean
 }
 
 export const limbsOf = (p: Plan): Limb[] => LIMBS.filter((l) => p.windows.some((w) => w.limb === l))
 export const summary = (p: Plan): Summary => ({ kind: p.kind, limbs: limbsOf(p) })
+
+export const jumpSummary: Summary = { kind: 'jump', limbs: ['right_leg', 'left_leg'] }
+export const jumpPlan = (length: number): Plan => ({ kind: 'jump', windows: (['right_leg', 'left_leg'] as Limb[]).map((limb) => ({ limb, from: 0, to: length, end: null })) })
 
 // A pickup reaches out to the object as a grab does to the opponent.
 export function forMove<T extends Plan | Summary>(id: string, p: T): T {
@@ -158,10 +167,10 @@ function withKeys(rec: ngbtool.Record, bone: number, keys: ngbtool.Key[]): ngbto
 }
 
 // Keys putting the bone at to(t, its own place) each frame from a to b and at those in also; to must give its own place back at both ends.
-function solve(rec: ngbtool.Record, model: Model, bone: number, a: number, b: number, also: number[], to: (t: number, own: Vec3) => Vec3): ngbtool.Record {
+function solve(rec: ngbtool.Record, model: Model, bone: number, a: number, b: number, also: number[], to: (t: number, own: Vec3, posed: ReturnType<typeof ngbtool.pose>) => Vec3): ngbtool.Record {
   const keys = frames(a, b, also).map((t): ngbtool.Key => {
     const posed = ngbtool.pose(model, rec, t)
-    return [t, ngbtool.placeAt(model, rec, bone, t, to(t, posed[bone][1]), posed)]
+    return [t, ngbtool.placeAt(model, rec, bone, t, to(t, posed[bone][1], posed), posed)]
   })
   return withKeys(rec, bone, keys)
 }
@@ -276,6 +285,19 @@ function grab(rec: ngbtool.Record, model: Model, bone: number, w: Window, on: (t
   })
 }
 
+// The foot goes distance further along its shin and back; the record keeps its length.
+function jump(rec: ngbtool.Record, model: Model, bone: number, w: Window, r: Reach): ngbtool.Record {
+  const knee = model.nodes[bone][2]
+  const span = w.to - w.from
+  const ramp = Math.max(1, span * JUMP_RAMP)
+  return solve(rec, model, bone, w.from, w.to, [(w.from + w.to) / 2], (t, own, posed) => {
+    const u = r.hold ? Math.min(1, (t - w.from) / ramp, (w.to - t) / ramp) : Math.sin((Math.PI * (t - w.from)) / span)
+    const shin = posed[knee][1]
+    const d = dist(own, shin) || 1
+    return mix(own, [0, 1, 2].map((i) => own[i] + ((own[i] - shin[i]) / d) * r.distance) as Vec3, Math.max(0, u))
+  })
+}
+
 // Out to distance and back: with the wire and the thrown object for a pickup, held on the victim for a grab, else by the middle of the line's time.
 function line(rec: ngbtool.Record, model: Model, bone: number, w: Window, r: Reach, victim: Victim | null): ngbtool.Record {
   const distance = r.distance
@@ -298,6 +320,9 @@ export function stretch(rec: ngbtool.Record, model: Model, bones: Record<Limb, n
   const ws = p.windows.filter((w) => r.limbs.includes(w.limb))
   if (p.kind === 'hit') return hits(rec, model, bones, ws, r)
   let out = rec
-  for (const w of ws) out = p.kind === 'wire' ? wire(out, model, bones[w.limb], w) : line(out, model, bones[w.limb], w, r, victim)
+  for (const w of ws) {
+    const bone = bones[w.limb]
+    out = p.kind === 'wire' ? wire(out, model, bone, w) : p.kind === 'jump' ? jump(out, model, bone, w, r) : line(out, model, bone, w, r, victim)
+  }
   return out
 }

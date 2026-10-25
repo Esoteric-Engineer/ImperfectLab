@@ -435,8 +435,9 @@ function reachFor(move: Move, p: reach.Plan, want: MoveReach, far: reach.Limb | 
   if (unused.length) throw new LabError(`${move.label} doesn't use the ${unused.map((l) => reach.LIMB_LABELS[l]).join(' or ')}, so it can't stretch`)
   if (p.kind === 'wire' && want.distance !== undefined) throw new LabError(`${move.label} stretches out to the wire's end, so it takes no distance`)
   if (p.kind !== 'wire' && want.distance === undefined) throw new LabError(`${move.label} needs a distance to stretch`)
+  if (want.hold !== undefined && p.kind !== 'jump') throw new LabError(`${move.label} can't hold its stretch: only a jump can`)
   const returns = p.kind === 'hit' && reach.RETURNS.includes(move.id)
-  return { distance: want.distance ?? 0, limbs, returns, far: returns ? far : null, pull }
+  return { distance: want.distance ?? 0, limbs, returns, far: returns ? far : null, pull, hold: want.hold }
 }
 
 export interface MotionFiles {
@@ -550,7 +551,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
           return rec ? [[slot, rec]] : []
         })
         const out = found.map(([slot, rec]) => {
-          const found = reach.plan(rec.events, rec.length, lines)
+          const found = reach.JUMPS.includes(id) ? reach.jumpPlan(rec.length) : reach.plan(rec.events, rec.length, lines)
           if (!found) throw new LabError(`${move.label} (${rec.name}) switches on no hit, wire or line to stretch a limb with`)
           const p = reach.forMove(id, found)
           const r = reachFor(move, p, want, far, pull)
@@ -570,8 +571,8 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       }
       const [p, r] = used!
       const to = reach.PULLS.includes(id) ? 'out to the object' : 'out to the opponent'
-      const how = p.kind === 'wire' ? "out to the wire's end" : `${formatG(r.distance)} m ${p.kind === 'line' ? to : 'ahead'}`
-      notes.push(`reach: ${move.label} stretches the ${r.limbs.map((l) => reach.LIMB_LABELS[l]).join(' and ')} ${how}${r.returns ? ', coming back from where it hits' : ''}`)
+      const how = p.kind === 'wire' ? "out to the wire's end" : p.kind === 'jump' ? `${formatG(r.distance)} m longer` : `${formatG(r.distance)} m ${p.kind === 'line' ? to : 'ahead'}`
+      notes.push(`reach: ${move.label} stretches the ${r.limbs.map((l) => reach.LIMB_LABELS[l]).join(' and ')} ${how}${r.returns ? ', coming back from where it hits' : ''}${r.hold ? ', held while airborne' : ''}`)
     }
   }
   // the base's records the moves replaced, unless another state still plays them

@@ -6,7 +6,7 @@ import { decodeImage } from '../image/decode'
 import { encodePng, pngSize } from '../image/png'
 import type { RgbaImage } from '../image/rgba'
 import { MOVE_IDS, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
-import { DISTANCE, type Limb, LIMBS } from '../build/reach'
+import { DISTANCE, JUMP_DISTANCE, JUMPS, type Limb, LIMBS } from '../build/reach'
 import { BASES } from '../game/roster'
 import * as asftool from '../mnroi/asftool'
 import { GLB, type Json } from '../mnroi/gltf'
@@ -116,6 +116,7 @@ export interface MoveLines {
 export interface MoveReach {
   distance?: number
   limbs?: Limb[]
+  hold?: boolean
 }
 
 export const CUTSCENE_EFFECTS = ['theirs', 'none'] as const
@@ -495,10 +496,16 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   c.moveReach = {}
   for (const [id, v] of Object.entries(typed<Record<string, unknown>>(m.move_reach ?? {}, 'object', 'move_reach'))) {
     if (!MOVE_IDS.has(id)) throw new LabError(`manifest: unknown move ${JSON.stringify(id.slice(0, 40))}`)
-    const r = keys(v, ['distance', 'limbs'], `move_reach.${id}`)
+    const r = keys(v, ['distance', 'limbs', 'hold'], `move_reach.${id}`)
     const out: MoveReach = {}
-    const distance = num(r.distance, `move_reach.${id}.distance`, DISTANCE[0], DISTANCE[1])
+    const jump = JUMPS.includes(id)
+    const [lo, hi] = jump ? JUMP_DISTANCE : DISTANCE
+    const distance = num(r.distance, `move_reach.${id}.distance`, lo, hi)
     if (distance !== null) out.distance = distance
+    if (r.hold !== null && r.hold !== undefined) {
+      if (!jump) throw new LabError(`manifest: move_reach.${id}.hold is for the jumps only`)
+      out.hold = typed<boolean>(r.hold, 'boolean', `move_reach.${id}.hold`)
+    }
     if (r.limbs !== null && r.limbs !== undefined) {
       const limbs = typed<unknown[]>(r.limbs, 'array', `move_reach.${id}.limbs`)
       if (!limbs.length || limbs.some((l) => !LIMBS.includes(l as Limb)) || new Set(limbs).size !== limbs.length) {

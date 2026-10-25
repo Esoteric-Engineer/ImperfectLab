@@ -504,7 +504,7 @@ export const stretchReturns = (c: Character) => reach.RETURNS.some((id) => c.mov
 export const mirrors = (c: Character) => c.baseMoves.throw_reach !== undefined || stretchReturns(c)
 
 // Whether stretched moves' own lines are recolored, which takes the character's tuning file.
-export const paintsReach = (c: Character) => Object.keys(c.moveReach).length > 0 && (c.moveLines.color !== null || c.moveLines.alt_color !== null)
+export const paintsReach = (c: Character) => Object.keys(c.moveReach).some((id) => !reach.JUMPS.includes(id)) && (c.moveLines.color !== null || c.moveLines.alt_color !== null)
 
 // The gameplay fields that go in the character's own tuning file.
 export function tuningFields(c: Character): Record<string, unknown> {
