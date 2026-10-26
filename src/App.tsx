@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { VERSION } from './core/version'
+import { COMMIT, RELEASES, REPO_URL, VERSION } from './core/version'
 import * as actions from './ui/actions'
 import { Modal } from './ui/components/common'
 import { type Menu, MenuBar } from './ui/components/MenuBar'
@@ -53,6 +53,7 @@ function App() {
   const s = store
   const [step, setStep] = useState(0)
   const [about, setAbout] = useState(false)
+  const [whatsNew, setWhatsNew] = useState(false)
   const theme = useTheme()
 
   useEffect(() => {
@@ -116,7 +117,10 @@ function App() {
     },
     {
       label: 'Help',
-      items: [{ label: 'About ImperfectLab', onSelect: () => setAbout(true) }],
+      items: [
+        { label: "What's New", onSelect: () => setWhatsNew(true) },
+        { label: 'About ImperfectLab', onSelect: () => setAbout(true) },
+      ],
     },
   ]
 
@@ -158,14 +162,40 @@ function App() {
           <div className="row end"><button onClick={() => { store.credits = null; store.emit() }}>OK</button></div>
         </Modal>
       )}
+      {whatsNew && (
+        <Modal title="What's New" onClose={() => setWhatsNew(false)}>
+          {RELEASES.length === 0 && <p className="note">No release notes in this build.</p>}
+          {RELEASES.map((r) => (
+            <section key={r.version}>
+              <h3>
+                <a href={r.pr ? `${REPO_URL}/pull/${r.pr}` : `${REPO_URL}/commit/${r.hash}`} target="_blank" rel="noreferrer">{r.version}</a>
+                {' '}<span className="note">{r.date}</span>
+              </h3>
+              <ul className="release-notes">
+                {r.changes.map((c) => (
+                  <li key={c.hash}>
+                    {c.subject}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+          {RELEASES.length > 0 && (
+            <p className="note">
+              Looking for older changes? View the project on <a href={`${REPO_URL}/commits/main/?after=${RELEASES[RELEASES.length - 1].hash}+0`} target="_blank" rel="noreferrer">GitHub</a>.
+            </p>
+          )}
+          <div className="row end"><button onClick={() => setWhatsNew(false)}>OK</button></div>
+        </Modal>
+      )}
       {about && (
         <Modal title="About ImperfectLab" onClose={() => setAbout(false)}>
-          <p><b>ImperfectLab {VERSION}</b></p>
+          <p><b>ImperfectLab {VERSION}</b> <span className="note">({COMMIT})</span></p>
           <p>Custom characters for Marvel Nemesis: Rise of the Imperfects (GameCube, USA).</p>
           <p>
             By <a href="https://esotericengineer.com" target="_blank" rel="noreferrer">EsotericEngineer</a>
             {' | '}
-            <a href="https://github.com/Esoteric-Engineer/ImperfectLab" target="_blank" rel="noreferrer">Source</a>
+            <a href={REPO_URL} target="_blank" rel="noreferrer">Source</a>
           </p>
           <p className="note">This is a fan project, not affiliated with or endorsed by Marvel, Electronic Arts or Nintendo. No game files are included: everything taken from the game is read from your own disc, in your browser.</p>
           <div className="row end"><button onClick={() => setAbout(false)}>OK</button></div>

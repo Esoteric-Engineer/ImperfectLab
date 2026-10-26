@@ -802,3 +802,17 @@ button.toggle.active {
 .report {
   color: var(--text);
 }
+
+.release-notes {
+  margin: 4px 0 12px;
+  padding-left: 18px;
+}
+
+.release-notes li {
+  margin: 2px 0;
+}
+
+.modal h3 {
+  font-size: 14px;
+  margin: 12px 0 4px;
+}
