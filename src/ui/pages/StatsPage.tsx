@@ -4,6 +4,7 @@ import { Note, NumberInput } from '../components/common'
 import { store, useStore } from '../store'
 
 const NAMES = ['Intel', 'Strength', 'Speed', 'Durability', 'Energy', 'Skill']
+const ORDER = [3, 5, 0, 2, 1, 4]
 type Key = keyof Gameplay
 const GAMEPLAY: [Key, string, string, number, number, boolean][] = [
   ['damage_taken', 'Damage taken', '%', 10, 300, true],
@@ -62,9 +63,9 @@ export function StatsPage() {
       <table className="stats">
         <thead><tr><th /><th colSpan={3}>Costume 1</th><th colSpan={3}>Costume 2</th></tr></thead>
         <tbody>
-          {NAMES.map((name, r) => (
-            <tr key={name}>
-              <td>{name}</td>
+          {ORDER.map((r) => (
+            <tr key={r}>
+              <td>{NAMES[r]}</td>
               {(['normal', 'alt'] as const).map((costume) => {
                 const base = b ? (costume === 'normal' ? b.stats : b.altStats)[r] ?? null : null
                 const v = c.stats[costume][r]
