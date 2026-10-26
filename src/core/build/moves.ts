@@ -14,6 +14,7 @@ import { scaleModel } from '../model/bundle'
 import { loadTable, Skeleton } from '../model/skeleton'
 import type { MoveEffect, MoveLines, MoveReach } from '../package/imperfect'
 import * as basemoves from './basemoves'
+import * as damage from './damage'
 import type { Effects } from './effects'
 import { EFFECT_FIELDS, effectNames, OWN_EFFECTS, Slots } from './effectslots'
 import * as reach from './reach'
@@ -144,12 +145,14 @@ function resolved(src: GameSource, own: nmstool.MotionSet, has: (anim: string) =
   return out
 }
 
-// Each base's animations by lowercased state, its super throw range, and what each animation can stretch (by lowercased name), for the Moves page.
+// Each base's animations by lowercased state, its super throw range, its damage values, and what each animation can stretch and which damage values it hits with (by lowercased name), for the Moves page.
 export interface BaseMotions {
   body: string
   motions: Record<string, string>
   range: number
+  damage: number[]
   reach?: Record<string, reach.Summary>
+  strikes?: Record<string, number[]>
 }
 export type Catalog = Record<string, BaseMotions>
 
@@ -170,17 +173,23 @@ export function catalog(src: GameSource, fx: Effects): Catalog {
       const lines = linesOf(fx, tun)
       const names = new Set<string>()
       const plans: Record<string, reach.Summary> = {}
+      const strikes: Record<string, number[]> = {}
       for (const slot of SLOTS) {
         if (!src.has(`Bundles/${stem}${slot}.ngb`)) continue
         for (const [n, length, events] of ngbtool.events(src.entry(`Bundles/${stem}${slot}.ngb`))) {
-          names.add(n.toLowerCase())
-          const p = plans[n.toLowerCase()] ? null : reach.plan(events, length, lines)
-          if (p) plans[n.toLowerCase()] = reach.summary(p)
+          const k = n.toLowerCase()
+          if (names.has(k)) continue
+          names.add(k)
+          const p = reach.plan(events, length, lines)
+          if (p) plans[k] = reach.summary(p)
+          const hits = damage.strikes(events)
+          if (hits.length) strikes[k] = hits
         }
       }
       const m = resolved(src, nmstool.parse(src.entry(`Motions/${set}`)), (a) => names.has(a.toLowerCase()))
       const range = tun.num(tuning.FIELDS.super_throw_range)
-      out[key] = { body: base.body, motions: Object.fromEntries([...m].map(([k, v]) => [k, v.anim])), range, reach: plans }
+      const values = damage.KEYS.map((k) => tun.num(tuning.FIELDS[k]))
+      out[key] = { body: base.body, motions: Object.fromEntries([...m].map(([k, v]) => [k, v.anim])), range, damage: values, reach: plans, strikes }
     } catch (e) {
       if (!(e instanceof LabError)) throw e
     }
@@ -193,6 +202,19 @@ export function animations(cat: Catalog, base: string, move: Move): (string | nu
   if (!own) return null
   const out = move.states.map((s) => own.motions[s.toLowerCase()] ?? null)
   return out.some((a) => a !== null) ? out : null
+}
+
+// The moves that hit with each damage value, by the animations the character ends up with (picked: move id -> base).
+export function damageMoves(cat: Catalog, base: string, picked: Record<string, string>): Move[][] {
+  const out: Move[][] = damage.KEYS.map(() => [])
+  for (const move of MOVES) {
+    const from = picked[move.id] ?? base
+    const anims = animations(cat, from, move)
+    if (!anims) continue
+    const ts = new Set(move.states.flatMap((s, i) => (anims[i] ? damage.tiers(s, cat[from].strikes?.[anims[i]!.toLowerCase()]) : [])))
+    for (const t of ts) out[t].push(move)
+  }
+  return out
 }
 
 export interface MoveOption {

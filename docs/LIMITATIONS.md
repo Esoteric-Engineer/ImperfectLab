@@ -56,7 +56,7 @@ A Daredevil-based character's `throw_reach` (`base_moves`, [`FORMAT.md`](FORMAT.
 
 Moves taken from other bases (`moves`, [`FORMAT.md`](FORMAT.md)):
 
-- **Only the animation changes.** Damage, cost, reach and sounds stay the base's. Effects stay the base's too unless taken (`move_effects`), and a cue the base has no effect for does nothing (the Thing's super throw on Daredevil has no hit flash).
+- **Only the animation changes.** Cost, reach and sounds stay the base's. Damage is one of the character's five values (below), though an animation that picks one brings its pick along. Effects stay the base's too unless taken (`move_effects`), and a cue the base has no effect for does nothing (the Thing's super throw on Daredevil has no hit flash).
 - **Other body classes are approximate.** Their animations are mapped bone by bone, but limbs differ: a brute's grab on a male character holds the opponent at arm's length.
 - **Memory and space.** The character has its own copy of the base's animations (about 1 to 3 MB on the disc), so a match against the base loads both.
 - **Finishing moves are not moves.** They are cutscenes (below), not motion-set animations.
@@ -64,6 +64,17 @@ Moves taken from other bases (`moves`, [`FORMAT.md`](FORMAT.md)):
 - **Taken lines are plain colored strands that start at the hand, not at a prop.** The textured strand (`primitive 5`) stretches its texture once along the line rather than repeating it, so only colors are offered.
 - **A recolored line is a copy** of about 190 bytes per costume, out of the effect cache (above).
 - **The super throw range** (`super_throw_range`) needs the character's own tuning file, so a line in the tuning list (above). A long range with a close grab slides the character over to the opponent.
+
+## Damage
+
+The character's five damage values (`attack_damage_1` to `_5`, [`FORMAT.md`](FORMAT.md)):
+
+- **Values, not moves.** The game has no damage per move. A motion starts with one of the five values, fixed by state in `fn_800DA884`, and its animation can switch to another (event `0x1B`). So changing a value changes every move that hits with it: the Thing's first value is his Attack 1, Attack 2 and Low attack.
+- **Each CPU difficulty keeps its own copy** (lower for easy, higher for hard), scaled in proportion to the new value.
+- **The opponent's damage taken still applies**, as does the game's per-difficulty multiplier.
+- **A held object's swing** uses the object's strength, not these values.
+- **Projectiles keep their damage.** They pass their own damage to the hit (`fn_800A0488`), so a ranged attack is unchanged.
+- **Memory and space.** Changed values need the character's own tuning file, so they take a line in the tuning list (above).
 
 ## Wall climbing and running
 

@@ -808,6 +808,29 @@ describe.skipIf(!ISO)('moves', () => {
     expect(catalog().thing.range).toBe(3)
   })
 
+  it('reads which damage value each move hits with', () => {
+    const cat = catalog()
+    expect(cat.thing.damage).toEqual([9, 15, 20, 25, 35])
+    expect(cat.wolverine.damage).toEqual([5, 7, 10, 12, 15])
+    const labels = (base: string, picked: Record<string, string> = {}) => moves.damageMoves(cat, base, picked).map((ms) => ms.map((m) => m.id))
+    const thing = labels('thing')
+    expect(thing[0]).toEqual(expect.arrayContaining(['Attack1', 'Attack2', 'LowAttack']))
+    expect(thing[1]).not.toContain('Attack1')
+    expect(thing[2]).toContain('SuperAttack1')
+    expect(thing.flat()).not.toContain('Walk')
+    expect(labels('wolverine')[0]).not.toContain('Attack1')
+    expect(labels('wolverine', { Attack1: 'thing' })[0]).toContain('Attack1')
+  })
+
+  it('doubles Thing\'s first damage value in every tuning slot', () => {
+    const c = tinted('thing')
+    c.aura = { ...c.aura, mode: 'base' }
+    c.gameplay = { attack_damage_1: 18 }
+    const r = new Builder(src(), c).build()
+    expect(tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, 22)).toEqual([18, 12, 18, 24, 18, 18])
+    expect(tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, 23)).toEqual([15, 11, 15, 20, 15, 15])
+  })
+
   it('plays Daredevil\'s cable when Wolverine takes his super throw', () => {
     const c = wolverine()
     c.moveEffects = { SuperThrow: 'theirs' }

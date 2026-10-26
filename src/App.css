@@ -549,6 +549,67 @@ table th, table td {
   text-align: left;
 }
 
+table.damage {
+  width: 100%;
+  margin-top: 8px;
+}
+
+table.damage th, table.damage td {
+  padding: 8px 10px;
+  vertical-align: middle;
+}
+
+table.damage thead th {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--line);
+}
+
+table.damage tbody tr + tr td {
+  border-top: 1px solid var(--line);
+}
+
+table.damage tbody tr:hover {
+  background: color-mix(in srgb, var(--panel2) 60%, transparent);
+}
+
+table.damage .check {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+table.damage .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+table.damage td:nth-child(2) {
+  width: 100%;
+}
+
+table.damage input.short {
+  width: 80px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel2);
+  font-size: 12px;
+  line-height: 18px;
+}
+
 table.credits input {
   width: 100%;
 }

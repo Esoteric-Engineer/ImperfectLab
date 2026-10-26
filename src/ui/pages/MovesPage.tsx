@@ -47,7 +47,7 @@ export function MovesPage() {
       <h3>Moves</h3>
       <Note>
         Swap any of {label(c.base)}'s moves for another character's version of the move. The move's animations are copied into this character, along with the victim's side of a throw.<br />
-        What the move does stays {label(c.base)}'s: its damage, cost and reach, its sounds, and whether the AI uses it. Its effects play from {label(c.base)}'s own unless you pick the other character's under Effects.<br />
+        What the move does stays {label(c.base)}'s: its cost and reach, its sounds, and whether the AI uses it. Its damage is one of the character's damage values (Stats page), though the swapped animation may pick a different one of them. Its effects play from {label(c.base)}'s own unless you pick the other character's under Effects.<br />
         A match loads both fighters' animations, so every swapped move uses a little more of the memory a match has.
       </Note>
       {cross.length > 0 && (

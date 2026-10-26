@@ -150,6 +150,15 @@ describe('round trip', () => {
     expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes("effects can't be changed"))).toBe(true)
   })
 
+  it('saves and loads attack damage', () => {
+    const c = character()
+    c.gameplay = { attack_damage_1: 18, attack_damage_5: 70.5 }
+    expect(imperfect.load(imperfect.save(c)).gameplay).toEqual(c.gameplay)
+    const m = imperfect.manifest(c) as Json
+    expect(() => imperfect.fromManifest({ ...m, stats: { gameplay: { attack_damage_2: 0 } } }, new Map())).toThrow(/from 1 to 1000/)
+    expect(() => imperfect.fromManifest({ ...m, stats: { gameplay: { attack_damage_6: 10 } } }, new Map())).toThrow(/unknown key/)
+  })
+
   it('saves and loads stretched moves', () => {
     const c = character()
     expect(imperfect.manifest(c).move_reach).toBeUndefined()
@@ -374,6 +383,7 @@ describe('hostile files', () => {
       (m) => (m.base = 'galactus'),
       (m) => (m.stats.display.normal = [9, 9, 9, 9, 9, 9]),
       (m) => (m.stats.gameplay.damage_taken = 'lots'),
+      (m) => (m.stats.gameplay.attack_damage_1 = 'lots'),
       (m) => (m.stats.gameplay.flight = true),
       (m) => (m.stats.gameplay.flight = 'no'),
       (m) => (m.stats.gameplay.low_energy_stun = 'no'),

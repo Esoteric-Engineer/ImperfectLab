@@ -1,5 +1,7 @@
+import * as damage from '../../core/build/damage'
+import { damageMoves } from '../../core/build/moves'
 import { formatG } from '../../core/format'
-import { FLYERS, type Gameplay } from '../../core/package/imperfect'
+import { FLYERS, type Gameplay, GAMEPLAY as RANGES } from '../../core/package/imperfect'
 import { Note, NumberInput } from '../components/common'
 import { store, useStore } from '../store'
 
@@ -136,7 +138,54 @@ export function StatsPage() {
           })}
         </tbody>
       </table>
+      {store.game && <Damage />}
     </div>
+  )
+}
+
+function setDamage(key: damage.DamageKey, v: number | null) {
+  const gp = store.character.gameplay
+  if (v === null) delete gp[key]
+  else gp[key] = Math.round(v * 10) / 10
+  store.touch('character')
+}
+
+function Damage() {
+  const c = store.character
+  const gp = c.gameplay
+  const cat = store.moveCatalog()
+  const bv = store.baseDetails()
+  const base = damage.KEYS.map((k, i) => cat?.[c.base]?.damage[i] ?? bv?.gameplay[k])
+  const users = cat?.[c.base] ? damageMoves(cat, c.base, c.moves) : null
+  return (
+    <>
+      <h3>Attack damage</h3>
+      <Note>
+        Each character has five damage values, and every attack hits with one of them. Changing a value changes each associated move's damage. Projectiles are not affected.<br />
+        CPUs hit softer (on Easy) or harder (on Hard) than these values, but keep the same proportion.
+      </Note>
+      <table className="gameplay damage">
+        <thead><tr><th>Value</th><th>Moves</th><th className="num">Base</th><th>New</th><th className="num">Change</th></tr></thead>
+        <tbody>
+          {damage.KEYS.map((key, i) => {
+            const have = gp[key] !== undefined
+            const [lo, hi] = RANGES[key]
+            const scaled = have && base[i]! > 0 && gp[key] !== base[i]
+            return (
+              <tr key={key}>
+                <td><label className="check"><input type="checkbox" checked={have} disabled={base[i] === undefined} onChange={(e) => setDamage(key, e.target.checked ? base[i]! : null)} /> Damage {i + 1}</label></td>
+                <td>
+                  {!users ? <span className="muted">reading moves...</span> : users[i].length ? <div className="chips">{users[i].map((m) => <span key={m.id} className="chip">{m.label}</span>)}</div> : <span className="muted">none</span>}
+                </td>
+                <td className="num">{base[i] === undefined ? '-' : formatG(base[i]!)}</td>
+                <td><NumberInput className="short" disabled={!have} min={lo} max={hi} step={1} value={gp[key] ?? base[i] ?? null} onChange={(v) => setDamage(key, v)} /></td>
+                <td className="num muted">{scaled ? `×${formatG(Math.round((gp[key]! / base[i]!) * 100) / 100)}` : ''}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </>
   )
 }
 

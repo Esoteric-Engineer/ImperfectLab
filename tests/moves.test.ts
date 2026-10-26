@@ -84,11 +84,11 @@ describe('moves', () => {
     const grab = moves.MOVE_IDS.get('SuperThrow')!
     const all = (prefix: string) => Object.fromEntries(grab.states.map((s) => [s.toLowerCase(), `${prefix}_${s}.nad`]))
     const cat: moves.Catalog = {
-      daredevil: { body: 'male', motions: all('dd'), range: 3 },
-      thing: { body: 'brute', motions: all('thing'), range: 3 },
-      venom: { body: 'brute', motions: all('thing'), range: 3 },
-      wolverine: { body: 'male', motions: all('dd'), range: 3 },
-      storm: { body: 'female', motions: { superthrow: 'storm.nad' }, range: 3 },
+      daredevil: { body: 'male', motions: all('dd'), range: 3, damage: [] },
+      thing: { body: 'brute', motions: all('thing'), range: 3, damage: [] },
+      venom: { body: 'brute', motions: all('thing'), range: 3, damage: [] },
+      wolverine: { body: 'male', motions: all('dd'), range: 3, damage: [] },
+      storm: { body: 'female', motions: { superthrow: 'storm.nad' }, range: 3, damage: [] },
     }
     const opts = moves.options(cat, 'daredevil', grab)
     expect(opts.map((o) => o.from)).toEqual([['thing', 'venom']])
@@ -100,10 +100,10 @@ describe('moves', () => {
   it('offers other bases\' states the base lacks for adding', () => {
     const up = moves.MOVE_IDS.get('WallClimbUp')!
     const cat: moves.Catalog = {
-      thing: { body: 'brute', motions: {}, range: 3 },
-      spiderman: { body: 'male', motions: { wallclimbup: 'sp_up.nad' }, range: 3 },
-      venom: { body: 'brute', motions: { wallclimbup: 'vn_up.nad' }, range: 3 },
-      storm: { body: 'female', motions: {}, range: 3 },
+      thing: { body: 'brute', motions: {}, range: 3, damage: [] },
+      spiderman: { body: 'male', motions: { wallclimbup: 'sp_up.nad' }, range: 3, damage: [] },
+      venom: { body: 'brute', motions: { wallclimbup: 'vn_up.nad' }, range: 3, damage: [] },
+      storm: { body: 'female', motions: {}, range: 3, damage: [] },
     }
     expect(moves.options(cat, 'thing', up)).toEqual([])
     expect(moves.addOptions(cat, 'thing', up).map((o) => [o.from, o.anims])).toEqual([[['spiderman'], ['sp_up.nad']], [['venom'], ['vn_up.nad']]])
