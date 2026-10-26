@@ -687,6 +687,34 @@ describe.skipIf(!ISO)('moves', () => {
     }
   })
 
+  it('plays Wolverine\'s idle in place of his run and first attack', () => {
+    const t = new R.Templates(src().entry('Misc/Global.not'))
+    const wv = new R.BaseCharacter(src(), 'wolverine', t)
+    const mf = moves.motionFiles(src(), wv, 'Synth', {}, undefined, {}, null, {}, null, 1, ['Run', 'Attack1'])
+    const set = nmstool.parse(mf.files.get('Motions/Synth.nms')!).motions()
+    const base = catalog().wolverine.motions
+    const built = records(mf.files.get('Bundles/synth.ngb')!)
+    const theirs = records(src().entry('Bundles/wolverine.ngb'))
+    const stand = set.get('stand')!.anim
+    expect(stand.toLowerCase()).toBe(base.stand.toLowerCase())
+    for (const state of ['run', 'attack1']) {
+      const m = set.get(state)!
+      if (moves.loops(m.opts)) {
+        expect(m.anim).toBe(stand)
+        expect(m.opts).toEqual(moves.idleOpts(m.opts, set.get('stand')!.opts))
+        expect(m.opts.map((o) => o.toLowerCase())).not.toContain('move')
+        continue
+      }
+      const own = built.get(m.anim.toLowerCase())!, was = theirs.get(base[state].toLowerCase())!
+      expect(own.length).toBe(was.length)
+      expect(own.events).toEqual(was.events)
+      expect(own.tracks.filter(([b]) => (b & 0xffff) === 0)).toEqual(was.tracks.filter(([b]) => (b & 0xffff) === 0))
+      expect(own.tracks.every(([, , keys]) => keys[keys.length - 1][0] <= was.length)).toBe(true)
+      expect(built.has(base[state].toLowerCase())).toBe(false)
+    }
+    expect(mf.notes.some((n) => n.includes('Run plays the idle'))).toBe(true)
+  })
+
   it('takes moves along with a long throw', () => {
     const c = daredevil()
     c.moves = { SuperThrow: 'thing', Attack1: 'spiderman' }

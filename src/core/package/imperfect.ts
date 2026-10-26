@@ -153,6 +153,7 @@ export interface Character {
   moveEffects: Record<string, MoveEffect>
   moveLines: MoveLines
   moveReach: Record<string, MoveReach>
+  moveIdle: string[]
   cutscenes: Cutscenes
   ui: { select: Partial<Record<Pose, Placement>>; fade: number; strip_scale: number | null; ready_voice: string | null; banner: boolean }
   files: Map<string, Uint8Array>
@@ -200,6 +201,7 @@ export function newCharacter(): Character {
     moveEffects: {},
     moveLines: { color: null, alt_color: null },
     moveReach: {},
+    moveIdle: [],
     cutscenes: { audio: {}, effects: {} },
     ui: { select: {}, fade: 36, strip_scale: null, ready_voice: null, banner: true },
     files: new Map(),
@@ -260,6 +262,7 @@ export function manifest(c: Character): Json {
     move_effects: Object.keys(c.moveEffects).length ? c.moveEffects : undefined,
     move_lines: c.moveLines.color !== null || c.moveLines.alt_color !== null ? c.moveLines : undefined,
     move_reach: Object.keys(c.moveReach).length ? c.moveReach : undefined,
+    move_idle: c.moveIdle.length ? c.moveIdle : undefined,
     cutscenes: hasCutscenes(c.cutscenes) ? { ...c.cutscenes, effects: Object.keys(c.cutscenes.effects).length ? c.cutscenes.effects : undefined } : undefined,
     files: Object.fromEntries([...files].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, v]) => [k, sha(v)])),
   }
@@ -311,6 +314,13 @@ export function problems(c: Character): Problem[] {
   if (c.moveReach.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach and a stretch both change super attack far: untick one of them on the Moves page'])
   else if (c.moveReach.SuperRiseAttack && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach and a stretched super rise attack both need the baton\'s long hit segment: untick one of them on the Moves page'])
   for (const id of Object.keys(c.moveReach)) if (!MOVE_IDS.has(id)) out.push(['error', `there is no move ${id} to stretch`])
+  for (const id of c.moveIdle) {
+    const label = MOVE_IDS.get(id)?.label ?? id
+    if (!MOVE_IDS.has(id) || id === 'Stand') out.push(['error', `there is no move ${id} to play the idle`])
+    else if (c.moves[id]) out.push(['error', `${label} is both taken from another character and set to the idle: pick one on the Moves page`])
+    else if (c.moveReach[id]) out.push(['error', `${label} plays the idle, so it can't stretch: untick it on the Moves page`])
+    else if (id === 'SuperAttackFar' && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach changes the base\'s own super attack far: set that move back to the base\'s, or untick the reach'])
+  }
   if (c.flames.body && c.flames.parts.length) out.push(['error', 'flames are on the whole body or on chosen parts, not both: pick one on the Aura page'])
   for (const kind of CUTSCENE_KINDS) {
     const from = c.cutscenes[kind]
@@ -370,7 +380,7 @@ function upgrade(m: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Character {
-  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'cutscenes', 'files'], 'the manifest')
+  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'cutscenes', 'files'], 'the manifest')
   if (m.format !== FORMAT) throw new LabError('not a .imperfect file')
   upgrade(m)
   if (m.game !== GAME) throw new LabError(`this file is for ${m.game}, not ${GAME}`)
@@ -542,6 +552,13 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
       out.limbs = limbs as Limb[]
     }
     c.moveReach[id] = out
+  }
+  c.moveIdle = []
+  for (const id of typed<unknown[]>(m.move_idle ?? [], 'array', 'move_idle')) {
+    if (typeof id !== 'string' || !MOVE_IDS.has(id) || id === 'Stand') throw new LabError(`manifest: unknown move ${JSON.stringify(String(id).slice(0, 40))} in move_idle`)
+    if (c.moveIdle.includes(id)) throw new LabError(`manifest: move_idle names ${id} twice`)
+    if (c.moves[id]) throw new LabError(`manifest: move_idle names ${id}, which is taken from another base`)
+    c.moveIdle.push(id)
   }
   const cs = keys(m.cutscenes ?? {}, [...CUTSCENE_KINDS, 'audio', 'effects'], 'cutscenes')
   c.cutscenes = { audio: {}, effects: {} }

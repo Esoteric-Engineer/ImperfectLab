@@ -153,7 +153,7 @@ function qmat([w, x, y, z]: number[]): Mat3 {
   ]
 }
 
-function sample<T extends number[]>(keys: [number, T][], t: number): T {
+export function sample<T extends number[]>(keys: [number, T][], t: number): T {
   if (t <= keys[0][0]) return keys[0][1]
   for (let i = 0; i + 1 < keys.length; i++) {
     const [t0, a] = keys[i], [t1, b] = keys[i + 1]

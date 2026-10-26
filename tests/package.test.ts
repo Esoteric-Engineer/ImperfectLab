@@ -190,6 +190,22 @@ describe('round trip', () => {
     expect(bad({ Jump: { distance: 1, hold: 'yes' } })).toThrow(/wrong type/)
   })
 
+  it('saves and loads moves that play the idle', () => {
+    const c = character()
+    expect(imperfect.manifest(c).move_idle).toBeUndefined()
+    c.moveIdle = ['Run', 'Attack1']
+    expect(imperfect.load(imperfect.save(c)).moveIdle).toEqual(c.moveIdle)
+    const m = imperfect.manifest(c) as Json
+    const bad = (move_idle: Json, more: Json = {}) => () => imperfect.fromManifest({ ...m, ...more, move_idle }, new Map())
+    expect(bad(['Nothing'])).toThrow(/unknown move/)
+    expect(bad(['Stand'])).toThrow(/unknown move/)
+    expect(bad(['Run', 'Run'])).toThrow(/twice/)
+    expect(bad({ Run: true })).toThrow(/wrong type/)
+    expect(bad(['Run'], { moves: { Run: 'thing' } })).toThrow(/taken from another base/)
+    c.moveReach = { Attack1: { distance: 2 } }
+    expect(imperfect.problems(c).some(([l, msg]) => l === 'error' && msg.includes("can't stretch"))).toBe(true)
+  })
+
   it('finds problems with moves', () => {
     const c = character()
     c.base = 'daredevil'

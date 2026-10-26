@@ -292,6 +292,44 @@ export function ownName(rec: ngbtool.Record): string {
   return `${rec.name.replace(/\.nad$/i, '').slice(0, 20)}_${hash}.nad`
 }
 
+const isRoot = (bone: number) => (bone & 0xffff) === 0
+export const loops = (opts: string[]) => !opts.some((o) => o.toLowerCase() === 'noloop')
+const RATES = ['fps', 'move']
+// A loop playing the idle keeps the idle's own rate: the move's stride would play it at the pace of the feet.
+export function idleOpts(opts: string[], stand: string[]): string[] {
+  const kept = opts.filter((o, i) => !RATES.includes(o.toLowerCase()) && !RATES.includes(opts[i - 1]?.toLowerCase()))
+  const at = stand.findIndex((o) => o.toLowerCase() === 'fps')
+  return at >= 0 ? [...kept, ...stand.slice(at, at + 2)] : kept
+}
+
+// A track over the move's time: looped every period from its first frame and cut at length.
+function fitTrack([bone, ch, keys]: ngbtool.Track, period: number, length: number): ngbtool.Track {
+  if (keys.length < 2 || period <= 0) return [bone, ch, keys]
+  const out: ngbtool.Key[] = []
+  for (let start = 0; start < length; start += period) {
+    for (const [f, v] of keys) {
+      const t = start + f
+      if (t >= length) break
+      if (!out.length || t > out[out.length - 1][0]) out.push([t, v])
+    }
+  }
+  const k = Math.floor(length / period)
+  const at = length - k * period || period
+  const end: ngbtool.Packed = ch === 1
+    ? ngbtool.encodeTranslation(ngbtool.sample(keys.map(([f, v]): [number, ngbtool.Vec3] => [f, ngbtool.translation(v)]), at))
+    : ngbtool.sample(keys, at).map(Math.round) as ngbtool.Packed
+  out.push([length, end])
+  return [bone, ch, out]
+}
+
+// The idle's pose over a move: the move's length, events and root (its travel and turning), and the idle's other bones looped to fit.
+export function idleRecord(rec: ngbtool.Record, idle: ngbtool.Record): ngbtool.Record {
+  const root = rec.tracks.flatMap((t, i): [ngbtool.Track, number][] => (isRoot(t[0]) ? [[t, rec.pointers[i] ?? 0]] : []))
+  const body = idle.tracks.flatMap((t, i): [ngbtool.Track, number][] => (isRoot(t[0]) ? [] : [[fitTrack(t, idle.length, rec.length), idle.pointers[i] ?? 0]]))
+  const all = [...root, ...body]
+  return { ...rec, tracks: all.map(([t]) => t), pointers: all.map(([, p]) => p) }
+}
+
 function loadBundles(src: GameSource, stem: string): Map<string, ngbtool.Record[]> {
   const out = new Map<string, ngbtool.Record[]>()
   for (const slot of SLOTS) if (src.has(`Bundles/${stem}${slot}.ngb`)) out.set(slot, ngbtool.parse(src.entry(`Bundles/${stem}${slot}.ngb`)))
@@ -474,7 +512,7 @@ export interface MotionFiles {
 
 export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: string, moves: Record<string, string>, throwReach?: number,
   choice: Record<string, MoveEffect> = {}, plan: EffectPlan | null = null, stretches: Record<string, MoveReach> = {}, fx: Effects | null = null,
-  size = 1): MotionFiles {
+  size = 1, idle: string[] = []): MotionFiles {
   const set = motionSetOf(base), stem = stemOf(set), name = internal.toLowerCase()
   const own = nmstool.parse(src.entry(`Motions/${set}`))
   const bundles = loadBundles(src, stem)
@@ -548,6 +586,37 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     if (how === 'none') fx = '; no effects'
     else if (how === 'theirs' && fit?.total) fx = `; ${fit.fit} of ${other.label}'s effects${fit.total > fit.fit ? `, ${fit.total - fit.fit} more left as ${base.label}'s (no free effect slot)` : ''}`
     notes.push(`moves: ${move.label} from ${other.label} (${copied} animation${copied === 1 ? '' : 's'} copied${cross}${fx})`)
+  }
+  if (idle.length) {
+    const now = resolved(src, own, holds(bundles))
+    const stand = now.get('stand')
+    const standRec = stand && [...bundles.values()].flat().find((r) => r.name.toLowerCase() === stand.anim.toLowerCase())
+    if (!stand || !standRec) throw new LabError(`${base.label} has no idle animation`)
+    for (const id of idle) {
+      const move = MOVE_IDS.get(id)
+      if (!move) throw new LabError(`there is no move ${id}`)
+      for (const state of move.states) {
+        const m = now.get(state.toLowerCase())
+        if (!m || VICTIM.test(state) || m.anim.toLowerCase() === stand.anim.toLowerCase()) continue
+        displaced.add(m.anim.toLowerCase())
+        // A loop plays the idle itself, so it doesn't restart every cycle.
+        if (loops(m.opts)) {
+          own.set({ state: m.state, anim: stand.anim, opts: idleOpts(m.opts, stand.opts) })
+          continue
+        }
+        const found = SLOTS.flatMap((slot): [string, ngbtool.Record][] => {
+          const rec = bundles.get(slot)?.find((r) => r.name.toLowerCase() === m.anim.toLowerCase())
+          return rec ? [[slot, idleRecord(rec, standRec)]] : []
+        })
+        const named = ownName(found[0][1])
+        for (const [slot, rec] of found) {
+          const into = bundles.get(slot)!
+          if (!into.some((r) => r.name.toLowerCase() === named.toLowerCase())) into.push({ ...rec, name: named })
+        }
+        own.set({ state: m.state, anim: named, opts: m.opts })
+      }
+      notes.push(`moves: ${move.label} plays the idle animation`)
+    }
   }
   if (Object.keys(stretches).length) {
     const bones = reach.bonesOf(new Skeleton(models[0], base.body))
@@ -640,6 +709,6 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     after += data.length
     files.set(`Bundles/${name}${slot}.ngb`, data)
   }
-  if (Object.keys(moves).length || size !== 1) notes.push(`${size !== 1 ? 'size' : 'moves'}: animations ${Math.round(after / 1024)} KB (${base.label}'s ${Math.round(before / 1024)} KB)`)
+  if (Object.keys(moves).length || idle.length || size !== 1) notes.push(`${size !== 1 ? 'size' : 'moves'}: animations ${Math.round(after / 1024)} KB (${base.label}'s ${Math.round(before / 1024)} KB)`)
   return { motionSet: motionSetName(internal), files, notes }
 }

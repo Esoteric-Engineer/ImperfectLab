@@ -71,6 +71,7 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
   "move_effects": { "SuperThrow": "theirs" },
   "move_lines": { "color": "#C0C0C0", "alt_color": null },
   "move_reach": { "SuperAttackFar": { "distance": 15 }, "WireSwing": {} },
+  "move_idle": ["Run"],
   "cutscenes": { "finisher": "wolverine", "audio": { "finisher_1": "cutscenes/finisher_1.asf" } },
   "files": {"model/model.glb": "<sha256>", "ui/select_ready.png": "<sha256>"}
 }
@@ -191,6 +192,10 @@ Optional, left out when no move stretches. Move id (the base's own move or one i
 
 Keys: `distance` (1-35, needed for a hit or a line; 0.25-3 for a jump), `limbs` (optional): any of `right_arm left_arm right_leg left_leg`, by default every limb the move uses; one it doesn't use is refused, and `hold` (optional, jumps only): `true` to hold the stretch instead of easing it in and out.
 Not allowed on `SuperAttackFar` with `base_moves.throw_reach`. See [`LIMITATIONS.md`](LIMITATIONS.md).
+
+### `move_idle`
+Optional, left out when empty. A list of move ids (not `Stand`, and none in `moves`) that play the character's idle (`Stand`) animation instead of their own. A move that plays once keeps its length, events and root (its travel and turning), with the idle's pose on every other bone. A looping move (`Run`, `Walk`) plays the idle itself, at the idle's own rate instead of the move's stride. The victim's side of a throw is unchanged.
+Not allowed with `move_reach` on the same move, nor on `SuperAttackFar` with `base_moves.throw_reach`. Older ImperfectLab builds refuse the key. See [`LIMITATIONS.md`](LIMITATIONS.md).
 
 ### `cutscenes`
 Optional, and left out when the character keeps its base's cutscenes and audio.

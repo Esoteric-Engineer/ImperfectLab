@@ -65,6 +65,15 @@ Moves taken from other bases (`moves`, [`FORMAT.md`](FORMAT.md)):
 - **A recolored line is a copy** of about 190 bytes per costume, out of the effect cache (above).
 - **The super throw range** (`super_throw_range`) needs the character's own tuning file, so a line in the tuning list (above). A long range with a close grab slides the character over to the opponent.
 
+## Idle moves
+
+Moves that play the idle animation (`move_idle`, [`FORMAT.md`](FORMAT.md)):
+
+- **A looping move plays the idle itself** at the idle's pace, so it doesn't restart every cycle or speed up with the run, and its own events go with it: running makes no footstep sounds, and a looping part of an attack (`WallAttackLoop`) doesn't hit.
+- **A move that plays once still hits**, but from where the idle pose holds the fist or foot, so a punch can miss an opponent it used to reach.
+- **The victim's side of a throw is unchanged**, so the opponent reacts to a throw the thrower doesn't make.
+- **Memory and space** are as for swapped moves: the character has its own copy of the base's animations.
+
 ## Damage
 
 The character's five damage values (`attack_damage_1` to `_5`, [`FORMAT.md`](FORMAT.md)):

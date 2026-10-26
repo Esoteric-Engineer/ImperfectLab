@@ -12,6 +12,7 @@ const OPEN = new Set(['Attacks', 'Super attacks', 'Air and wall attacks', 'Range
 const stem = (anim: string | null) => (anim ?? '').replace(/\.nad$/i, '')
 const RANGE = GAMEPLAY.super_throw_range
 const effectCount = (n: number) => `${n} effect${n === 1 ? '' : 's'}`
+const IDLE = '@idle'
 
 // Picking a super throw brings its range along, unless the range was set by hand.
 function pickSuperThrow(cat: Catalog, from: string | undefined) {
@@ -40,7 +41,7 @@ export function MovesPage() {
   const mine = cat?.[c.base]
   const cross = mine ? Object.entries(c.moves).filter(([, from]) => cat![from] && cat![from].body !== mine.body).map(([id]) => id) : []
   const added = new Set(cat && mine ? [...wallRows(cat).map((r) => r.id), ...(c.baseMoves.range_grab ? RANGE_GRAB : []), ...(c.gameplay.low_energy_stun ? LOW_ENERGY_STUN : [])] : [])
-  const swapped = Object.keys(c.moves).filter((id) => !added.has(id)).length
+  const swapped = Object.keys(c.moves).filter((id) => !added.has(id)).length + c.moveIdle.length
 
   return (
     <div className="page">
@@ -60,13 +61,14 @@ export function MovesPage() {
       )}
       {swapped > 0 && <div className="row"><span>{swapped} move{swapped === 1 ? '' : 's'} swapped</span><button onClick={() => {
         for (const id of Object.keys(c.moves)) if (!added.has(id)) delete c.moves[id]
+        c.moveIdle = []
         edited()
       }}>Set all back to {label(c.base)}'s</button></div>}
       {!cat ? <p className="muted">Reading every character's moves...</p> : !mine ? <p className="muted">{label(c.base)}'s moves could not be read from this disc.</p> : (
         CATEGORIES.map((category) => {
           const rows = MOVES.filter((m) => m.category === category && animations(cat, c.base, m))
           if (!rows.length) return null
-          const changed = rows.filter((m) => c.moves[m.id]).length
+          const changed = rows.filter((m) => c.moves[m.id] || c.moveIdle.includes(m.id)).length
           return (
             <details key={category} open={OPEN.has(category) || changed > 0}>
               <summary><b>{category}</b> <span className="muted">({rows.length}{changed ? `, ${changed} swapped` : ''})</span></summary>
@@ -95,6 +97,7 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
   const picked = c.moves[move.id]
   const at = picked ? opts.findIndex((o) => o.from.includes(picked)) : -1
   const locked = move.id === 'SuperAttackFar' && c.baseMoves.throw_reach !== undefined
+  const idle = c.moveIdle.includes(move.id), offer = move.id !== 'Stand'
   const first = own.find((a) => a !== null) ?? null
   const more = own.filter((a) => a !== null).length - 1
   return (
@@ -102,18 +105,25 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
       <td title={move.states.join(', ')}>{move.label}</td>
       <td className="anim">{stem(first)}{more > 0 ? ` (+${more})` : ''}</td>
       <td>
-        <select value={at >= 0 ? opts[at].from[0] : (picked ?? '')} disabled={locked || (!opts.length && !picked)}
+        <select value={idle ? IDLE : at >= 0 ? opts[at].from[0] : (picked ?? '')} disabled={locked || (!opts.length && !offer && !picked)}
           title={locked ? 'The baton throw reach changes this move: untick it below to swap the move' : undefined}
           onChange={(e) => {
-            if (move.id === 'SuperThrow') pickSuperThrow(cat, e.target.value || undefined)
-            if (e.target.value) c.moves[move.id] = e.target.value
+            const v = e.target.value
+            if (move.id === 'SuperThrow') pickSuperThrow(cat, v && v !== IDLE ? v : undefined)
+            c.moveIdle = c.moveIdle.filter((id) => id !== move.id)
+            if (v && v !== IDLE) c.moves[move.id] = v
             else {
               delete c.moves[move.id]
               delete c.moveEffects[move.id]
             }
+            if (v === IDLE) {
+              delete c.moveReach[move.id]
+              c.moveIdle = [...c.moveIdle, move.id]
+            }
             store.touch('character')
           }}>
           <option value="">{label(c.base)} (base)</option>
+          {offer && <option value={IDLE}>Idle: {stem(cat[c.moves.Stand ?? c.base]?.motions.stand ?? null)}</option>}
           {opts.map((o) => (
             <option key={o.from[0]} value={o.from[0]}>
               {o.from.map(label).join(', ')}: {stem(o.anims.find((a) => a !== null) ?? null)}{o.body !== cat[c.base].body ? ` (${o.body}, approximate)` : ''}
@@ -121,7 +131,7 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
           ))}
           {picked && at < 0 && <option value={picked}>{label(picked)} (not available for {label(c.base)})</option>}
         </select>
-        {!opts.length && !picked && <span className="muted"> no other version</span>}
+        {!opts.length && !offer && !picked && <span className="muted"> no other version</span>}
       </td>
       <td className="fx">{picked && <MoveEffects id={move.id} from={picked} />}</td>
     </tr>
@@ -357,6 +367,7 @@ const VICTIM = /victim/i
 // What the move's animation, the base's or the one taken, can stretch.
 function stretchOf(cat: Catalog, move: Move): reach.Summary | null {
   const c = store.character
+  if (c.moveIdle.includes(move.id)) return null
   const owner = c.moves[move.id] ?? c.base
   const anims = animations(cat, owner, move)
   if (reach.JUMPS.includes(move.id)) return anims?.some(Boolean) ? reach.jumpSummary : null
