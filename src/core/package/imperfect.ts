@@ -52,6 +52,7 @@ export const WALL: Wall[] = [
   { key: 'wall_climb', label: 'wall climbing', does: 'climbs walls', states: WALL_CLIMB, bases: ['spiderman', 'wolverine', 'elektra', 'aftershock', 'venom', 'defcon'] },
   { key: 'wall_run', label: 'wall running', does: 'runs on walls', states: WALL_RUN, bases: ['wolverine', 'elektra', 'aftershock', 'daredevil', 'biohazard'] },
 ]
+export const FLYERS = ['johnnyohm', 'storm', 'heatwave', 'humantorch', 'ironman', 'magneto', 'roekel']
 export const THROW_REACH: [number, number] = [8, 35]
 export const POSES = ['rest', 'ready', 'readyalt'] as const
 export const CUTSCENE_KINDS = ['intro', 'victory', 'finisher'] as const
@@ -89,6 +90,7 @@ export interface Credit {
 export type Gameplay = Partial<Record<'damage_taken' | 'health' | 'run_speed' | 'sprint_speed' | 'rage_per_super' | 'rage_duration' | 'super_throw_range', number>> & {
   lift?: string
   wire_swing?: boolean
+  flight?: boolean
   wall_climb?: boolean
   wall_run?: boolean
 }
@@ -283,6 +285,7 @@ export function problems(c: Character): Problem[] {
         for (const id of w.states) if (!c.moves[id]) out.push(['error', `${w.label} needs ${MOVE_IDS.get(id)!.label.toLowerCase()}: pick it on the Moves page`])
       } else if (!has && w.states.some((id) => c.moves[id])) out.push(['warning', `${w.label} animations are picked but ${w.label} is off, so they never play`])
     }
+    if (c.gameplay.flight === false && !FLYERS.includes(c.base)) out.push(['error', `${BASES[c.base][0]} can't fly: untick flight on the Stats page`])
     if (!WALL.some((w) => c.gameplay[w.key] || w.bases.includes(c.base)) && WALL_JUMPS.some((id) => c.moves[id])) {
       out.push(['warning', 'wall jump animations are picked but neither wall climbing nor wall running is on, so they never play'])
     }
@@ -439,7 +442,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     if (v.length !== 6) throw new LabError('manifest: six display stats per costume')
     c.stats[k] = v.map((x) => num(x, 'a display stat', STAT_RANGE[0], STAT_RANGE[1], false, true)!)
   }
-  const gp = keys(st.gameplay ?? {}, [...Object.keys(GAMEPLAY), 'lift', 'wire_swing', ...WALL.map((w) => w.key)], 'stats.gameplay')
+  const gp = keys(st.gameplay ?? {}, [...Object.keys(GAMEPLAY), 'lift', 'wire_swing', 'flight', ...WALL.map((w) => w.key)], 'stats.gameplay')
   c.gameplay = {}
   for (const [k, [lo, hi, integer]] of Object.entries(GAMEPLAY)) {
     if (gp[k] !== null && gp[k] !== undefined) (c.gameplay as Record<string, number>)[k] = num(gp[k], k, lo, hi, true, integer)!
@@ -449,6 +452,10 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     c.gameplay.lift = gp.lift as string
   }
   if (gp.wire_swing !== null && gp.wire_swing !== undefined) c.gameplay.wire_swing = typed<boolean>(gp.wire_swing, 'boolean', 'wire_swing')
+  if (gp.flight !== null && gp.flight !== undefined) {
+    if (typed<boolean>(gp.flight, 'boolean', 'flight')) throw new LabError('manifest: flight can only be false, to turn off a base\'s flight')
+    c.gameplay.flight = false
+  }
   for (const { key } of WALL) if (gp[key] !== null && gp[key] !== undefined && typed<boolean>(gp[key], 'boolean', key)) c.gameplay[key] = true
   const ui = keys(m.ui ?? {}, ['select', 'fade', 'strip_scale', 'ready_voice', 'banner'], 'ui')
   const sel = keys(ui.select ?? {}, [...POSES], 'ui.select')

@@ -1,5 +1,5 @@
 import { formatG } from '../../core/format'
-import type { Gameplay } from '../../core/package/imperfect'
+import { FLYERS, type Gameplay } from '../../core/package/imperfect'
 import { Note, NumberInput } from '../components/common'
 import { store, useStore } from '../store'
 
@@ -9,6 +9,7 @@ const GAMEPLAY: [Key, string, string, number, number, boolean][] = [
   ['damage_taken', 'Damage taken', '%', 10, 300, true],
   ['lift', 'Lifting strength', '', 0, 0, true],
   ['wire_swing', 'Wire swing', '', 0, 0, true],
+  ['flight', 'Flight', '', 0, 0, true],
   ['health', 'Health', '', 10, 1000, true],
   ['run_speed', 'Run speed', '', 1, 30, false],
   ['sprint_speed', 'Sprint speed', '', 1, 40, false],
@@ -38,6 +39,7 @@ export function StatsPage() {
     if (!bv) return undefined
     if (key === 'lift') return bv.lift
     if (key === 'wire_swing') return bv.wireSwing
+    if (key === 'flight') return FLYERS.includes(c.base) ? 'on' : 'off'
     if (key === 'health') return bv.health
     return bv.gameplay[key]
   }
@@ -86,10 +88,11 @@ export function StatsPage() {
             const have = gp[key] !== undefined
             const value = baseValue(key)
             const noWire = key === 'wire_swing' && bv !== null && !bv.hasWire
+            const noFlight = key === 'flight' && !FLYERS.includes(c.base)
             let baseText = '-'
             if (value !== undefined) {
               if (key === 'damage_taken') baseText = `${Math.round(100 * (value as number))}%`
-              else if (typeof value === 'string') baseText = noWire ? 'off (the base has no wire moves)' : value
+              else if (typeof value === 'string') baseText = noWire ? 'off (the base has no wire moves)' : noFlight ? 'off (the base can\'t fly)' : value
               else baseText = formatG(value)
             }
             const toggle = (on: boolean) => {
@@ -97,6 +100,7 @@ export function StatsPage() {
               else if (key === 'damage_taken') gp[key] = Math.round(1000 * ((value as number) ?? 1)) / 1000
               else if (key === 'lift') gp[key] = (value as string) ?? 'medium'
               else if (key === 'wire_swing') gp[key] = value === 'on'
+              else if (key === 'flight') gp[key] = false
               else if (key === 'health' || key === 'rage_duration') gp[key] = Math.round((value as number) ?? lo)
               else gp[key] = Math.round(100 * ((value as number) ?? lo)) / 100
               edited()
@@ -108,6 +112,8 @@ export function StatsPage() {
             } else if (key === 'wire_swing') {
               editor = <select disabled={!have} value={have ? (gp[key] ? 'on' : 'off') : ((value as string) ?? 'off')} onChange={(e) => { gp[key] = e.target.value === 'on'; edited() }}>
                 <option>off</option><option>on</option></select>
+            } else if (key === 'flight') {
+              editor = <span>{have ? 'off' : '-'}</span>
             } else {
               const shown = key === 'damage_taken' ? 100 * ((gp[key] as number) ?? (value as number) ?? 1) : ((gp[key] as number) ?? (value as number) ?? lo)
               const step = key === 'rage_duration' ? 500 : key === 'health' ? 10 : key === 'damage_taken' ? 0.1 : 0.01
@@ -121,7 +127,7 @@ export function StatsPage() {
             }
             return (
               <tr key={key}>
-                <td><label className="check"><input type="checkbox" checked={have} disabled={noWire} onChange={(e) => toggle(e.target.checked)} /> {label}{tested ? '' : '  (experimental)'}</label></td>
+                <td><label className="check"><input type="checkbox" checked={have} disabled={noWire || (noFlight && !have)} onChange={(e) => toggle(e.target.checked)} /> {label}{tested ? '' : '  (experimental)'}</label></td>
                 <td>{baseText}</td>
                 <td>{editor}</td>
               </tr>

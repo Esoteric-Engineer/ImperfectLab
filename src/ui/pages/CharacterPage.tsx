@@ -2,7 +2,7 @@ import { dropUnfitAudio } from '../../core/build/cutscenes'
 import { RANGE_GRAB, WALL_JUMPS } from '../../core/build/moves'
 import * as R from '../../core/game/roster'
 import * as mapping from '../../core/model/mapping'
-import { type Credit, BASE_MOVES, type BaseMoves, CUTSCENE_KINDS, defaultStats, WALL } from '../../core/package/imperfect'
+import { type Credit, BASE_MOVES, type BaseMoves, CUTSCENE_KINDS, defaultStats, FLYERS, WALL } from '../../core/package/imperfect'
 import type { AutoMap } from '../../core/model/mapping'
 import { ColorButton, ImageView, Note } from '../components/common'
 import { engine } from '../engine'
@@ -33,6 +33,7 @@ export function CharacterPage() {
         }
       }
       for (const [id, from] of Object.entries(c.moves)) if (from === key) delete c.moves[id]
+      if (!FLYERS.includes(key)) delete c.gameplay.flight
       const dropped = WALL.filter((w) => c.gameplay[w.key] && w.bases.includes(key))
       for (const w of dropped) delete c.gameplay[w.key]
       const ids = dropped.flatMap((w) => w.states).concat(dropped.length && !WALL.some((w) => c.gameplay[w.key]) ? WALL_JUMPS : [])

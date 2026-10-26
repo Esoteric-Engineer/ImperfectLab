@@ -130,6 +130,7 @@ Older ImperfectLab builds refuse a file with `flames`.
   - `damage_taken`: 0.1-3.0, the share of a hit's damage taken.
   - `lift`: `light`, `medium` or `heavy`.
   - `wire_swing`: a boolean.
+  - `flight`: `false` disallows flight on a base that flies. `true` is refused.
   - `wall_climb`: `true` lets a base that can't climb walls climb them (`moves` then names their animations). Not allowed on a base that already climbs.
   - `wall_run`: `true` lets a base that can't run on walls run on them, the same way. Not allowed on a base that already runs on walls.
   - `super_throw_range`: 1-20, how far away, in meters, the opponent can be for the super throw (R + X grab) to start.

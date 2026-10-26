@@ -197,6 +197,17 @@ describe('round trip', () => {
     expect(() => imperfect.fromManifest({ ...imperfect.manifest(c), stats: { gameplay: { wall_climb: 'yes' } } }, new Map())).toThrow(/wall_climb/)
   })
 
+  it('turns off flight for a base that flies', () => {
+    const c = character()
+    c.base = 'storm'
+    c.gameplay = { flight: false }
+    expect(imperfect.problems(c).filter(([l]) => l === 'error')).toEqual([])
+    expect(imperfect.load(imperfect.save(c)).gameplay).toEqual({ flight: false })
+    c.base = 'thing'
+    expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes("can't fly"))).toBe(true)
+    expect(() => imperfect.fromManifest({ ...imperfect.manifest(c), stats: { gameplay: { flight: true } } }, new Map())).toThrow(/can only be false/)
+  })
+
   it('finds problems with wall running, and keeps a base\'s own wall jumps apart', () => {
     const c = character()
     const errors = () => imperfect.problems(c).filter(([l]) => l === 'error').map(([, m]) => m)
@@ -327,6 +338,8 @@ describe('hostile files', () => {
       (m) => (m.base = 'galactus'),
       (m) => (m.stats.display.normal = [9, 9, 9, 9, 9, 9]),
       (m) => (m.stats.gameplay.damage_taken = 'lots'),
+      (m) => (m.stats.gameplay.flight = true),
+      (m) => (m.stats.gameplay.flight = 'no'),
       (m) => (m.model.materials[0].size = [300, 300]),
       (m) => (m.model.materials[0].texture = '../../etc/passwd'),
       (m) => (m.aura.mode = 'rainbow'),

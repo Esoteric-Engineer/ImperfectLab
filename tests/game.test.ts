@@ -964,6 +964,18 @@ describe.skipIf(!ISO)('stretching limbs', () => {
     expect(R.u32(t.prop('plr_Synth', R.P_ABILITIES))! & 0x2000).toBe(0)
   })
 
+  it('turns off a flyer\'s flight and keeps it by default', () => {
+    const c = tinted('storm')
+    c.aura = { ...c.aura, mode: 'base' }
+    const abilities = (c: imperfect.Character, n: string) => R.u32(new R.Templates(new Builder(src(), c).build().sets.get('Misc/Global.not')!).prop(n, R.P_ABILITIES))!
+    const storm = abilities(c, 'plr_Storm')
+    expect(storm & 0x100001).toBe(0x100001)
+    expect(abilities(c, 'plr_Synth')).toBe(storm)
+    c.gameplay = { flight: false }
+    for (const n of ['plr_Synth', 'plr_altSynth']) expect(abilities(c, n)).toBe((storm & ~0x100001) >>> 0)
+    expect(abilities(c, 'plr_Storm')).toBe(storm)
+  })
+
   it('moves Daredevil\'s long hit segment from the club to a stretched arm', () => {
     const c = tinted('daredevil')
     c.aura = { ...c.aura, mode: 'base' }
