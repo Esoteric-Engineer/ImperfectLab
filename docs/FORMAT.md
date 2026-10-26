@@ -109,7 +109,7 @@ Game bone numbers in `model` belong to the base's body class (male, female or br
 `mode`:
 - `base`: the base's aura and effects.
 - `swap`: the two costumes exchange the base's normal and alternate auras, effects and intro cutscenes.
-- `tint`: copies of the base's effects recolored to `color` (costume 1) and `alt_color` (costume 2), each `#RRGGBB` or `#RRGGBBAA`. The opacity (`AA`, default `FF`) scales the alpha of every recolored effect color, so `00` hides the aura.
+- `tint`: copies of the base's effects recolored to `color` (costume 1) and `alt_color` (costume 2), each `#RRGGBB` or `#RRGGBBAA`. The opacity (`AA`, default `FF`) scales the alpha of every recolored effect color. `00` hides the costume's effects: they are replaced with an empty effect rather than copied, which takes far less memory.
   The power-mode glow keeps the base's color.
 
 `tint` (optional, default `all`), what a `tint` copies:
@@ -122,7 +122,7 @@ A base whose full tint needs more memory than a match can spare is built as `pow
 Optional; left out when every key has its default. Fire that burns on the character all match, on top of the `aura`:
 - `parts` (default `[]`): any of `head chest r_hand l_hand r_foot l_foot`.
 - `body` (default `false`): Human Torch's body fire over the whole model instead.
-- `color`, `alt_color` (default `null`): the costume's flame color, `#RRGGBB` or `#RRGGBBAA`.
+- `color`, `alt_color` (default `null`): the costume's flame color, `#RRGGBB` or `#RRGGBBAA`. The flames are drawn additively, so the opacity (`AA`) darkens the color, and `00` hides them.
 - `size` (default `1`): 0.5-2.0, scales the flames.
 - `base_effect` (default `true`): `false` removes the base's own always-on effect, such as Human Torch's body fire.
 

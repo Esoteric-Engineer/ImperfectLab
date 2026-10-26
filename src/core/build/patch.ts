@@ -75,6 +75,7 @@ export class Builder {
   model: Model | null
   selectId = ui.NEW_ID
   tint: string | null = null
+  greyTint: [boolean, boolean] = [false, false] // whether tinted effects draw the grey fire sprite
   moveFx: moves.EffectPlan | null = null
 
   constructor(source: GameSource, character: Character, progress?: Progress, model?: Model) {
@@ -127,10 +128,11 @@ export class Builder {
 
   // Every file but main.dol.
   buildFiles(): Result {
+    this.progress('Effects')
+    const [effect1, power, projectiles, effect2] = this.effects()
     this.progress('Model')
     const materials = this.buildModel()
     this.progress('Templates, materials and tuning')
-    const [effect1, power, projectiles, effect2] = this.effects()
     const description = this.tuning(power)
     const motionSet = this.motions()
     this.templates(effect1, description, projectiles, motionSet, effect2)
@@ -214,8 +216,7 @@ export class Builder {
       const keep = names.filter((n) => !replaced.has(n.toLowerCase()) || keptByOthers.has(n.toLowerCase()) || n.toLowerCase() === this.texture2.toLowerCase())
       const extra: [string, gxtex.TplImage][] = []
       if (!names.some((n) => n.toLowerCase() === this.texture2.toLowerCase())) extra.push(this.borrowTexture('johnnyohm', "Johnny Ohm's", this.texture2))
-      // a recolored flame draws the grey fire sprite, which only some characters' bundles have
-      if ((alt ? c.flames.alt_color : c.flames.color) !== null && flames.hasAny(c.flames)) {
+      if (((alt ? c.flames.alt_color : c.flames.color) !== null && flames.hasAny(c.flames)) || this.greyTint[alt ? 1 : 0]) {
         extra.push(this.borrowTexture(flames.GREY_BUNDLE, "Human Torch's costume 2", flames.GREY_SPRITE))
       }
       const mats = included.map((m) => c.internalName + costume + m.suffix)
@@ -305,13 +306,16 @@ export class Builder {
   private tinted(fx: effects.Effects): [[string, string] | null, Map<number, string[]>, nottool.Template[]] {
     const c = this.c, base = this.base
     const tun = new tuning.Tuning(this.src, base)
-    const level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, base), 'all', flames.cost(c.flames)) : c.aura.tint)
+    const hide = effects.hidden(c.aura.color, c.aura.alt_color)
+    const level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, base), 'all', flames.cost(c.flames), hide) : c.aura.tint)
     if (this.tint === null && level !== c.aura.tint) this.note(`aura tint: ${base.label}'s full tint needs more memory than a match can spare; its idle and power-up effects are tinted`)
     const [rootsN, rootsA] = effects.roots(fx, tun, base, level)
     if (!rootsN.length && !rootsA.length) throw new LabError(`${base.label} has no effects to tint; use the Base or Swap aura`)
+    this.greyTint = [!hide[0] && fx.drawsFire(rootsN), !hide[1] && fx.drawsFire(rootsA)]
     const mn = fx.tinted(rootsN, c.aura.color, effects.copyPrefix(c.internalName, false))
     const ma = fx.tinted(rootsA, c.aura.alt_color, effects.copyPrefix(c.internalName, true))
-    this.note(`aura tint: ${mn.size + ma.size} effect blocks copied`)
+    const hiddenIn = ['1', '2'].filter((_, i) => hide[i])
+    this.note(`aura tint: ${new Set([...mn.values(), ...ma.values()]).size} effect blocks added${hiddenIn.length ? `; costume ${hiddenIn.join(' and ')}'s effects hidden` : ''}`)
     const pick = (m: Map<string, string>, name: string | null) => m.get((name ?? '').toLowerCase()) ?? name!
     const effect1: [string, string] | null = base.effect1 ? [pick(mn, base.effect1), pick(ma, base.altEffect1)] : null
     // Every effect field naming a tinted block follows it.

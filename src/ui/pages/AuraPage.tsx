@@ -51,9 +51,10 @@ export function AuraPage() {
   const flameMode = f.body ? 'body' : f.parts.length ? 'parts' : 'none'
   const flameBytes = flames.cost(f)
   const plans = details?.tint ?? {}
-  const tooBig = (level: string) => effects.tintLevel(plans, level, flameBytes) !== level
+  const hide = effects.hidden(c.aura.color, c.aura.alt_color)
+  const tooBig = (level: string) => effects.tintLevel(plans, level, flameBytes, hide) !== level
   const memory = (level: string) => {
-    const p = plans[level]
+    const p = plans[effects.planKey(level, hide)]
     if (!p) return ''
     const extra = effects.planExtra(p, flameBytes)
     if (tooBig(level)) return ` (needs ${kb(extra)} KB of game memory, more than a match can spare)`
@@ -62,16 +63,21 @@ export function AuraPage() {
   let about = 'Choose your game disc to see what the base character\'s aura is.'
   let tintable = true
   let cost = ''
-  const level = effects.tintLevel(plans, c.aura.tint, flameBytes)
-  const plan = plans[level]
+  const level = effects.tintLevel(plans, c.aura.tint, flameBytes, hide)
+  const plan = plans[effects.planKey(level, hide)]
   if (base && details && plans.all) {
     tintable = plans.all.roots.length > 0 || plans.all.alt.length > 0
     about = `${base.label}'s effects: ${plans.power.roots.join(', ') || 'none'}. ${tintable ? '' : 'There is nothing to tint; Base and Swap still apply.'}`
     if (tintable && plan) {
       const extra = effects.planExtra(plan, flameBytes)
+      const copied = (hide[0] ? 0 : plan.roots.length) + (hide[1] ? 0 : plan.alt.length)
+      const costumes = (on: (i: number) => unknown) => ['1', '2'].filter((_, i) => on(i)).join(' and ')
+      const hiddenIn = costumes((i) => hide[i]), greyIn = costumes((i) => plan.grey[i])
+      const what = [copied ? `copies ${copied} effects` : '', hiddenIn ? `hides costume ${hiddenIn}'s effects` : ''].filter(Boolean).join(' and ')
       cost = (level !== c.aura.tint ? `${base.label}'s full tint${flameBytes ? ' with flames' : ''} needs more memory than a match can spare, so only the idle and power-up effects are tinted. ` : '') +
-        `This tint copies ${plan.roots.length + plan.alt.length} effects (${plan.bytes} bytes); ` +
-        (extra ? `the patch adds ${extra} bytes to the game's effect memory for them${flameBytes ? ' and the flames' : ''}.` : 'they fit the game\'s effect memory.')
+        `This tint ${what} (${plan.bytes} bytes); ` +
+        (extra ? `the patch adds ${extra} bytes to the game's effect memory for them${flameBytes ? ' and the flames' : ''}.` : 'they fit the game\'s effect memory.') +
+        (greyIn ? ` Its fire is redrawn on the grey fire sprite, which costume ${greyIn}'s bundle doesn't have, so the sprite is added to it: ${kb(Math.max(...plan.grey))} KB more of the memory the character loads into${plan.grey[0] && plan.grey[1] ? ', for each costume' : ''}.` : '')
     }
   }
   const setFlameMode = (mode: string) => {
@@ -118,7 +124,8 @@ export function AuraPage() {
         <ColorButton color={c.aura.alt_color} alpha disabled={!tint} onChange={(v) => { c.aura.alt_color = v; edited() }} />
       </div>
       <Note>
-        Note that transparent tints still use the same amount of memory as any other tint.
+        A fully transparent color (0%) hides that costume's effects, which takes much less memory than a tint.
+        Any other transparency still copies every effect.
       </Note>
       <p>{cost}</p>
 

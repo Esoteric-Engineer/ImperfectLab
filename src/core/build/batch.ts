@@ -48,7 +48,7 @@ export function batchTints(source: GameSource, chars: Batch): [(string | null)[]
   const seen = new Map<string, number>()
   for (const t of tries) {
     const key = t.join()
-    if (!seen.has(key)) seen.set(key, effects.sharedExtra(source, t.map((level, i) => [bases[i], level]), chars.map((c) => c.flames), lines))
+    if (!seen.has(key)) seen.set(key, effects.sharedExtra(source, t.map((level, i) => [bases[i], level, effects.hidden(chars[i].aura.color, chars[i].aura.alt_color)]), chars.map((c) => c.flames), lines))
     if (seen.get(key)! <= effects.TINT_ALL_LIMIT) return [t, seen.get(key)!]
   }
   const last = tries[tries.length - 1]

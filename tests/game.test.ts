@@ -212,6 +212,53 @@ describe.skipIf(!ISO)('game', () => {
     expect(cols.every((c) => ((c >>> 16) & 255) > (c & 255))).toBe(true)
   })
 
+  it('tints the game\'s orange fire on the grey sprite', () => {
+    const fx = new effects.Effects(src().entry('Misc/game.nfx'))
+    const names = fx.tinted(['htFlightFX', 'htFireBallHandR', 'altHtFlightFX'], '#2040FF', 'testfx')
+    const by = new Map(nfxtool.blocks(nfxtool.readNfx(fx.build())).map((b) => [b.name, b]))
+    const values = (name: string, key: string) => by.get(names.get(name.toLowerCase())!)!.records()[0].filter((r) => nfxtool.KEYS[r.key] === key).map((r) => r.value)
+    // the orange sprite would turn any color orange
+    for (const name of ['htFlightFX', 'htFireBallHandR']) {
+      expect(values(name, 'material'), name).toEqual([flames.GREY_SPRITE])
+      for (const col of ['startcol', 'endcol']) {
+        const [c] = values(name, col) as number[]
+        expect(c & 255, `${name} ${col}`).toBeGreaterThan((c >>> 16) & 255)
+      }
+    }
+    expect(values('altHtFlightFX', 'material')).toEqual([flames.GREY_SPRITE])
+    expect(fx.drawsFire(['htFlightFX'])).toBe(true)
+    expect(fx.drawsFire(['altHtFlightFX'])).toBe(false)
+  })
+
+  it('makes the grey fire sprite transparent by darkening it', () => {
+    // it is additive: only black adds nothing
+    const rgbs = (fx: effects.Effects, names: string[]) => nfxtool.blocks(nfxtool.readNfx(fx.build())).filter((b) => names.includes(b.name))
+      .flatMap((b) => b.records()[0].filter((r) => ['startcol', 'endcol'].includes(nfxtool.KEYS[r.key])).map((r) => (r.value as number) & 0xffffff))
+    const tinted = (color: string) => {
+      const fx = new effects.Effects(src().entry('Misc/game.nfx'))
+      return rgbs(fx, [...fx.tinted(['htFlightFX', 'altHtFlightFX'], color, 'testfx').values()])
+    }
+    const lit = (fx: effects.Effects, f: imperfect.Flames) => rgbs(fx, flames.effectNames(fx, f, 'Synth')!.flatMap((n) => [n, ...fx.tree([n]).map((b) => b.name)]))
+    const fire = (color: string) => {
+      const fx = new effects.Effects(src().entry('Misc/game.nfx'))
+      return [...lit(fx, { ...imperfect.defaultFlames(), parts: ['r_hand'], color, alt_color: color }), ...lit(fx, { ...imperfect.defaultFlames(), body: true, color, alt_color: color, size: 1.5 })]
+    }
+    for (const colors of [tinted, fire]) {
+      expect(colors('#2040FF').length).toBeGreaterThan(0)
+      expect(colors('#2040FF').every((c) => c > 0)).toBe(true)
+      expect(colors('#2040FF00').every((c) => c === 0)).toBe(true)
+      expect(colors('#2040FF80').every((c, i) => c > 0 && (c & 255) < (colors('#2040FF')[i] & 255))).toBe(true)
+    }
+  })
+
+  it('puts the grey fire sprite in a tinted costume\'s bundle once', () => {
+    for (const base of ['humantorch', 'heatwave']) {
+      const r = new Builder(src(), tinted(base)).build()
+      const greys = (costume: string) => latin1(r.adds.get(`Bundles/synth${costume}.ngt`)!).split(/\s+/).filter((n) => n.toLowerCase() === flames.GREY_SPRITE.toLowerCase()).length
+      expect([greys(''), greys('_alt')], base).toEqual([1, 1])
+    }
+  })
+
   it('scales the alpha of a tint by its color\'s opacity', () => {
     const alphas = (color: string) => {
       const fx = new effects.Effects(src().entry('Misc/game.nfx'))
@@ -221,11 +268,57 @@ describe.skipIf(!ISO)('game', () => {
         .flatMap((b) => b.lines.slice(1).map(nfxtool.tokens).filter((t) => t.length >= 2 && ['startcol', 'endcol'].includes(t[0].toLowerCase())))
         .map((t) => nfxtool.scanFloats(t[1], 4)[0])
     }
-    const full = alphas('#FF2020'), half = alphas('#FF202080'), none = alphas('#FF202000')
+    const full = alphas('#FF2020'), half = alphas('#FF202080'), faint = alphas('#FF202001')
     expect(full.length).toBeGreaterThan(0)
     expect(alphas('#FF2020FF')).toEqual(full)
-    expect(none.every((a) => a === 0)).toBe(true)
     expect(half.every((a, i) => Math.abs(a - full[i] * 128 / 255) < 0.01)).toBe(true)
+    expect(faint.every((a, i) => Math.abs(a - full[i] / 255) < 0.01)).toBe(true)
+  })
+
+  it('hides effects with a fully transparent tint instead of copying them', () => {
+    const fx = new effects.Effects(src().entry('Misc/game.nfx'))
+    const names = fx.tinted(['htFlightFX', 'htFireballExp', 'htPowerOn'], '#40A0FF00', 'testfx')
+    const by = new Map(nfxtool.blocks(nfxtool.readNfx(fx.build())).map((b) => [b.name.toLowerCase(), b]))
+    const block = (name: string) => by.get(names.get(name.toLowerCase())!.toLowerCase())!
+    const refs = (b: nfxtool.Block) => b.lines.slice(1).map(nfxtool.tokens).filter((t) => t.length >= 2 && ['effectname', 'effect0'].includes(t[0].toLowerCase())).map((t) => t[1])
+    // what only draws is one empty controller
+    const none = names.get('htflightfx')!
+    expect(block('htFlightFX').lines).toEqual([`controller ${none}`, 'end'])
+    for (const n of ['htPowerOn', 'htPowerOn0', 'htFirebExp0', 'victimBurnStd0']) expect(names.get(n.toLowerCase()), n).toBe(none)
+    // a controller also naming what a tint leaves alone is copied
+    expect(refs(block('victimBurnStd'))).toEqual([none, 'victimBurnStd1'])
+    // the explosion's damage stays
+    const exp = block('htFireballExp')
+    expect(nfxtool.TYPES[exp.type]).toBe('controller')
+    const dam = names.get('htfballdam')!
+    expect(refs(exp)).toEqual([dam, none, none])
+    expect(nfxtool.TYPES[block('htFballDam').type]).toBe('damage')
+    expect(refs(block('htFballDam'))).toEqual([names.get('victimburnstd')])
+    expect(fx.drawsFire(['htFlightFX'])).toBe(true)
+    // Human Torch's costume 2 tinted and costume 1 hidden fits the game's cache
+    const plans = effects.tintPlans(src(), new R.BaseCharacter(src(), 'humantorch'))
+    expect(plans.all.extra).toBe(8224)
+    expect(plans[effects.planKey('all', [true, false])].extra).toBe(0)
+    expect(plans[effects.planKey('all', [true, true])].bytes).toBeLessThan(plans.all.bytes / 10)
+    expect(plans.all.grey).toEqual([8192, 0])
+    expect(plans[effects.planKey('all', [true, false])].grey).toEqual([0, 0])
+    expect(effects.tintLevel(plans, 'all', flames.cost({ ...imperfect.defaultFlames(), parts: ['r_hand'] }), [true, false])).toBe('all')
+  })
+
+  it('builds a hidden costume without growing the cache or borrowing the grey sprite', () => {
+    const c = { ...tinted('humantorch'), aura: { mode: 'tint', tint: 'all', color: '#40A0FF00', alt_color: '#50FF50' } }
+    const r = new Builder(src(), c).build()
+    expect(r.cache).toBeNull()
+    expect(D.readEffectCache(r.dol!)).toBe(nfxtool.CACHE_SIZE)
+    const greys = (costume: string) => latin1(r.adds.get(`Bundles/synth${costume}.ngt`)!).split(/\s+/).filter((n) => n.toLowerCase() === flames.GREY_SPRITE.toLowerCase()).length
+    expect([greys(''), greys('_alt')]).toEqual([0, 1])
+    const nvb = nvbtool.parseNvb(r.adds.get('Misc/PLAYER_Synth.nvb')!)
+    const fields = nvbtool.parseNdb(src().entry('Misc/defaults.ndb')).fields('PLAYER')
+    const flight = nvb.slots(101, fields[101][1])!.map((v) => latin1(v).split('\0')[0])
+    const by = new Map(nfxtool.blocks(nfxtool.readNfx(r.sets.get('Misc/game.nfx')!)).map((b) => [b.name, b]))
+    expect(by.get(flight[0])!.lines).toEqual([`controller ${flight[0]}`, 'end'])
+    expect(by.get(flight[5])!.lines.length).toBeGreaterThan(2)
+    expect(r.notes.some((n) => n.includes("costume 1's effects hidden"))).toBe(true)
   })
 
   it('builds a synthetic character', () => {
