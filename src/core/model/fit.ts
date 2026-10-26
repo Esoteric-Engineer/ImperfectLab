@@ -110,7 +110,7 @@ class Torso implements VertexMap {
   }
 }
 
-// keep the three strongest bones per vertex and renormalise
+// keep the three strongest bones per vertex and renormalize
 export function top3(weights: Weights): Weights {
   const acc = new Map<number, number>()
   for (const [b, w] of weights) if (w > 0) acc.set(b, (acc.get(b) ?? 0) + w)

@@ -82,13 +82,13 @@ const LABELS: Record<string, string> = {
   WallAttackStart: 'Wall attack', SuperWallAttackStart: 'Super wall attack', Block: 'Block', DodgeForward: 'Dodge forward', DodgeBack: 'Dodge back',
 }
 
-export const CATEGORIES = ['Attacks', 'Super attacks', 'Air and wall attacks', 'Ranged attacks', 'Throws', 'Defence', 'Reactions', 'Carrying and weapons', 'Movement and other']
+export const CATEGORIES = ['Attacks', 'Super attacks', 'Air and wall attacks', 'Ranged attacks', 'Throws', 'Defense', 'Reactions', 'Carrying and weapons', 'Movement and other']
 
 function category(id: string): string {
   if (/Ranged/.test(id)) return 'Ranged attacks'
   if (/Wield|Carry|Swat|Catch/.test(id)) return 'Carrying and weapons'
   if (/Throw/.test(id)) return 'Throws'
-  if (/Redirect|Block|Dodge(?!Exit)/.test(id)) return 'Defence'
+  if (/Redirect|Block|Dodge(?!Exit)/.test(id)) return 'Defense'
   if (/JumpAttack|WallAttack|AirAttack|SwingAttack|WireAttack/.test(id)) return 'Air and wall attacks'
   if (/^Super.*Attack|SuperAttack/.test(id)) return 'Super attacks'
   if (/Attack/.test(id)) return 'Attacks'

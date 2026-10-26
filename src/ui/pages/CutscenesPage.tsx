@@ -59,7 +59,7 @@ export function CutscenesPage() {
             <b>Changing custcenes or audio never affects match memory.</b> The game plays a cutscene from the disc a piece at a time and streams its audio, so a bigger cutscene or new audio is never loaded whole.
           </li>
           <li>
-            <b>Effects.</b> A custom character has room for only a few effects besides its own; each <b>Effects</b> choice says how many fit. Projectiles and sounds in a cutscene are always the custom characters's, and an aura tint does not recolour the other character's effects.
+            <b>Effects.</b> A custom character has room for only a few effects besides its own; each <b>Effects</b> choice says how many fit. Projectiles and sounds in a cutscene are always the custom character's, and an aura tint does not recolor the other character's effects.
           </li>
         </ul>
       </details>

@@ -50,7 +50,7 @@ export function frame(picture: RgbaImage, f: Framing, size: [number, number]): R
   return images.cropResize(picture, [f.center[0] - hw, f.center[1] - hh, f.center[0] + hw, f.center[1] + hh], size)
 }
 
-// Fits the picture's width to `k` output widths with its top at the top, centred on the top of the figure.
+// Fits the picture's width to `k` output widths with its top at the top, centered on the top of the figure.
 export function defaultFraming(picture: RgbaImage, size: [number, number], k: number): Framing {
   const [x0, y0, x1, y1] = picture.bbox() ?? [0, 0, picture.width, picture.height]
   const scale = (k * size[0]) / Math.max(1, x1 - x0)

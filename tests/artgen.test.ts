@@ -71,7 +71,7 @@ describe('art generator', () => {
     expect(pixel(joined, 5, 1)).toEqual([0, 0, 0, 255])
   })
 
-  it('zooms the selected tile in on the same centre', () => {
+  it('zooms the selected tile in on the same center', () => {
     const t = { normal: [template('charselect-normal-bg'), template('charselect-normal-frame')], selected: [template('charselect-selected-bg'), template('charselect-selected-frame')] } as A.ArtTemplates['tiles']
     const pic = new RgbaImage(64, 32)
     pic.paste(RgbaImage.filled(20, 32, [255, 255, 255, 255]), 22, 0)
@@ -81,7 +81,7 @@ describe('art generator', () => {
     expect(lit(selected)).toBeGreaterThan(lit(normal))
   })
 
-  it('frames a picture by scale and centre', () => {
+  it('frames a picture by scale and center', () => {
     const pic = new RgbaImage(40, 80)
     pic.paste(RgbaImage.filled(20, 60, [9, 9, 9, 255]), 10, 10)
     const f = A.defaultFraming(pic, [8, 4], 2)
