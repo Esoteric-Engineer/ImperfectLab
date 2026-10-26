@@ -1045,3 +1045,54 @@ describe.skipIf(!ISO)('stretching limbs', () => {
     expect(r.notes.some((n) => n.includes('Jump stretches the right leg and left leg 1 m longer'))).toBe(true)
   })
 })
+
+describe.skipIf(!ISO)('size', () => {
+  const src = () => gameSource()
+  const records = (data: Uint8Array) => new Map(ngbtool.parse(data).map((r) => [r.name.toLowerCase(), r]))
+  const thing = (size: number) => {
+    const c = tinted('thing')
+    c.aura = { ...c.aura, mode: 'base' }
+    c.size = size
+    return c
+  }
+
+  it('grows the skeleton, animations, strides and collision body', () => {
+    const r = new Builder(src(), thing(1.3)).build()
+    const t = new R.Templates(r.sets.get('Misc/Global.not')!)
+    expect(R.f32(t.prop('act_Synth', R.P_RADIUS))).toBeCloseTo(0.715, 5)
+    expect(R.f32(t.prop('plr_altSynth', R.P_HEIGHT))).toBeCloseTo(2.834, 5)
+    expect(R.f32(t.prop('act_Thing', R.P_HEIGHT))).toBeCloseTo(2.18, 5)
+
+    const base = new R.BaseCharacter(src(), 'thing')
+    const [, theirs] = ngmtool.read(base.bundleFiles()[0])
+    const [, mine] = ngmtool.read(r.adds.get('Bundles/synth.ngm')!)
+    for (const i of [0, 1]) mine[i].nodes.forEach(([, b], n) => b.slice(0, 3).forEach((x, k) => expect(x).toBeCloseTo(theirs[i].nodes[n][1][k] * 1.3, 4)))
+
+    const set = nmstool.parse(r.adds.get('Motions/Synth.nms')!).motions()
+    const was = nmstool.parse(src().entry('Motions/Thing.nms')).motions()
+    const walk = set.get('walk')!
+    expect(walk.opts).toContain('2.522')
+    const old = records(src().entry('Bundles/thing.ngb')), now = records(r.adds.get('Bundles/synth.ngb')!)
+    expect(old.has(walk.anim.toLowerCase())).toBe(false)
+    const a = old.get(was.get('walk')!.anim.toLowerCase())!, b = now.get(walk.anim.toLowerCase())!
+    const posed = ngbtool.pose(theirs[0], a, 10), grown = ngbtool.pose(mine[0], b, 10)
+    grown.forEach(([, p], n) => p.forEach((x, k) => expect(x).toBeCloseTo(posed[n][1][k] * 1.3, 2)))
+    const dive = now.get(set.get('jumpattackpeak')!.anim.toLowerCase())!, base0 = old.get(was.get('jumpattackpeak')!.anim.toLowerCase())!
+    const root = (rec: ngbtool.Record) => rec.tracks.find(([b, ch]) => (b & 0xffff) === 0 && ch === 1)
+    expect(root(dive)).toEqual(root(base0))
+    expect(dive.tracks).not.toEqual(base0.tracks)
+
+    const brute = nmstool.parse(src().entry('Motions/Brute.nms')).motions()
+    for (const [state, m] of set) {
+      if (/victim/i.test(state)) expect(m.anim.toLowerCase()).toBe((was.get(state) ?? brute.get(state))!.anim.toLowerCase())
+      else expect(old.has(m.anim.toLowerCase()), state).toBe(false)
+    }
+    for (const state of brute.keys()) expect(set.has(state) || !old.has(brute.get(state)!.anim.toLowerCase()), state).toBe(true)
+  })
+
+  it('leaves a character of the base\'s size on the base\'s animations', () => {
+    const r = new Builder(src(), thing(1)).build()
+    expect(r.adds.has('Motions/Synth.nms')).toBe(false)
+    expect(R.f32(new R.Templates(r.sets.get('Misc/Global.not')!).prop('act_Synth', R.P_RADIUS))).toBeCloseTo(0.55, 5)
+  })
+})

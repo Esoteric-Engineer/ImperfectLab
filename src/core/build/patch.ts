@@ -2,6 +2,7 @@
 // The builder works out every changed and added file as bytes, then patch() streams the new disc image.
 import { latin1 } from '../bytes'
 import { LabError } from '../errors'
+import { formatG } from '../format'
 import { GC_DISC_SIZE, type Sink, writeIso } from '../game/disc'
 import { planRepack, writeBig } from '../game/bigrepack'
 import * as D from '../game/dol'
@@ -230,7 +231,7 @@ export class Builder {
         const empty = flames.markers(render, sk, copy, c.flames.parts)
         if (!alt && empty.length) this.note(`flames: no part of the model follows the ${empty.join(', ')} bone, so its flame sits on the bone itself`)
       }
-      const [data] = bundle.buildNgm(ngm, render, renames)
+      const [data] = bundle.buildNgm(ngm, render, renames, c.size)
       const otherNames = new Set(models.slice(1).map((m) => m.name.toLowerCase()))
       const missing = [...renames.keys()].filter((old) => !otherNames.has(old))
       if (missing.length) this.note(`the base bundle has no model named ${missing.join(', ')}`)
@@ -245,7 +246,7 @@ export class Builder {
       this.bundleAdds.set(`Bundles/${b}.tpl`, tplOut)
       if (!alt) {
         const st = render.streams[0]
-        this.note(`model: ${render.meshes.length} parts, ${st.vertices.length} positions, ${st.refs.length} vertices, ${render.indices.length / 3} triangles; scale ${f.S.toFixed(3)}; .ngm ${data.length} bytes, .tpl ${tplOut.length} bytes`)
+        this.note(`model: ${render.meshes.length} parts, ${st.vertices.length} positions, ${st.refs.length} vertices, ${render.indices.length / 3} triangles; scale ${f.S.toFixed(3)}${c.size !== 1 ? `; size ${formatG(c.size)}x the base's` : ''}; .ngm ${data.length} bytes, .tpl ${tplOut.length} bytes`)
       }
     }
     if (stats.clampedUvs) this.note(`warning: ${stats.clampedUvs} UVs were outside the range the game stores and were clamped`)
@@ -368,7 +369,7 @@ export class Builder {
     if (!ownMotions(c)) return null
     const thrown = c.baseMoves.throw_reach
     const fx = Object.keys(c.moveReach).length ? new effects.Effects(this.src.entry('Misc/game.nfx')) : null
-    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx)
+    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size)
     for (const [k, v] of m.files) this.r.adds.set(k, v)
     if (thrown !== undefined) this.note(`baton throw: reaches ${thrown} m (${this.base.label}'s about 8)`)
     for (const n of m.notes) this.note(n)
@@ -394,7 +395,7 @@ export class Builder {
     if (stretchReturns(c)) on |= reach.RETURN_ABILITY
     const mode = c.aura.mode === 'swap' ? 'swap' : 'base'
     this.r.sets.set('Misc/Global.not', templates.build(this.src.entry('Misc/Global.not'), this.base, c.internalName, mode, effect1, description,
-      on || off ? [on, off] : null, gp.health ?? null, extra, motionSet, (c.baseMoves.throw_cable ?? true) && c.flames.base_effect, effect2))
+      on || off ? [on, off] : null, gp.health ?? null, extra, motionSet, (c.baseMoves.throw_cable ?? true) && c.flames.base_effect, effect2, c.size))
   }
 
   picture(slot: string): RgbaImage | null {
@@ -501,7 +502,7 @@ export class Builder {
 
 // Whether the character gets its own motion set and animation bundles (Builder.motions).
 export function ownMotions(c: Character): boolean {
-  return c.baseMoves.throw_reach !== undefined || Object.keys(c.moves).length > 0 || Object.keys(c.moveReach).length > 0
+  return c.baseMoves.throw_reach !== undefined || Object.keys(c.moves).length > 0 || Object.keys(c.moveReach).length > 0 || c.size !== 1
 }
 
 // A stretched hit that comes back from where it lands needs RETURN_ABILITY and main.dol's mirrored skip.

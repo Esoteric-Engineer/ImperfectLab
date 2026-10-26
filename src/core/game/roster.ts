@@ -38,7 +38,7 @@ export const VOICES: Record<string, string> = {
 const BODY_CLASSES: Record<number, string> = { 0: 'male', 1: 'female', 2: 'brute' }
 export const LANGS = ['ENG', 'FRA', 'GER', 'ITA']
 
-export const P_MODEL = 0x0a, P_PHYSMODEL = 0x0f, P_MOTIONSET = 0x13, P_CASTID = 0x14, P_DESCRIPTIONID = 0x15
+export const P_RADIUS = 0x08, P_HEIGHT = 0x09, P_MODEL = 0x0a, P_PHYSMODEL = 0x0f, P_MOTIONSET = 0x13, P_CASTID = 0x14, P_DESCRIPTIONID = 0x15
 export const P_SKELETONID = 0x27, P_EFFECT1 = 0x28, P_EFFECT2 = 0x29, P_ACTOR_FLAGS = 0x30, P_ABILITIES = 0x32
 export const P_HEALTH = 0x33, P_MAXHEALTH = 0x34, P_SHADOWMODEL = 0x75
 

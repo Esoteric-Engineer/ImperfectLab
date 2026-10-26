@@ -95,6 +95,18 @@ Moves that stretch a limb out and back (`move_reach`, [`FORMAT.md`](FORMAT.md)):
 - **A stretched jump only changes how the legs look**: how high and far it goes, its timing and the character's collision are the base's. The feet can pass through a ledge or thin floor at the peak, and the landing and falling animations are not stretched.
 - **Memory and space** are as for swapped moves: the character has its own copy of the base's animations.
 
+## Size
+
+A character made bigger or smaller than its base (`model.size`, [`FORMAT.md`](FORMAT.md)):
+
+- **What grows with it**: the model, the base's skeleton, hit regions and shadow, the attack volumes, every animation's bone offsets (so steps and lunges on the ground cover more or less ground), each motion's stride, and the collision body's radius and height (`act_` template `RADIUS` and `HEIGHT`), which the camera, lock-on and aura heights follow.
+- **Travel off the ground stays the base's.** An animation whose root rises or falls (jumps, air attacks, dives, wall moves, swings, ledge pull-ups, being knocked into the air) moves the character as far as the base, since sized travel made air attacks miss and wouldn't meet the arena's ledges. So a big character jumps no higher than its base, and a small one as high.
+- **What doesn't**: run and sprint speeds (`stats.gameplay.run_speed` and `sprint_speed` change them, and the legs keep pace with the ground either way), grab, aim and pickup ranges, which are measured to the opponent, and effects.
+- **The collision body has a floor.** The game makes it at least 0.6 m plus its diameter tall, with a 0.6 m gap under it, so a very small character still takes up about 0.7 m.
+- **Throws are approximate.** The opponent's side of a throw is played at their size, so a big thrower's hands land beyond them and a small one's short of them, and the throw's camera is the base's.
+- **Cutscenes play on the sized skeleton** with the base's animations and camera.
+- **Memory and space** are as for swapped moves: the character has its own copy of the base's animations, so a match against the base loads both.
+
 ## Cutscenes
 
 Cutscenes and audio changed on the **Cutscenes** page (`cutscenes`, [`FORMAT.md`](FORMAT.md)):
@@ -114,4 +126,3 @@ The roster tables in `main.dol` hold 20 records, and the 19th character takes th
 - **The section takes 3,296 bytes (two characters) to 4,384 bytes (nine) from the memory a match loads into.** It sits where the arena used to start, `0x806809C0`, and the arena now starts after it. `OSInit` picks the arena start from `__ArenaLo`, or from `_stack_addr` when the disc's BI2 debug flag is below 2; Dolphin boots GVLE69 through the second, so both are moved.
 - **`main.dol` no longer fits before the FST** (the disc leaves 64 bytes), so the FST moves after it and `boot.bin` points to it.
 - **Each character adds its four HUD portraits to every `HUD/hud<LANG>.1.gsh`** (and its name banner to `hud<LANG>.2.gsh`), which the game loads for a match.
-- Tested in Dolphin: the 18 original characters in a match, and the Doctor Doom and Captain America mod's disc picking both new characters with this `main.dol` in place of its compiled one. The same layout with 27 characters played in Dolphin, including matches against the 27th. A loader that sets the boot info's arena start itself (`0x80000030`) would put the arena over the tables; Dolphin does not.

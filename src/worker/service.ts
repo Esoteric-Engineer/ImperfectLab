@@ -333,7 +333,7 @@ export class Service {
     const base = this.base(c.base)
     const images = materialImages(m, c)
     const bySlot = new Map(included.map((x, i) => [i, images.get(x.gltfMaterial) ?? null]))
-    const fitted = fittedMeshes(tris, bySlot)
+    const fitted = fittedMeshes(tris, bySlot, c.size)
     let stats: PreviewResult['stats']
     try {
       stats = this.build(c, tris, included)
@@ -347,7 +347,7 @@ export class Service {
       fitted: previewTextures(fitted),
       source: previewTextures(sourceMeshes(m, c, f.flip)),
       base: needBase ? previewTextures(baseMeshes(this.src(), base)) : null,
-      gameBones: gameBones(sk),
+      gameBones: gameBones(sk, c.size),
       sourceBones: sourceBones(m, f.flip),
       stats,
     }

@@ -90,6 +90,7 @@ Game bone numbers in `model` belong to the base's body class (male, female or br
 - `mapping`: game bone number (a node of the base's skeleton, as ImperfectLab lists them) to the name of a joint of the GLB's skin. A GLB mesh with no skin is bound to its node, named `mesh:<node name>`.
 - `overrides`: joint name to game bone number, for joints that are not the primary choice of any game bone (for example a middle finger following the index finger's game bone). Every other joint follows its nearest mapped ancestor.
 - `fit.scale`: `null` (the legs are made the base's length) or a number. `fit.torso_squash`: fit the torso to the base's shoulder height. `fit.flip`: `null` (detected from the arms), or whether the model faces backwards. `fit.floor_from_mesh`: measure the ankles' height from the model's lowest point instead of its origin, for a model whose origin isn't at its feet. Absent means off, and a file only carries it when on.
+- `size`: 0.1-3.0, the character's size in the game as a multiple of the base's. The fitted model, the base's skeleton, its own animations (except how far the character travels off the ground), hit regions, attack volumes and collision body grow or shrink with it ([`LIMITATIONS.md`](LIMITATIONS.md)). Absent means 1, and a file only carries it when it isn't. Older ImperfectLab builds refuse a file with it.
 - `materials`: one entry per GLB material used.
   - `include`: draw it or not.
   - `suffix`: its game material is `<internal_name>[_alt]<suffix>`; empty or `_` plus 1-7 letters and digits,

@@ -10,12 +10,14 @@ import type { GameSource } from '../game/source'
 import * as ngbtool from '../mnroi/ngbtool'
 import * as ngmtool from '../mnroi/ngmtool'
 import * as nmstool from '../mnroi/nmstool'
+import { scaleModel } from '../model/bundle'
 import { loadTable, Skeleton } from '../model/skeleton'
 import type { MoveEffect, MoveLines, MoveReach } from '../package/imperfect'
 import * as basemoves from './basemoves'
 import type { Effects } from './effects'
 import { EFFECT_FIELDS, effectNames, OWN_EFFECTS, Slots } from './effectslots'
 import * as reach from './reach'
+import { scaleMotionSet, scaleRecord, strides } from './size'
 import * as tuning from './tuning'
 
 export const SLOTS = ['', '-t0', '-t1', '-t2']
@@ -448,7 +450,8 @@ export interface MotionFiles {
 }
 
 export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: string, moves: Record<string, string>, throwReach?: number,
-  choice: Record<string, MoveEffect> = {}, plan: EffectPlan | null = null, stretches: Record<string, MoveReach> = {}, fx: Effects | null = null): MotionFiles {
+  choice: Record<string, MoveEffect> = {}, plan: EffectPlan | null = null, stretches: Record<string, MoveReach> = {}, fx: Effects | null = null,
+  size = 1): MotionFiles {
   const set = motionSetOf(base), stem = stemOf(set), name = internal.toLowerCase()
   const own = nmstool.parse(src.entry(`Motions/${set}`))
   const bundles = loadBundles(src, stem)
@@ -456,6 +459,19 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
   const [, models] = ngmtool.read(base.bundleFiles()[0])
   const mine = resolved(src, own, holds(bundles))
   const notes: string[] = []
+  const sized = new Set<string>()
+  const sizedRec = (rec: ngbtool.Record) => (size !== 1 ? scaleRecord(rec, size) : rec)
+  if (size !== 1) {
+    models[0] = scaleModel(models[0], size)
+    const victims = new Set([...mine].filter(([k]) => VICTIM.test(k)).map(([, m]) => m.anim.toLowerCase()))
+    for (const [slot, recs] of bundles) {
+      bundles.set(slot, recs.map((r) => {
+        if (victims.has(r.name.toLowerCase())) return r
+        sized.add(r.name.toLowerCase())
+        return sizedRec(r)
+      }))
+    }
+  }
   const displaced = new Set<string>()
   if (throwReach !== undefined) {
     const main = bundles.get('') ?? []
@@ -487,7 +503,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       if (old) displaced.add(old.anim.toLowerCase())
       const found = SLOTS.flatMap((slot): [string, ngbtool.Record, ngbtool.Record][] => {
         const rec = theirBundles.get(slot)?.find((r) => r.name.toLowerCase() === m.anim.toLowerCase())
-        return rec ? [[slot, rec, VICTIM.test(state) ? rec : effects(remapRecord(rec, map))]] : []
+        return rec ? [[slot, rec, VICTIM.test(state) ? rec : effects(sizedRec(remapRecord(rec, map)))]] : []
       })
       // One name in every slot: the set names one animation, and the game loads the slot for the opponent's body class, whose record can differ.
       const changed = found.find(([, rec, moved]) => !ngbtool.sameMotion(moved, rec))
@@ -580,6 +596,20 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
   const used = new Set([...resolved(src, own, () => true).values()].map((m) => m.anim.toLowerCase()))
   for (const l of own.lines) if (l.motion) used.add(l.motion.anim.toLowerCase())
   for (const [slot, recs] of bundles) bundles.set(slot, recs.filter((r) => !displaced.has(r.name.toLowerCase()) || used.has(r.name.toLowerCase())))
+  if (size !== 1) {
+    // the base's records keep their names until here, and get their own now so a match against the base keeps both
+    const names = new Map<string, string>()
+    for (const recs of bundles.values()) for (const r of recs) if (sized.has(r.name.toLowerCase()) && !names.has(r.name.toLowerCase())) names.set(r.name.toLowerCase(), ownName(r))
+    for (const [slot, recs] of bundles) bundles.set(slot, recs.map((r) => ({ ...r, name: names.get(r.name.toLowerCase()) ?? r.name })))
+    const listed = own.motions()
+    const inherited = [...resolved(src, own, () => true)].filter(([k]) => !listed.has(k)).map(([, m]) => m)
+    for (const [old, next] of names) own.rename(old, next)
+    scaleMotionSet(own, size)
+    for (const m of inherited) {
+      const next = names.get(m.anim.toLowerCase())
+      if (next) own.set({ state: m.state, anim: next, opts: strides(m.opts, size) })
+    }
+  }
   const files = new Map<string, Uint8Array>([[`Motions/${motionSetName(internal)}`, own.build()]])
   let after = 0
   for (const [slot, recs] of bundles) {
@@ -587,6 +617,6 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     after += data.length
     files.set(`Bundles/${name}${slot}.ngb`, data)
   }
-  if (Object.keys(moves).length) notes.push(`moves: animations ${Math.round(after / 1024)} KB (${base.label}'s ${Math.round(before / 1024)} KB)`)
+  if (Object.keys(moves).length || size !== 1) notes.push(`${size !== 1 ? 'size' : 'moves'}: animations ${Math.round(after / 1024)} KB (${base.label}'s ${Math.round(before / 1024)} KB)`)
   return { motionSet: motionSetName(internal), files, notes }
 }

@@ -57,6 +57,22 @@ describe('round trip', () => {
     expect(imperfect.save(d)).toEqual(imperfect.save(c))
   })
 
+  it('writes model.size only when it is not 1', () => {
+    const c = character()
+    expect((imperfect.manifest(c).model as Json).size).toBeUndefined()
+    expect(imperfect.load(imperfect.save(c)).size).toBe(1)
+    c.size = 1.3
+    expect((imperfect.manifest(c).model as Json).size).toBe(1.3)
+    const d = imperfect.load(imperfect.save(c))
+    expect(d.size).toBe(1.3)
+    expect(imperfect.save(d)).toEqual(imperfect.save(c))
+    const m = imperfect.manifest(c) as Json
+    const bad = (size: unknown) => () => imperfect.fromManifest({ ...m, model: { ...(m.model as Json), size } }, new Map())
+    expect(bad(0.05)).toThrow(/from 0.1 to 3/)
+    expect(bad(4)).toThrow(/from 0.1 to 3/)
+    expect(bad('big')).toThrow(/must be a number/)
+  })
+
   it('finds problems', () => {
     const c = character()
     expect(imperfect.problems(c).filter((p) => p[0] === 'error')).toEqual([])

@@ -32,6 +32,7 @@ export const AURA_MODES = ['base', 'swap', 'tint']
 export const AURA_TINTS = ['all', 'power']
 export const FLAME_PARTS = ['head', 'chest', 'r_hand', 'l_hand', 'r_foot', 'l_foot']
 export const FLAME_SIZE: [number, number] = [0.5, 2.0]
+export const SIZE: [number, number] = [0.1, 3.0]
 export const LIFT = ['light', 'medium', 'heavy']
 export const GAMEPLAY: Record<string, [number, number, boolean]> = {
   damage_taken: [0.1, 3.0, false], health: [10, 1000, true], run_speed: [1.0, 30.0, false],
@@ -136,6 +137,7 @@ export interface Character {
   mapping: Map<number, string>
   overrides: Map<string, number>
   fit: { scale: number | null; torso_squash: boolean; flip: boolean | null; floor_from_mesh?: boolean }
+  size: number
   materials: Material[]
   aura: { mode: string; tint: string; color: string; alt_color: string }
   flames: Flames
@@ -182,6 +184,7 @@ export function newCharacter(): Character {
     mapping: new Map(),
     overrides: new Map(),
     fit: { scale: null, torso_squash: true, flip: null },
+    size: 1,
     materials: [],
     aura: { mode: 'base', tint: 'all', color: '#40A0FF', alt_color: '#50FF50' },
     flames: defaultFlames(),
@@ -240,6 +243,7 @@ export function manifest(c: Character): Json {
       mapping: Object.fromEntries([...c.mapping].sort((a, b) => a[0] - b[0]).map(([k, v]) => [String(k), v])),
       overrides: Object.fromEntries([...c.overrides].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))),
       fit: fitJson(c.fit),
+      size: c.size !== 1 ? c.size : undefined,
       materials: c.materials.map(materialJson),
     },
     aura: c.aura,
@@ -378,7 +382,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
         license: str(o.license ?? '', 'credits.assets', 500)!, url: str(o.url ?? '', 'credits.assets', 500)! }
     }),
   }
-  const mo = keys(m.model ?? {}, ['mapping', 'overrides', 'fit', 'materials'], 'model')
+  const mo = keys(m.model ?? {}, ['mapping', 'overrides', 'fit', 'size', 'materials'], 'model')
   const mapping = typed<Record<string, unknown>>(mo.mapping ?? {}, 'object', 'model.mapping')
   if (Object.keys(mapping).length > 256) throw new LabError('manifest: the mapping is too long')
   for (const [k, v] of Object.entries(mapping)) {
@@ -395,6 +399,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     flip: typeof fit.flip === 'boolean' ? fit.flip : null,
     floor_from_mesh: typed<boolean>(fit.floor_from_mesh ?? false, 'boolean', 'fit.floor_from_mesh'),
   }
+  c.size = num(mo.size, 'model.size', SIZE[0], SIZE[1]) ?? 1
   const mats = typed<unknown[]>(mo.materials ?? [], 'array', 'model.materials')
   if (mats.length > 16) throw new LabError('manifest: at most 16 materials')
   for (const d0 of mats) {
