@@ -75,6 +75,26 @@ describe('round trip', () => {
     expect(d.baseMoves).toEqual({ throw_reach: 35, throw_cable: false })
   })
 
+  it('saves and loads the range grab', () => {
+    const c = character()
+    c.base = 'daredevil'
+    c.baseMoves = { range_grab: true }
+    c.moves = { WirePull: 'spiderman' }
+    const d = imperfect.load(imperfect.save(c))
+    expect(d.baseMoves).toEqual({ range_grab: true })
+    expect(imperfect.problems(d).filter(([l]) => l === 'error')).toEqual([])
+  })
+
+  it('asks the range grab for its animation', () => {
+    const c = character()
+    c.base = 'daredevil'
+    c.baseMoves = { range_grab: true }
+    expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes('ranged pickup'))).toBe(true)
+    c.baseMoves = {}
+    c.moves = { WirePull: 'spiderman' }
+    expect(imperfect.problems(c).some(([l, m]) => l === 'warning' && m.includes('never play'))).toBe(true)
+  })
+
   it('keeps base moves to the bases that have them', () => {
     const c = character()
     c.baseMoves = { throw_reach: 20 }
@@ -112,6 +132,37 @@ describe('round trip', () => {
     expect(() => imperfect.fromManifest({ ...m, stats: { gameplay: { super_throw_range: 50 } } }, new Map())).toThrow(/from 1 to 20/)
     c.moveEffects = { Throw: 'theirs' }
     expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes("effects can't be changed"))).toBe(true)
+  })
+
+  it('saves and loads stretched moves', () => {
+    const c = character()
+    expect(imperfect.manifest(c).move_reach).toBeUndefined()
+    c.moveReach = { SuperAttackFar: { distance: 15 }, WireSwing: {}, Attack1: { distance: 1.5, limbs: ['right_arm'] } }
+    const d = imperfect.load(imperfect.save(c))
+    expect(d.moveReach).toEqual(c.moveReach)
+    const m = imperfect.manifest(c) as Json
+    const bad = (move_reach: Json) => () => imperfect.fromManifest({ ...m, move_reach }, new Map())
+    expect(bad({ Nothing: {} })).toThrow(/unknown move/)
+    expect(bad({ Attack1: { distance: 50 } })).toThrow(/from 1 to 35/)
+    expect(bad({ Attack1: { limbs: ['tail'] } })).toThrow(/limbs is a list/)
+    expect(bad({ Attack1: { limbs: [] } })).toThrow(/limbs is a list/)
+    expect(bad({ Attack1: { limbs: ['left_arm', 'left_arm'] } })).toThrow(/limbs is a list/)
+    expect(bad({ Attack1: { speed: 2 } })).toThrow(/unknown key/)
+    c.base = 'daredevil'
+    c.baseMoves = { throw_reach: 30 }
+    expect(imperfect.problems(c).some(([l, msg]) => l === 'error' && msg.includes('stretch'))).toBe(true)
+  })
+
+  it('saves and loads stretched jumps', () => {
+    const c = character()
+    c.moveReach = { Jump: { distance: 0.8, hold: true }, SuperRunJump: { distance: 1.5, limbs: ['left_leg'] } }
+    expect(imperfect.load(imperfect.save(c)).moveReach).toEqual(c.moveReach)
+    const m = imperfect.manifest(c) as Json
+    const bad = (move_reach: Json) => () => imperfect.fromManifest({ ...m, move_reach }, new Map())
+    expect(bad({ Jump: { distance: 5 } })).toThrow(/from 0.25 to 3/)
+    expect(bad({ Attack1: { distance: 0.5 } })).toThrow(/from 1 to 35/)
+    expect(bad({ Attack1: { distance: 2, hold: true } })).toThrow(/jumps only/)
+    expect(bad({ Jump: { distance: 1, hold: 'yes' } })).toThrow(/wrong type/)
   })
 
   it('finds problems with moves', () => {
@@ -286,6 +337,8 @@ describe('hostile files', () => {
       (m) => ((m.base = 'daredevil'), (m.base_moves = { throw_reach: 100 })),
       (m) => ((m.base = 'daredevil'), (m.base_moves = { throw_cable: 'no' })),
       (m) => ((m.base = 'daredevil'), (m.base_moves = { grab: 'thing' })),
+      (m) => ((m.base = 'daredevil'), (m.base_moves = { range_grab: 'yes' })),
+      (m) => (m.base_moves = { range_grab: true }),
       (m) => (m.moves = { NotAMove: 'thing' }),
       (m) => (m.moves = { SuperThrow: 'galactus' }),
       (m) => (m.moves = { SuperThrow: 3 }),

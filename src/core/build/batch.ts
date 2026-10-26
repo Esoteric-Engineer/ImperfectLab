@@ -12,7 +12,7 @@ import { type Character, hasCutscenes, problems as characterProblems, type Probl
 import * as effects from './effects'
 import * as moves from './moves'
 import { motionSetName, SLOTS } from './moves'
-import { Builder, ownMotions, type PatchOutput, type Progress, Result, tuningFields, write } from './patch'
+import { Builder, mirrors, ownMotions, paintsReach, type PatchOutput, type Progress, Result, tuningFields, write } from './patch'
 import { templateNames } from './templates'
 import * as tuning from './tuning'
 import * as ui from './ui'
@@ -37,8 +37,13 @@ export function batchTints(source: GameSource, chars: Batch): [(string | null)[]
   const cut = (which: number[]) => asked.map((t, i) => (which.includes(i) ? lower(t) : t))
   const tries = [asked, ...full.map((i) => cut([i])), ...full.slice(1).map((_, k) => cut(full.slice(0, k + 2)))]
   const lines = (fx: effects.Effects) => chars.forEach((c, i) => {
-    if ((c.moveLines.color === null && c.moveLines.alt_color === null) || !Object.values(c.moveEffects).includes('theirs')) return
-    moves.planEffects(source, bases[i], c.moveEffects, fx, c.moveLines, [`x${i}f`, `x${i}a`], [], moves.movedEffects(source, bases[i], c.moves))
+    if (c.moveLines.color === null && c.moveLines.alt_color === null) return
+    const prefixes: [string, string] = [`x${i}f`, `x${i}a`]
+    if (Object.values(c.moveEffects).includes('theirs')) moves.planEffects(source, bases[i], c.moveEffects, fx, c.moveLines, prefixes, [], moves.movedEffects(source, bases[i], c.moves))
+    if (paintsReach(c)) {
+      const fids = moves.reachLineFields(source, bases[i], c.moveReach, c.moves, c.moveEffects, fx)
+      moves.paintLines(fx, new tuning.Tuning(source, bases[i]), fids, c.moveLines, prefixes)
+    }
   })
   const seen = new Map<string, number>()
   for (const t of tries) {
@@ -119,7 +124,7 @@ export function buildBatch(source: GameSource, chars: Batch, progress: Progress 
     r.cache = Math.max(...caches)
     r.dol = D.growEffectCache(r.dol, r.cache)
   }
-  if (batch.some((c) => c.baseMoves.throw_reach !== undefined)) r.dol = D.mirrorSkip(r.dol)
+  if (batch.some(mirrors)) r.dol = D.mirrorSkip(r.dol)
   r.notes = [...notes, ...results.flatMap((x, i) => x.notes.map((n) => `${batch[i].displayName}: ${n}`))]
   return r
 }
@@ -150,7 +155,7 @@ function claims(c: Character): Set<string> {
 }
 
 // Whether the character gets its own tuning file, and so a line in Misc/nvblist.txt (Builder.tuning).
-const tuned = (c: Character) => c.aura.mode === 'tint' || Object.keys(tuningFields(c)).length > 0 || hasCutscenes(c.cutscenes) || Object.values(c.moveEffects).includes('theirs')
+const tuned = (c: Character) => c.aura.mode === 'tint' || Object.keys(tuningFields(c)).length > 0 || hasCutscenes(c.cutscenes) || Object.values(c.moveEffects).includes('theirs') || paintsReach(c)
 
 const gameBundle = (source: GameSource, name: string) => ['ngm', 'tpl'].reduce((n, ext) => n + (source.index.byName.get(`bundles/${name}.${ext}`)?.size ?? 0), 0)
 const builtBundle = (adds: Map<string, Uint8Array>, name: string) => ['ngm', 'tpl'].reduce((n, ext) => n + (adds.get(`Bundles/${name}.${ext}`)?.length ?? 0), 0)

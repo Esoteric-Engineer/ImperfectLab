@@ -229,6 +229,15 @@ export class Effects {
     return this.tree([name]).some((b) => nfxtool.TYPES[b.type] === 'constraint')
   }
 
+  // Each constraint in the effect's tree, null when unset.
+  lines(name: string | null): { start: [number, number] | null; end: [number, number] | null }[] {
+    return this.tree([name]).filter((b) => nfxtool.TYPES[b.type] === 'constraint').map((b) => {
+      const kv = new Map(b.lines.slice(1).map(nfxtool.tokens).filter((t) => t.length >= 2).map((t) => [t[0].toLowerCase(), Number(t[1])]))
+      const at = (kind: string, index: string): [number, number] | null => (kv.has(kind) ? [kv.get(kind)!, kv.get(index) ?? 0] : null)
+      return { start: at('markertype', 'marker_index'), end: at('endmarker', 'endmarker_id') }
+    })
+  }
+
   painted(name: string, color: string, prefix: string): string {
     const key = `${name.toLowerCase()} ${color.toLowerCase()}`
     if (!this.paints.has(key)) this.paints.set(key, this.tinted([name], color, prefix, paint).get(name.toLowerCase()) ?? name)

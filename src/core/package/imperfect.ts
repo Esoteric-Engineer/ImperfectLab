@@ -5,7 +5,8 @@ import { LabError } from '../errors'
 import { decodeImage } from '../image/decode'
 import { encodePng, pngSize } from '../image/png'
 import type { RgbaImage } from '../image/rgba'
-import { MOVE_IDS, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
+import { MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
+import { DISTANCE, JUMP_DISTANCE, JUMPS, type Limb, LIMBS } from '../build/reach'
 import { BASES } from '../game/roster'
 import * as asftool from '../mnroi/asftool'
 import { GLB, type Json } from '../mnroi/gltf'
@@ -37,7 +38,7 @@ export const GAMEPLAY: Record<string, [number, number, boolean]> = {
   sprint_speed: [1.0, 40.0, false], rage_per_super: [0.0, 100.0, false], rage_duration: [1000, 120000, true],
   super_throw_range: [1.0, 20.0, false],
 }
-export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable'] }
+export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable', 'range_grab'] }
 export type WallKey = 'wall_climb' | 'wall_run'
 export interface Wall {
   key: WallKey
@@ -95,6 +96,7 @@ export type Gameplay = Partial<Record<'damage_taken' | 'health' | 'run_speed' | 
 export interface BaseMoves {
   throw_reach?: number
   throw_cable?: boolean
+  range_grab?: boolean
 }
 
 export interface Flames {
@@ -111,6 +113,11 @@ export type MoveEffect = (typeof MOVE_EFFECTS)[number]
 export interface MoveLines {
   color: string | null
   alt_color: string | null
+}
+export interface MoveReach {
+  distance?: number
+  limbs?: Limb[]
+  hold?: boolean
 }
 
 export const CUTSCENE_EFFECTS = ['theirs', 'none'] as const
@@ -136,6 +143,7 @@ export interface Character {
   moves: Record<string, string>
   moveEffects: Record<string, MoveEffect>
   moveLines: MoveLines
+  moveReach: Record<string, MoveReach>
   cutscenes: Cutscenes
   ui: { select: Partial<Record<Pose, Placement>>; fade: number; strip_scale: number | null; ready_voice: string | null; banner: boolean }
   files: Map<string, Uint8Array>
@@ -181,6 +189,7 @@ export function newCharacter(): Character {
     moves: {},
     moveEffects: {},
     moveLines: { color: null, alt_color: null },
+    moveReach: {},
     cutscenes: { audio: {}, effects: {} },
     ui: { select: {}, fade: 36, strip_scale: null, ready_voice: null, banner: true },
     files: new Map(),
@@ -239,6 +248,7 @@ export function manifest(c: Character): Json {
     moves: c.moves,
     move_effects: Object.keys(c.moveEffects).length ? c.moveEffects : undefined,
     move_lines: c.moveLines.color !== null || c.moveLines.alt_color !== null ? c.moveLines : undefined,
+    move_reach: Object.keys(c.moveReach).length ? c.moveReach : undefined,
     cutscenes: hasCutscenes(c.cutscenes) ? { ...c.cutscenes, effects: Object.keys(c.cutscenes.effects).length ? c.cutscenes.effects : undefined } : undefined,
     files: Object.fromEntries([...files].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, v]) => [k, sha(v)])),
   }
@@ -277,7 +287,13 @@ export function problems(c: Character): Problem[] {
       out.push(['warning', 'wall jump animations are picked but neither wall climbing nor wall running is on, so they never play'])
     }
   }
+  if (c.baseMoves.range_grab) {
+    if (!c.moves.WirePull) out.push(['error', 'the range grab needs the ranged pickup: pick it on the Moves page'])
+  } else if ((BASE_MOVES[c.base] ?? []).includes('range_grab') && RANGE_GRAB.some((id) => c.moves[id])) out.push(['warning', 'ranged pickup animations are picked but the range grab is off, so they never play'])
   if (c.moves.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach changes the base\'s own super attack far: set that move back to the base\'s, or untick the reach'])
+  if (c.moveReach.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach and a stretch both change super attack far: untick one of them on the Moves page'])
+  else if (c.moveReach.SuperRiseAttack && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach and a stretched super rise attack both need the baton\'s long hit segment: untick one of them on the Moves page'])
+  for (const id of Object.keys(c.moveReach)) if (!MOVE_IDS.has(id)) out.push(['error', `there is no move ${id} to stretch`])
   if (c.flames.body && c.flames.parts.length) out.push(['error', 'flames are on the whole body or on chosen parts, not both: pick one on the Aura page'])
   for (const kind of CUTSCENE_KINDS) {
     const from = c.cutscenes[kind]
@@ -337,7 +353,7 @@ function upgrade(m: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Character {
-  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'cutscenes', 'files'], 'the manifest')
+  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'cutscenes', 'files'], 'the manifest')
   if (m.format !== FORMAT) throw new LabError('not a .imperfect file')
   upgrade(m)
   if (m.game !== GAME) throw new LabError(`this file is for ${m.game}, not ${GAME}`)
@@ -453,11 +469,12 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
       glow: p.glow ? color(p.glow, 'glow') : null,
     }
   }
-  const mv = keys(m.base_moves ?? {}, ['throw_reach', 'throw_cable'], 'base_moves')
+  const mv = keys(m.base_moves ?? {}, ['throw_reach', 'throw_cable', 'range_grab'], 'base_moves')
   c.baseMoves = {}
   const reach = num(mv.throw_reach, 'base_moves.throw_reach', THROW_REACH[0], THROW_REACH[1])
   if (reach !== null) c.baseMoves.throw_reach = reach
   if (mv.throw_cable !== null && mv.throw_cable !== undefined) c.baseMoves.throw_cable = typed<boolean>(mv.throw_cable, 'boolean', 'base_moves.throw_cable')
+  if (mv.range_grab !== null && mv.range_grab !== undefined) c.baseMoves.range_grab = typed<boolean>(mv.range_grab, 'boolean', 'base_moves.range_grab')
   for (const k of Object.keys(c.baseMoves)) {
     if (!(BASE_MOVES[c.base] ?? []).includes(k as keyof BaseMoves)) throw new LabError(`manifest: base_moves.${k} only applies to a ${movesBases(k)} base`)
   }
@@ -480,6 +497,28 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   c.moveLines = {
     color: ln.color === null || ln.color === undefined ? null : color(ln.color, 'move_lines.color'),
     alt_color: ln.alt_color === null || ln.alt_color === undefined ? null : color(ln.alt_color, 'move_lines.alt_color'),
+  }
+  c.moveReach = {}
+  for (const [id, v] of Object.entries(typed<Record<string, unknown>>(m.move_reach ?? {}, 'object', 'move_reach'))) {
+    if (!MOVE_IDS.has(id)) throw new LabError(`manifest: unknown move ${JSON.stringify(id.slice(0, 40))}`)
+    const r = keys(v, ['distance', 'limbs', 'hold'], `move_reach.${id}`)
+    const out: MoveReach = {}
+    const jump = JUMPS.includes(id)
+    const [lo, hi] = jump ? JUMP_DISTANCE : DISTANCE
+    const distance = num(r.distance, `move_reach.${id}.distance`, lo, hi)
+    if (distance !== null) out.distance = distance
+    if (r.hold !== null && r.hold !== undefined) {
+      if (!jump) throw new LabError(`manifest: move_reach.${id}.hold is for the jumps only`)
+      out.hold = typed<boolean>(r.hold, 'boolean', `move_reach.${id}.hold`)
+    }
+    if (r.limbs !== null && r.limbs !== undefined) {
+      const limbs = typed<unknown[]>(r.limbs, 'array', `move_reach.${id}.limbs`)
+      if (!limbs.length || limbs.some((l) => !LIMBS.includes(l as Limb)) || new Set(limbs).size !== limbs.length) {
+        throw new LabError(`manifest: move_reach.${id}.limbs is a list of ${LIMBS.join(', ')}`)
+      }
+      out.limbs = limbs as Limb[]
+    }
+    c.moveReach[id] = out
   }
   const cs = keys(m.cutscenes ?? {}, [...CUTSCENE_KINDS, 'audio', 'effects'], 'cutscenes')
   c.cutscenes = { audio: {}, effects: {} }

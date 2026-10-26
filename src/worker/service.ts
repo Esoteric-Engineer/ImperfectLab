@@ -176,7 +176,8 @@ export class Service {
   }
 
   moveCatalog(): moves.Catalog {
-    return moves.catalog(this.src())
+    const src = this.src()
+    return moves.catalog(src, new effects.Effects(src.entry('Misc/game.nfx')))
   }
 
   cutsceneCatalog(): cutscenes.Catalog {
