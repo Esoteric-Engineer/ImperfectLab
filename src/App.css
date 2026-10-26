@@ -549,17 +549,17 @@ table th, table td {
   text-align: left;
 }
 
-table.damage {
+table.grid {
   width: 100%;
   margin-top: 8px;
 }
 
-table.damage th, table.damage td {
+table.grid th, table.grid td {
   padding: 8px 10px;
   vertical-align: middle;
 }
 
-table.damage thead th {
+table.grid thead th {
   color: var(--muted);
   font-size: 12px;
   font-weight: 600;
@@ -568,31 +568,76 @@ table.damage thead th {
   border-bottom: 1px solid var(--line);
 }
 
-table.damage tbody tr + tr td {
+table.grid tbody tr + tr td {
   border-top: 1px solid var(--line);
 }
 
-table.damage tbody tr:hover {
+table.grid tbody tr:hover {
   background: color-mix(in srgb, var(--panel2) 60%, transparent);
 }
 
-table.damage .check {
+table.grid .check {
   white-space: nowrap;
-  font-weight: 600;
 }
 
-table.damage .num {
+table.grid .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+table.grid input.short {
+  width: 80px;
+}
+
+table.grid select {
+  width: 100%;
+  min-width: 0;
+}
+
+table.damage .check {
+  font-weight: 600;
 }
 
 table.damage td:nth-child(2) {
   width: 100%;
 }
 
-table.damage input.short {
-  width: 80px;
+table.fixed {
+  table-layout: fixed;
+}
+
+table.fixed td {
+  overflow-wrap: anywhere;
+}
+
+table.fixed th.c-move {
+  width: 190px;
+}
+
+table.fixed th.c-anim {
+  width: 270px;
+}
+
+table.fixed th.c-limb {
+  width: 150px;
+}
+
+table.fixed th.c-fx {
+  width: 240px;
+}
+
+table.fixed td.anim {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+table.fixed td.fx {
+  font-size: 13px;
+}
+
+table.fixed td.fx select {
+  margin-bottom: 2px;
 }
 
 .chips {
