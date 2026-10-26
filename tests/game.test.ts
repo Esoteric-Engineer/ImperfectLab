@@ -737,6 +737,36 @@ describe.skipIf(!ISO)('moves', () => {
     })
   }
 
+  it('knows which bases are stunned at low energy', () => {
+    const t = new R.Templates(src().entry('Misc/Global.not'))
+    expect(R.keys().filter((k) => new R.BaseCharacter(src(), k, t).abilities & 0x8000)).toEqual(imperfect.STUN_BASES)
+  })
+
+  it('turns off Megalith\'s low-energy stun', () => {
+    const c = tinted('megalith')
+    c.aura = { ...c.aura, mode: 'base' }
+    const abilities = (n: string) => R.u32(new R.Templates(new Builder(src(), c).build().sets.get('Misc/Global.not')!).prop(n, R.P_ABILITIES))!
+    const megalith = abilities('plr_Megalith')
+    expect(megalith & 0x8000).toBe(0x8000)
+    expect(abilities('plr_Synth')).toBe(megalith)
+    c.gameplay = { low_energy_stun: false }
+    expect(imperfect.problems(c).filter(([l]) => l === 'error')).toEqual([])
+    for (const n of ['plr_Synth', 'plr_altSynth']) expect(abilities(n)).toBe((megalith & ~0x8000) >>> 0)
+  })
+
+  it('gives Wolverine Megalith\'s low-energy stun', () => {
+    const c = tinted('wolverine')
+    c.aura = { ...c.aura, mode: 'base' }
+    c.gameplay = { low_energy_stun: true }
+    c.moves = { LowEnergyStun: 'megalith' }
+    expect(imperfect.problems(c).filter(([l, m]) => l === 'error' || m.includes('never play'))).toEqual([])
+    const r = new Builder(src(), c).build()
+    const anim = nmstool.parse(r.adds.get('Motions/Synth.nms')!).motions().get('lowenergystun')!.anim.toLowerCase()
+    expect(moves.SLOTS.some((slot) => records(r.adds.get(`Bundles/synth${slot}.ngb`)!).has(anim))).toBe(true)
+    const t = new R.Templates(r.sets.get('Misc/Global.not')!)
+    for (const n of ['plr_Synth', 'plr_altSynth']) expect(R.u32(t.prop(n, R.P_ABILITIES))! & 0x8000).toBe(0x8000)
+  })
+
   it('builds two characters with moves in one patch', () => {
     const a = daredevil()
     a.moves = { SuperThrow: 'thing' }

@@ -5,7 +5,7 @@ import { LabError } from '../errors'
 import { decodeImage } from '../image/decode'
 import { encodePng, pngSize } from '../image/png'
 import type { RgbaImage } from '../image/rgba'
-import { MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
+import { LOW_ENERGY_STUN, MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
 import { DISTANCE, JUMP_DISTANCE, JUMPS, type Limb, LIMBS } from '../build/reach'
 import { BASES } from '../game/roster'
 import * as asftool from '../mnroi/asftool'
@@ -54,6 +54,7 @@ export const WALL: Wall[] = [
   { key: 'wall_run', label: 'wall running', does: 'runs on walls', states: WALL_RUN, bases: ['wolverine', 'elektra', 'aftershock', 'daredevil', 'biohazard'] },
 ]
 export const FLYERS = ['johnnyohm', 'storm', 'heatwave', 'humantorch', 'ironman', 'magneto', 'roekel']
+export const STUN_BASES = ['megalith']
 export const THROW_REACH: [number, number] = [8, 35]
 export const POSES = ['rest', 'ready', 'readyalt'] as const
 export const CUTSCENE_KINDS = ['intro', 'victory', 'finisher'] as const
@@ -92,6 +93,7 @@ export type Gameplay = Partial<Record<'damage_taken' | 'health' | 'run_speed' | 
   lift?: string
   wire_swing?: boolean
   flight?: boolean
+  low_energy_stun?: boolean
   wall_climb?: boolean
   wall_run?: boolean
 }
@@ -290,6 +292,11 @@ export function problems(c: Character): Problem[] {
       } else if (!has && w.states.some((id) => c.moves[id])) out.push(['warning', `${w.label} animations are picked but ${w.label} is off, so they never play`])
     }
     if (c.gameplay.flight === false && !FLYERS.includes(c.base)) out.push(['error', `${BASES[c.base][0]} can't fly: untick flight on the Stats page`])
+    const stuns = STUN_BASES.includes(c.base), stun = c.gameplay.low_energy_stun
+    if (stun === stuns) out.push(['error', `${BASES[c.base][0]} ${stuns ? 'already has' : 'has no'} low-energy stun: set it back on the Moves page`])
+    else if (stun) {
+      for (const id of LOW_ENERGY_STUN) if (!c.moves[id]) out.push(['error', `the low-energy stun needs ${MOVE_IDS.get(id)!.label.toLowerCase()}: pick it on the Moves page`])
+    } else if (LOW_ENERGY_STUN.some((id) => c.moves[id])) out.push(['warning', 'the low-energy stun animation is picked but the stun is off, so it never plays'])
     if (!WALL.some((w) => c.gameplay[w.key] || w.bases.includes(c.base)) && WALL_JUMPS.some((id) => c.moves[id])) {
       out.push(['warning', 'wall jump animations are picked but neither wall climbing nor wall running is on, so they never play'])
     }
@@ -447,7 +454,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     if (v.length !== 6) throw new LabError('manifest: six display stats per costume')
     c.stats[k] = v.map((x) => num(x, 'a display stat', STAT_RANGE[0], STAT_RANGE[1], false, true)!)
   }
-  const gp = keys(st.gameplay ?? {}, [...Object.keys(GAMEPLAY), 'lift', 'wire_swing', 'flight', ...WALL.map((w) => w.key)], 'stats.gameplay')
+  const gp = keys(st.gameplay ?? {}, [...Object.keys(GAMEPLAY), 'lift', 'wire_swing', 'flight', 'low_energy_stun', ...WALL.map((w) => w.key)], 'stats.gameplay')
   c.gameplay = {}
   for (const [k, [lo, hi, integer]] of Object.entries(GAMEPLAY)) {
     if (gp[k] !== null && gp[k] !== undefined) (c.gameplay as Record<string, number>)[k] = num(gp[k], k, lo, hi, true, integer)!
@@ -461,6 +468,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     if (typed<boolean>(gp.flight, 'boolean', 'flight')) throw new LabError('manifest: flight can only be false, to turn off a base\'s flight')
     c.gameplay.flight = false
   }
+  if (gp.low_energy_stun !== null && gp.low_energy_stun !== undefined) c.gameplay.low_energy_stun = typed<boolean>(gp.low_energy_stun, 'boolean', 'low_energy_stun')
   for (const { key } of WALL) if (gp[key] !== null && gp[key] !== undefined && typed<boolean>(gp[key], 'boolean', key)) c.gameplay[key] = true
   const ui = keys(m.ui ?? {}, ['select', 'fade', 'strip_scale', 'ready_voice', 'banner'], 'ui')
   const sel = keys(ui.select ?? {}, [...POSES], 'ui.select')

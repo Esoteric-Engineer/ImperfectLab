@@ -1,8 +1,8 @@
-import { addOptions, animations, CATEGORIES, type Catalog, type Move, MOVE_IDS, MOVES, options, RANGE_GRAB, WALL_JUMPS } from '../../core/build/moves'
+import { addOptions, animations, CATEGORIES, type Catalog, LOW_ENERGY_STUN, type Move, MOVE_IDS, MOVES, options, RANGE_GRAB, WALL_JUMPS } from '../../core/build/moves'
 import * as reach from '../../core/build/reach'
 import { formatG } from '../../core/format'
 import { keys, label } from '../../core/game/roster'
-import { BASE_MOVES, GAMEPLAY, type MoveEffect, THROW_REACH, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
+import { BASE_MOVES, GAMEPLAY, type MoveEffect, STUN_BASES, THROW_REACH, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
 import { ColorButton, Note, NumberInput, Warning } from '../components/common'
 import { store, useStore } from '../store'
 
@@ -39,7 +39,7 @@ export function MovesPage() {
   }
   const mine = cat?.[c.base]
   const cross = mine ? Object.entries(c.moves).filter(([, from]) => cat![from] && cat![from].body !== mine.body).map(([id]) => id) : []
-  const added = new Set(cat && mine ? [...wallRows(cat).map((r) => r.id), ...(c.baseMoves.range_grab ? RANGE_GRAB : [])] : [])
+  const added = new Set(cat && mine ? [...wallRows(cat).map((r) => r.id), ...(c.baseMoves.range_grab ? RANGE_GRAB : []), ...(c.gameplay.low_energy_stun ? LOW_ENERGY_STUN : [])] : [])
   const swapped = Object.keys(c.moves).filter((id) => !added.has(id)).length
 
   return (
@@ -80,6 +80,7 @@ export function MovesPage() {
       )}
       {mine && WALL.some((w) => !w.bases.includes(c.base)) && <WallMoves cat={cat!} />}
       {mine && <GrabRange cat={cat!} />}
+      {mine && <LowEnergyStun cat={cat!} />}
       {mine && <Stretching cat={cat!} />}
       <LineColors cat={cat} />
       {(BASE_MOVES[c.base] ?? []).length > 0 && <BaseMoves cat={cat} />}
@@ -544,6 +545,50 @@ function RangeGrab({ cat }: { cat: Catalog }) {
         <table className="gameplay">
           <thead><tr><th>Action</th><th>Taken from</th><th>Effects</th></tr></thead>
           <tbody>{RANGE_GRAB.map((id) => <WallRow key={id} cat={cat} move={MOVE_IDS.get(id)!} required />)}</tbody>
+        </table>
+      )}
+    </>
+  )
+}
+
+function setStun(cat: Catalog, on: boolean) {
+  const c = store.character
+  const own = STUN_BASES.includes(c.base)
+  if (on === own) delete c.gameplay.low_energy_stun
+  else c.gameplay.low_energy_stun = on
+  if (own) return
+  const from = STUN_BASES.find((k) => cat[k])
+  if (on && from) takeAll(cat, from, LOW_ENERGY_STUN)
+  else if (!on) {
+    for (const id of LOW_ENERGY_STUN) {
+      delete c.moves[id]
+      delete c.moveEffects[id]
+    }
+  }
+}
+
+function LowEnergyStun({ cat }: { cat: Catalog }) {
+  const c = store.character
+  const own = STUN_BASES.includes(c.base)
+  const on = c.gameplay.low_energy_stun ?? own
+  return (
+    <>
+      <h3>Low-energy stun</h3>
+      <Note>
+        {own && "When Megalith's energy is low, he's stunned in place for a moment."}
+        {!own && "Megalith's low-energy stun effect. The stun animation is copied into this character like a swapped move."}
+        
+      </Note>
+      <div className="row">
+        <label className="check"><input type="checkbox" checked={on} onChange={(e) => {
+          setStun(cat, e.target.checked)
+          store.touch('character')
+        }} /> Low-energy stun</label>
+      </div>
+      {on && !own && (
+        <table className="gameplay">
+          <thead><tr><th>Action</th><th>Taken from</th><th>Effects</th></tr></thead>
+          <tbody>{LOW_ENERGY_STUN.map((id) => <WallRow key={id} cat={cat} move={MOVE_IDS.get(id)!} required />)}</tbody>
         </table>
       )}
     </>

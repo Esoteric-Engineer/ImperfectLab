@@ -132,6 +132,7 @@ Older ImperfectLab builds refuse a file with `flames`.
   - `lift`: `light`, `medium` or `heavy`.
   - `wire_swing`: a boolean.
   - `flight`: `false` disallows flight on a base that flies. `true` is refused.
+  - `low_energy_stun`: `false` stops Megalith being stunned when his energy runs low. `true` gives the stun to another base (`moves` then names `LowEnergyStun`, taken from Megalith).
   - `wall_climb`: `true` lets a base that can't climb walls climb them (`moves` then names their animations). Not allowed on a base that already climbs.
   - `wall_run`: `true` lets a base that can't run on walls run on them, the same way. Not allowed on a base that already runs on walls.
   - `super_throw_range`: 1-20, how far away, in meters, the opponent can be for the super throw (R + X grab) to start.

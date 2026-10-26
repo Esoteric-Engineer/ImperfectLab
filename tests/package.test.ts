@@ -224,6 +224,26 @@ describe('round trip', () => {
     expect(() => imperfect.fromManifest({ ...imperfect.manifest(c), stats: { gameplay: { flight: true } } }, new Map())).toThrow(/can only be false/)
   })
 
+  it('turns the low-energy stun off for Megalith and on for other bases', () => {
+    const c = character()
+    const errors = () => imperfect.problems(c).filter(([l]) => l === 'error').map(([, m]) => m)
+    c.base = 'megalith'
+    c.gameplay = { low_energy_stun: false }
+    expect(errors()).toEqual([])
+    expect(imperfect.load(imperfect.save(c)).gameplay).toEqual({ low_energy_stun: false })
+    c.gameplay = { low_energy_stun: true }
+    expect(errors().some((m) => m.includes('already has low-energy stun'))).toBe(true)
+    c.base = 'wolverine'
+    expect(errors().some((m) => m.includes('needs'))).toBe(true)
+    c.moves = { LowEnergyStun: 'megalith' }
+    expect(errors()).toEqual([])
+    expect(imperfect.load(imperfect.save(c)).gameplay).toEqual({ low_energy_stun: true })
+    c.gameplay = {}
+    expect(imperfect.problems(c).some(([l, m]) => l === 'warning' && m.includes('never plays'))).toBe(true)
+    c.gameplay = { low_energy_stun: false }
+    expect(errors().some((m) => m.includes('has no low-energy stun'))).toBe(true)
+  })
+
   it('finds problems with wall running, and keeps a base\'s own wall jumps apart', () => {
     const c = character()
     const errors = () => imperfect.problems(c).filter(([l]) => l === 'error').map(([, m]) => m)
@@ -356,6 +376,7 @@ describe('hostile files', () => {
       (m) => (m.stats.gameplay.damage_taken = 'lots'),
       (m) => (m.stats.gameplay.flight = true),
       (m) => (m.stats.gameplay.flight = 'no'),
+      (m) => (m.stats.gameplay.low_energy_stun = 'no'),
       (m) => (m.model.materials[0].size = [300, 300]),
       (m) => (m.model.materials[0].texture = '../../etc/passwd'),
       (m) => (m.aura.mode = 'rainbow'),

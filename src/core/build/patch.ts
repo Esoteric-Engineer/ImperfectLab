@@ -39,6 +39,7 @@ export const WIRE = 0x80
 const WALL_BITS: Record<WallKey, number> = { wall_climb: 0x2, wall_run: 0x4000000 }
 const RANGE_GRAB_BIT = 0x2000
 const FLIGHT = 0x100001
+const LOW_ENERGY_STUN = 0x8000
 
 export type Progress = (stage: string, done?: number, total?: number) => void
 
@@ -390,6 +391,8 @@ export class Builder {
       else off |= WIRE
     }
     if (gp.flight === false) off |= FLIGHT
+    if (gp.low_energy_stun) on |= LOW_ENERGY_STUN
+    else if (gp.low_energy_stun === false) off |= LOW_ENERGY_STUN
     for (const w of WALL) if (gp[w.key]) on |= WALL_BITS[w.key]
     if (c.baseMoves.range_grab) on |= RANGE_GRAB_BIT
     if (stretchReturns(c)) on |= reach.RETURN_ABILITY
