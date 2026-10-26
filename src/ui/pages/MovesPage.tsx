@@ -70,8 +70,8 @@ export function MovesPage() {
           return (
             <details key={category} open={OPEN.has(category) || changed > 0}>
               <summary><b>{category}</b> <span className="muted">({rows.length}{changed ? `, ${changed} swapped` : ''})</span></summary>
-              <table className="gameplay">
-                <thead><tr><th>Move</th><th>{label(c.base)}'s animation</th><th>Taken from</th><th>Effects</th></tr></thead>
+              <table className="gameplay grid fixed">
+                <thead><tr><th className="c-move">Move</th><th className="c-anim">{label(c.base)}'s animation</th><th>Taken from</th><th className="c-fx">Effects</th></tr></thead>
                 <tbody>{rows.map((m) => <MoveRow key={m.id} cat={cat} move={m} />)}</tbody>
               </table>
             </details>
@@ -100,7 +100,7 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
   return (
     <tr>
       <td title={move.states.join(', ')}>{move.label}</td>
-      <td className="muted">{stem(first)}{more > 0 ? ` (+${more})` : ''}</td>
+      <td className="anim">{stem(first)}{more > 0 ? ` (+${more})` : ''}</td>
       <td>
         <select value={at >= 0 ? opts[at].from[0] : (picked ?? '')} disabled={locked || (!opts.length && !picked)}
           title={locked ? 'The baton throw reach changes this move: untick it below to swap the move' : undefined}
@@ -123,7 +123,7 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
         </select>
         {!opts.length && !picked && <span className="muted"> no other version</span>}
       </td>
-      <td>{picked && <MoveEffects id={move.id} from={picked} />}</td>
+      <td className="fx">{picked && <MoveEffects id={move.id} from={picked} />}</td>
     </tr>
   )
 }
@@ -232,8 +232,8 @@ function WallMoves({ cat }: { cat: Catalog }) {
         )}
       </div>
       {rows.length > 0 && (
-        <table className="gameplay">
-          <thead><tr><th>Action</th><th>Taken from</th><th>Effects</th></tr></thead>
+        <table className="gameplay grid fixed">
+          <thead><tr><th className="c-move">Action</th><th>Taken from</th><th className="c-fx">Effects</th></tr></thead>
           <tbody>{rows.map((r) => <WallRow key={r.id} cat={cat} move={MOVE_IDS.get(r.id)!} required={r.required} />)}</tbody>
         </table>
       )}
@@ -267,7 +267,7 @@ function WallRow({ cat, move, required }: { cat: Catalog; move: Move; required: 
           {picked && at < 0 && <option value={picked}>{label(picked)} (has no {move.label.toLowerCase()})</option>}
         </select>
       </td>
-      <td>{picked && <MoveEffects id={move.id} from={picked} />}</td>
+      <td className="fx">{picked && <MoveEffects id={move.id} from={picked} />}</td>
     </tr>
   )
 }
@@ -287,8 +287,8 @@ function GrabRange({ cat }: { cat: Catalog }) {
         How far away the opponent can be for the super throw (R + X grab) to start.
         A long-range grab (Daredevil's cable, Spider-Man's web) starts where the character stands; a close one first moves the character to the opponent, so a long range makes it slide over.
       </Note>
-      <table className="gameplay">
-        <thead><tr><th>Value</th><th>Base</th><th>New</th></tr></thead>
+      <table className="gameplay grid">
+        <thead><tr><th>Value</th><th className="num">Base</th><th>New</th></tr></thead>
         <tbody>
           <tr>
             <td><label className="check"><input type="checkbox" checked={have} onChange={(e) => {
@@ -296,7 +296,7 @@ function GrabRange({ cat }: { cat: Catalog }) {
               else delete gp.super_throw_range
               edited()
             }} /> Super throw grab range</label></td>
-            <td>{formatG(base)} m{from && cat[from] && cat[from].range !== base ? ` (${label(from)}'s ${formatG(cat[from].range)} m)` : ''}</td>
+            <td className="num">{formatG(base)} m{from && cat[from] && cat[from].range !== base ? ` (${label(from)}'s ${formatG(cat[from].range)} m)` : ''}</td>
             <td><span><NumberInput disabled={!have} min={RANGE[0]} max={RANGE[1]} step={0.5} value={gp.super_throw_range ?? base} onChange={(v) => {
               gp.super_throw_range = Math.round(v * 10) / 10
               edited()
@@ -401,8 +401,8 @@ function Stretching({ cat }: { cat: Catalog }) {
         return (
           <details key={category} open={on > 0}>
             <summary><b>{category}</b> <span className="muted">({mine.length}{on ? `, ${on} stretched` : ''})</span></summary>
-            <table className="gameplay">
-              <thead><tr><th>Move</th><th>Limb</th><th>How far</th></tr></thead>
+            <table className="gameplay grid fixed">
+              <thead><tr><th className="c-move">Move</th><th className="c-limb">Limb</th><th>How far</th></tr></thead>
               <tbody>{mine.map(([m, p]) => <StretchRow key={m.id} move={m} plan={p} />)}</tbody>
             </table>
           </details>
@@ -475,8 +475,8 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
         {farSwapped && <><br />Super attack far is swapped above, so the reach can't be changed.</>}
         {farStretched && <><br />Super attack far is stretched above, so the reach can't be changed.</>}
       </Note>
-      <table className="gameplay">
-        <thead><tr><th>Value</th><th>Base</th><th>New</th></tr></thead>
+      <table className="gameplay grid">
+        <thead><tr><th>Value</th><th className="num">Base</th><th>New</th></tr></thead>
         <tbody>
           <tr>
             <td><label className="check"><input type="checkbox" checked={reach} disabled={(farSwapped || farStretched) && !reach} onChange={(e) => {
@@ -484,7 +484,7 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
               else delete mv.throw_reach
               edited()
             }} /> Baton throw reach</label></td>
-            <td>{bv ? `${formatG(bv.gameplay.throw_reach)} m` : '-'}</td>
+            <td className="num">{bv ? `${formatG(bv.gameplay.throw_reach)} m` : '-'}</td>
             <td><span><NumberInput disabled={!reach} min={THROW_REACH[0]} max={THROW_REACH[1]} step={1} value={mv.throw_reach ?? null} onChange={(v) => {
               mv.throw_reach = Math.round(v * 10) / 10
               edited()
@@ -496,7 +496,7 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
               else delete mv.throw_cable
               edited()
             }} /> Baton cable</label></td>
-            <td>on</td>
+            <td className="num">on</td>
             <td><select disabled={!cable} value={mv.throw_cable === false ? 'off' : 'on'} onChange={(e) => { mv.throw_cable = e.target.value === 'on'; edited() }}>
               <option>off</option><option>on</option></select></td>
           </tr>
@@ -542,8 +542,8 @@ function RangeGrab({ cat }: { cat: Catalog }) {
         Lift strength on the Stats page affects which objects can be picked up. Reach defaults to 10m, but can also be adjusted by setting a stretch for the move.
       </Note>
       {on && (
-        <table className="gameplay">
-          <thead><tr><th>Action</th><th>Taken from</th><th>Effects</th></tr></thead>
+        <table className="gameplay grid fixed">
+          <thead><tr><th className="c-move">Action</th><th>Taken from</th><th className="c-fx">Effects</th></tr></thead>
           <tbody>{RANGE_GRAB.map((id) => <WallRow key={id} cat={cat} move={MOVE_IDS.get(id)!} required />)}</tbody>
         </table>
       )}
@@ -586,8 +586,8 @@ function LowEnergyStun({ cat }: { cat: Catalog }) {
         }} /> Low-energy stun</label>
       </div>
       {on && !own && (
-        <table className="gameplay">
-          <thead><tr><th>Action</th><th>Taken from</th><th>Effects</th></tr></thead>
+        <table className="gameplay grid fixed">
+          <thead><tr><th className="c-move">Action</th><th>Taken from</th><th className="c-fx">Effects</th></tr></thead>
           <tbody>{LOW_ENERGY_STUN.map((id) => <WallRow key={id} cat={cat} move={MOVE_IDS.get(id)!} required />)}</tbody>
         </table>
       )}

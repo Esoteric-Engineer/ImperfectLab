@@ -164,7 +164,7 @@ function Damage() {
         Each character has five damage values, and every attack hits with one of them. Changing a value changes each associated move's damage. Projectiles are not affected.<br />
         CPUs hit softer (on Easy) or harder (on Hard) than these values, but keep the same proportion.
       </Note>
-      <table className="gameplay damage">
+      <table className="gameplay grid damage">
         <thead><tr><th>Value</th><th>Moves</th><th className="num">Base</th><th>New</th><th className="num">Change</th></tr></thead>
         <tbody>
           {damage.KEYS.map((key, i) => {
