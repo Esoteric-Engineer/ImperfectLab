@@ -1,9 +1,11 @@
+import * as dsp from '../core/audio/dspadpcm'
 import { type Batch, buildBatch, checkBatch } from '../core/build/batch'
 import * as cutscenes from '../core/build/cutscenes'
 import { Builder, glowRgba, patch, type Progress, report, type Result, WIRE, write } from '../core/build/patch'
 import * as effects from '../core/build/effects'
 import * as moves from '../core/build/moves'
 import * as portraits from '../core/build/portraits'
+import * as sounds from '../core/build/sounds'
 import * as tuning from '../core/build/tuning'
 import * as ui from '../core/build/ui'
 import { LabError } from '../core/errors'
@@ -210,6 +212,18 @@ export class Service {
   decodeCutsceneAudio(data: Uint8Array): [Int16Array[], number] {
     const a = asftool.read(data)
     return [asftool.decode(a), asftool.info(a).rate]
+  }
+
+  soundCatalog(): sounds.Catalog {
+    return sounds.catalog(this.src())
+  }
+
+  soundPcm(base: string, index: number): [Int16Array, number] {
+    return sounds.pcm(this.src(), base, index)
+  }
+
+  encodeSound(pcm: Int16Array, rate: number): Uint8Array {
+    return dsp.writeDsp({ ...dsp.encode(pcm), rate, loop: null, loopContext: { ps: 0, hist1: 0, hist2: 0 } })
   }
 
   baseDetails(key: string): BaseDetails {

@@ -138,6 +138,17 @@ Cutscenes and audio changed on the **Cutscenes** page (`cutscenes`, [`FORMAT.md`
 - **Other body classes are approximate.** Their animations are mapped bone by bone, but limbs differ, as for swapped moves. The victim's side of a finisher is unchanged.
 - **New audio replaces the whole mix** (voice, music and sounds) and can be no longer than the track it replaces; a shorter one is padded with silence, because the cutscene keeps time with its audio.
 
+## Sounds
+
+Sounds replaced on the **Sounds** page (`sounds`, [`FORMAT.md`](FORMAT.md)):
+
+- **Only the base's sound effects.** Each character's sound effects are one AEMS bank, `Sounds/SFX_<base>.abk`. Voices and taunts are streamed from files every character shares (`SFX_common.ast`, `Sounds/ASF/`), and the select-screen voice is in the shared `SFX_FE.abk`, so they can't be changed for one character. A sound can only replace one the base already plays: the game's events pick a bank's sounds by their place in it.
+- **The character's own bank.** The patch copies the base's bank with the new sounds as `Sounds/SFX_<internal name>.abk` and rewrites `fn_80114420`, which loads each player's bank, in place: it picks a new character's bank by the player's template name (`plr_<name>`), since a new character shares its base's type ID. A sound used for several slots is stored once, and one that replaces a looping sound loops in full.
+- **A match against the base shares one set of sounds.** A bank's modules carry global AEMS IDs, and a copy keeps its base's, so the base's bank and the copy can't both be loaded. `fn_80114420` loads one bank per type ID, the first player's: in a match against the base, or against another character built on it, both fighters use the first player's sounds.
+- **Memory.** A match loads both players' banks. A bank may be no larger than `SFX_Roekel.abk` (969,672 bytes), the largest character bank, since a Roekel mirror match loads two of those. Uploads are mono DSP ADPCM, about 12 KB a second at 22 kHz, so the room for new sound, beyond what the replaced sounds took, runs from none on Roekel to about 40 seconds on Daredevil.
+- **Rates.** A sound with no rate in its bank header plays at 24,000 Hz (`fn_80258188`, the bank parser, sets it before reading the header).
+- **Names.** The game has none, only each sound's place in its bank. The names the **Sounds** page shows are our own, from `src/core/game/sounds.json` (base -> the sound's number as the page lists it -> name); a sound with an empty name shows only its number.
+
 ## More characters
 
 The roster tables in `main.dol` hold 20 records, and the 19th character takes the last one (a filler copy of the Thing). For a 20th and more, up to a 27th, the patch copies the three tables, grown to one record per character, into a new data section, and points their only four readers (`fn_80431CCC` and `fn_8044F070`) at the copies. `fn_8044F070` searches the order table up to a fixed index, which is raised with the count.

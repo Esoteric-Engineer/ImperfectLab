@@ -1,5 +1,6 @@
 // .imperfect files (docs/FORMAT.md): a character as a recipe plus the author's own assets.
 import { sha256 } from '@noble/hashes/sha2.js'
+import { readDsp } from '../audio/dspadpcm'
 import { toHex, utf8 } from '../bytes'
 import { LabError } from '../errors'
 import { decodeImage } from '../image/decode'
@@ -24,7 +25,10 @@ const STAT_RANGE = [1, 7]
 
 export const UI_SLOTS = ['select_rest', 'select_ready', 'select_readyalt', 'load_wide', 'load_narrow', 'load_wide_alt',
   'load_narrow_alt', 'tile', 'tile_selected', 'hud', 'hud_rage', 'hud_alt', 'hud_alt_rage', 'banner']
-export const MEMBER = new RegExp(`^(manifest\\.json|model/model\\.glb|textures/[A-Za-z0-9_-]{1,48}\\.png|ui/(${UI_SLOTS.join('|')})\\.png|cutscenes/[A-Za-z0-9_-]{1,48}\\.asf)$`)
+export const MEMBER = new RegExp(`^(manifest\\.json|model/model\\.glb|textures/[A-Za-z0-9_-]{1,48}\\.png|ui/(${UI_SLOTS.join('|')})\\.png|cutscenes/[A-Za-z0-9_-]{1,48}\\.asf|sounds/[A-Za-z0-9_-]{1,48}\\.dsp)$`)
+const SOUND_FILE = /^sounds\/[A-Za-z0-9_-]{1,48}\.dsp$/
+const GAME_SOUND = /^[a-z]+:\d{1,3}$/
+export const MAX_SOUND_SECONDS = 30
 const INTERNAL = /^[A-Za-z][A-Za-z0-9]{0,9}$/
 const DISPLAY = /^[A-Z0-9 .'&!-]{1,16}$/
 const SUFFIX = /^(_[A-Za-z0-9]{1,7})?$/
@@ -132,6 +136,8 @@ export const CUTSCENE_EFFECTS = ['theirs', 'none'] as const
 export type CutsceneEffects = (typeof CUTSCENE_EFFECTS)[number]
 export type Cutscenes = Partial<Record<CutsceneKind, string>> & { audio: Record<string, string>; effects: Partial<Record<CutsceneKind, CutsceneEffects>> }
 
+export type SoundSource = { game: string } | { file: string }
+
 export interface Character {
   internalName: string
   displayName: string
@@ -155,6 +161,7 @@ export interface Character {
   moveReach: Record<string, MoveReach>
   moveIdle: string[]
   cutscenes: Cutscenes
+  sounds: Record<string, SoundSource>
   ui: { select: Partial<Record<Pose, Placement>>; fade: number; strip_scale: number | null; ready_voice: string | null; banner: boolean }
   files: Map<string, Uint8Array>
 }
@@ -203,6 +210,7 @@ export function newCharacter(): Character {
     moveReach: {},
     moveIdle: [],
     cutscenes: { audio: {}, effects: {} },
+    sounds: {},
     ui: { select: {}, fade: 36, strip_scale: null, ready_voice: null, banner: true },
     files: new Map(),
   }
@@ -264,6 +272,7 @@ export function manifest(c: Character): Json {
     move_reach: Object.keys(c.moveReach).length ? c.moveReach : undefined,
     move_idle: c.moveIdle.length ? c.moveIdle : undefined,
     cutscenes: hasCutscenes(c.cutscenes) ? { ...c.cutscenes, effects: Object.keys(c.cutscenes.effects).length ? c.cutscenes.effects : undefined } : undefined,
+    sounds: Object.keys(c.sounds).length ? c.sounds : undefined,
     files: Object.fromEntries([...files].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, v]) => [k, sha(v)])),
   }
 }
@@ -333,6 +342,10 @@ export function problems(c: Character): Problem[] {
     if (!AUDIO_SLOT.test(slot)) out.push(['error', `there is no cutscene audio ${slot}`])
     else if (!c.files.has(member)) out.push(['error', `the new cutscene audio for ${slot.replace('_', ' ')} is missing`])
   }
+  for (const [slot, from] of Object.entries(c.sounds)) {
+    if ('file' in from && !c.files.has(from.file)) out.push(['error', `the new sound for sound ${Number(slot) + 1} is missing`])
+    if ('game' in from && !(GAME_SOUND.test(from.game) && Object.hasOwn(BASES, from.game.split(':')[0]))) out.push(['error', `sound ${Number(slot) + 1} is taken from an unknown character`])
+  }
   if (!c.files.get('ui/select_ready.png')) out.push(['warning', "no select-screen portrait: the base's portraits are used"])
   return out
 }
@@ -380,7 +393,7 @@ function upgrade(m: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Character {
-  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'cutscenes', 'files'], 'the manifest')
+  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'cutscenes', 'sounds', 'files'], 'the manifest')
   if (m.format !== FORMAT) throw new LabError('not a .imperfect file')
   upgrade(m)
   if (m.game !== GAME) throw new LabError(`this file is for ${m.game}, not ${GAME}`)
@@ -583,6 +596,22 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     if (c.cutscenes[kind as CutsceneKind] === undefined) throw new LabError(`manifest: cutscenes.effects names ${kind}, which is the base's own`)
     c.cutscenes.effects[kind as CutsceneKind] = how as CutsceneEffects
   }
+  const sounds = typed<Record<string, unknown>>(m.sounds ?? {}, 'object', 'sounds')
+  c.sounds = {}
+  for (const [slot, from] of Object.entries(sounds)) {
+    if (!/^\d{1,3}$/.test(slot)) throw new LabError(`manifest: sounds has a bad sound index ${JSON.stringify(slot.slice(0, 10))}`)
+    const d = keys(from, ['game', 'file'], `sounds.${slot}`)
+    if ((d.game === undefined) === (d.file === undefined)) throw new LabError(`manifest: sounds.${slot} needs one of game and file`)
+    if (d.game !== undefined) {
+      const ref = str(d.game, `sounds.${slot}.game`, 20, GAME_SOUND)!
+      if (!Object.hasOwn(BASES, ref.split(':')[0])) throw new LabError(`manifest: sounds.${slot} names an unknown base character`)
+      c.sounds[slot] = { game: ref }
+    } else {
+      const file = str(d.file, `sounds.${slot}.file`, 80, SOUND_FILE)!
+      if (!files.has(file)) throw new LabError(`manifest: sounds.${slot} names ${file}, which the file lacks`)
+      c.sounds[slot] = { file }
+    }
+  }
   c.glb = files.get('model/model.glb') ?? null
   files.delete('model/model.glb')
   c.files = files
@@ -634,6 +663,12 @@ export function checkMember(name: string, body: Uint8Array) {
   } else if (name.endsWith('.asf')) {
     try {
       asftool.check(body, MAX_AUDIO_SECONDS)
+    } catch (e) {
+      throw new LabError(`${name}: ${(e as Error).message}`)
+    }
+  } else if (name.endsWith('.dsp')) {
+    try {
+      readDsp(body, MAX_SOUND_SECONDS)
     } catch (e) {
       throw new LabError(`${name}: ${(e as Error).message}`)
     }

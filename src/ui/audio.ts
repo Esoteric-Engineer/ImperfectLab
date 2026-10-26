@@ -3,22 +3,22 @@ import { LabError } from '../core/errors'
 // Below this the start and end of an upload count as silence and are cut.
 const SILENCE = 0.004
 
-// A mono file goes in both channels, so silence at either end is trimmed.
-export async function decodeSound(file: Blob, rate: number, maxSeconds: number): Promise<Int16Array[]> {
+// A mono file goes in both channels, and one channel is a mix of all of them; silence at either end is trimmed.
+export async function decodeSound(file: Blob, rate: number, maxSeconds: number, channels = 2): Promise<Int16Array[]> {
   let decoded: AudioBuffer
   try {
-    decoded = await new OfflineAudioContext(2, 1, 44100).decodeAudioData(await file.arrayBuffer())
+    decoded = await new OfflineAudioContext(channels, 1, 44100).decodeAudioData(await file.arrayBuffer())
   } catch {
     throw new LabError('the browser could not read this sound file (WAV, MP3, OGG and M4A work in most)')
   }
   const length = Math.max(1, Math.ceil(Math.min(decoded.duration, maxSeconds + 1) * rate))
-  const ctx = new OfflineAudioContext(2, length, rate)
+  const ctx = new OfflineAudioContext(channels, length, rate)
   const node = ctx.createBufferSource()
   node.buffer = decoded
   node.connect(ctx.destination)
   node.start()
   const out = await ctx.startRendering()
-  const chans = [out.getChannelData(0), out.getChannelData(1)]
+  const chans = Array.from({ length: channels }, (_, c) => out.getChannelData(c))
   const loud = (i: number) => chans.some((ch) => Math.abs(ch[i]) >= SILENCE)
   let start = 0, end = length
   while (start < end && !loud(start)) start++

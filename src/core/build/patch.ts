@@ -30,6 +30,7 @@ import * as moves from './moves'
 import * as portraits from './portraits'
 import * as reach from './reach'
 import * as shaders from './shaders'
+import * as sounds from './sounds'
 import * as templates from './templates'
 import * as tuning from './tuning'
 import * as ui from './ui'
@@ -105,6 +106,9 @@ export class Builder {
         if (this.src.has(name)) throw new LabError(`the game already has ${name}: pick another internal name`)
       }
     }
+    if (ownSounds(c) && this.src.has(sounds.bankPath(D.soundBankName(c.internalName)))) {
+      throw new LabError(`the game already has a sound bank ${D.soundBankName(c.internalName)}: pick another internal name`)
+    }
     const hud = gshtool.readGsh(this.src.entry('HUD/hudENG.1.gsh'))
     if (hud.records.has('plr_' + n) || hud.records.has('plr_alt' + n)) throw new LabError(`the game already has HUD portraits named plr_${n}: pick another internal name`)
   }
@@ -117,6 +121,7 @@ export class Builder {
     this.buildFiles()
     if (this.r.cache !== null) this.r.dol = D.growEffectCache(this.r.dol, this.r.cache)
     if (mirrors(c)) this.r.dol = D.mirrorSkip(this.r.dol)
+    if (ownSounds(c)) this.r.dol = D.soundBanks(this.r.dol, [c.internalName])
     return this.r
   }
 
@@ -129,6 +134,7 @@ export class Builder {
     const description = this.tuning(power)
     const motionSet = this.motions()
     this.templates(effect1, description, projectiles, motionSet, effect2)
+    this.sounds()
     this.r.sets.set('Materials/Shaders/shaders.nsa', shaders.build(this.src.entry('Materials/Shaders/shaders.nsa'), materials, this.texture2))
     this.progress('Select screen, portraits and HUD')
     this.ui()
@@ -377,6 +383,14 @@ export class Builder {
     return m.motionSet
   }
 
+  sounds() {
+    const c = this.c
+    const bank = sounds.build(this.src, c)
+    if (!bank) return
+    this.r.adds.set(sounds.bankPath(D.soundBankName(c.internalName)), bank)
+    this.note(`sounds: ${Object.keys(c.sounds).length} of ${this.base.label}'s replaced; ${D.soundBankName(c.internalName)} is ${bank.length} of ${sounds.MAX_BANK} bytes`)
+  }
+
   templates(effect1: [string, string] | null, description: string | null, extra: nottool.Template[], motionSet: string | null = null,
     effect2: [string, string] | null = null) {
     const c = this.c, gp = c.gameplay
@@ -515,6 +529,10 @@ export const mirrors = (c: Character) => c.baseMoves.throw_reach !== undefined |
 // Whether stretched moves' own lines are recolored, which takes the character's tuning file.
 export const paintsReach = (c: Character) => Object.keys(c.moveReach).some((id) => !reach.JUMPS.includes(id)) && (c.moveLines.color !== null || c.moveLines.alt_color !== null)
 
+export function ownSounds(c: Character): boolean {
+  return Object.keys(c.sounds).length > 0
+}
+
 // The gameplay fields that go in the character's own tuning file.
 export function tuningFields(c: Character): Record<string, unknown> {
   const out: Record<string, unknown> = Object.fromEntries(Object.entries(c.gameplay).filter(([k]) => k in tuning.FIELDS || k === 'damage_taken'))
@@ -577,6 +595,7 @@ export function report(characters: Character | Character[], result: Result): str
   if (chars.length === 1) lines.push('main.dol: roster record 19, select-screen limits 18 -> 19')
   else lines.push(`main.dol: roster records 19 to ${18 + chars.length} in a new data section, select-screen limits 18 -> ${18 + chars.length}`, `main.dol: arena starts at 0x${D.arenaLo(result.dol!).toString(16).toUpperCase()}`)
   if (chars.some(mirrors)) lines.push('main.dol: fn_8019DB24 mirrors a long throw\'s or stretch\'s return on a hit')
+  if (chars.some(ownSounds)) lines.push('main.dol: fn_80114420 loads a new character\'s own sound bank, and one bank per type ID')
   const cache = result.dol ? D.readEffectCache(result.dol) : null
   if (cache && cache !== nfxtool.CACHE_SIZE) lines.push(`main.dol: effect cache ${nfxtool.CACHE_SIZE} -> ${cache} bytes`)
   const sorted = (m: Map<string, Uint8Array>) => [...m].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))

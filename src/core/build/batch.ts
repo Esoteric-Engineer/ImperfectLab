@@ -12,7 +12,7 @@ import { type Character, hasCutscenes, problems as characterProblems, type Probl
 import * as effects from './effects'
 import * as moves from './moves'
 import { motionSetName, SLOTS } from './moves'
-import { Builder, mirrors, ownMotions, paintsReach, type PatchOutput, type Progress, Result, tuningFields, write } from './patch'
+import { Builder, mirrors, ownMotions, ownSounds, paintsReach, type PatchOutput, type Progress, Result, tuningFields, write } from './patch'
 import { templateNames } from './templates'
 import * as tuning from './tuning'
 import * as ui from './ui'
@@ -125,6 +125,7 @@ export function buildBatch(source: GameSource, chars: Batch, progress: Progress 
     r.dol = D.growEffectCache(r.dol, r.cache)
   }
   if (batch.some(mirrors)) r.dol = D.mirrorSkip(r.dol)
+  if (batch.some(ownSounds)) r.dol = D.soundBanks(r.dol, batch.filter(ownSounds).map((c) => c.internalName))
   r.notes = [...notes, ...results.flatMap((x, i) => x.notes.map((n) => `${batch[i].displayName}: ${n}`))]
   return r
 }
@@ -151,6 +152,7 @@ function claims(c: Character): Set<string> {
     `bundles/${n}`, `bundles/${n}_alt`, `misc/player_${n}.nvb`,
     `plr_${n}_rage`, `plr_alt${n}_rage`, ...R.LANGS.map((l) => `ovr_${n}${l.toLowerCase()}`),
     ...(ownMotions(c) ? [`motions/${motionSetName(c.internalName).toLowerCase()}`, ...SLOTS.map((slot) => `bundles/${n}${slot}.ngb`)] : []),
+    ...(ownSounds(c) ? [`sounds/sfx_${n}.abk`] : []),
   ])
 }
 
@@ -215,6 +217,11 @@ export function checkBatch(source: GameSource, chars: Batch, progress: Progress 
       add('warning', `${named[i]}: the tints together need more effect memory than a match can spare (the patch can grow it by ${effects.TINT_ALL_LIMIT.toLocaleString('en-US')} bytes), so only its idle and power-up effects are tinted`)
     }
   })
+  chars.forEach((a, i) => chars.forEach((b, j) => {
+    if (i < j && a.base === b.base && (ownSounds(a) || ownSounds(b))) {
+      add('note', `${named[i]} and ${named[j]} share a base, so in a match between them both fighters use the first player's sounds`)
+    }
+  }))
   if (extra > effects.TINT_ALL_LIMIT) add('warning', `even cut back, the tints and flames grow the effect cache by ${extra.toLocaleString('en-US')} bytes, more than has been tested`)
 
   let r: Result

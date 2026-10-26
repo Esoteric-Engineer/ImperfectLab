@@ -13,6 +13,7 @@ import { GamePage } from './ui/pages/GamePage'
 import { MaterialsPage } from './ui/pages/MaterialsPage'
 import { ModelPage } from './ui/pages/ModelPage'
 import { MovesPage } from './ui/pages/MovesPage'
+import { SoundsPage } from './ui/pages/SoundsPage'
 import { StatsPage } from './ui/pages/StatsPage'
 import { store, useStore } from './ui/store'
 import { THEMES, setTheme, useTheme } from './ui/theme'
@@ -27,8 +28,9 @@ const STEPS: [string, () => React.JSX.Element][] = [
   ['6. Stats', StatsPage],
   ['7. Moves', MovesPage],
   ['8. Cutscenes', CutscenesPage],
-  ['9. Art', ArtPage],
-  ['10. Save & patch', ExportPage],
+  ['9. Sounds', SoundsPage],
+  ['10. Art', ArtPage],
+  ['11. Save & patch', ExportPage],
 ]
 // After the steps, separate section.
 const PAGES: [string, () => React.JSX.Element][] = [...STEPS, ['Multi-Character Patch', BatchPage]]

@@ -16,6 +16,7 @@ A ZIP archive (deflate). Only these members may appear, and nothing else is read
 | `textures/<name>.png` | textures that replace or complement the model's own (`<name>`: 1-48 of `A-Z a-z 0-9 _ -`) |
 | `ui/<slot>.png` | select-screen, loading-screen, tile and HUD pictures (slots below) |
 | `cutscenes/<name>.asf` | new cutscene audio ([`cutscenes`](#cutscenes); `<name>`: 1-48 of `A-Z a-z 0-9 _ -`) |
+| `sounds/<name>.dsp` | sounds that replace the base's (`<name>`: 1-48 of `A-Z a-z 0-9 _ -`; [`sounds`](#sounds)) |
 
 Readers must reject:
 - any other member name, an absolute path, `..`, a backslash, a directory entry, or a duplicate member;
@@ -24,7 +25,8 @@ Readers must reject:
 - a member whose SHA-256 differs from the manifest's `files` list, or a list that names a member the archive
   lacks or misses one it has;
 - a PNG without the PNG signature or larger than 4096 pixels a side, and a GLB without the `glTF` magic;
-- an `.asf` that is not EA-XA at 32000 Hz, mono or stereo, whose header disagrees with its data, or that is over 60 seconds.
+- an `.asf` that is not EA-XA at 32000 Hz, mono or stereo, whose header disagrees with its data, or that is over 60 seconds;
+- a `.dsp` whose header disagrees with its data, or that is not mono DSP ADPCM at 8000-32000 Hz and at most 30 seconds long.
 
 ImperfectLab writes the members with fixed timestamps, so the same character always gives the same bytes.
 
@@ -73,6 +75,7 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
   "move_reach": { "SuperAttackFar": { "distance": 15 }, "WireSwing": {} },
   "move_idle": ["Run"],
   "cutscenes": { "finisher": "wolverine", "audio": { "finisher_1": "cutscenes/finisher_1.asf" } },
+  "sounds": { "3": {"file": "sounds/sound3.dsp"}, "10": {"game": "spiderman:4"} },
   "files": {"model/model.glb": "<sha256>", "ui/select_ready.png": "<sha256>"}
 }
 ```
@@ -204,6 +207,13 @@ Optional, and left out when the character keeps its base's cutscenes and audio.
 - `audio`: audio slot -> a `cutscenes/` member that replaces that audio. A slot is `<kind>_<n>`, numbered from 1 as the **Cutscenes** page lists them. A member is no longer than the stream it replaces and serves both costumes, and a shorter one is padded with silence when patching.
 
 A `cutscenes/` member is an EA `SCHl` audio stream like the game's own (`Sounds/ASF/english/*.asf`): a `PT` header, `SCCl`, `SCDl` blocks of EA-XA ADPCM and `SCEl`. ImperfectLab writes stereo at 32000 Hz, in blocks of 2,156 samples and then 2,128. See [`LIMITATIONS.md`](LIMITATIONS.md) for what the patch can and cannot do.
+
+### `sounds`
+Optional, and left out when no sound changes. The index of a sound in the base's SFX bank (`Sounds/SFX_<base>.abk`, from 0. Exactly one of:
+- `game`: `<base>:<index>`, a sound from any base's bank, read from the player's disc at patch time.
+- `file`: a `sounds/` member. Several sounds may name the same one.
+
+A `sounds/` member is a standard Nintendo `.dsp` file. ImperfectLab writes mono, unlooped files at the replaced sound's rate or lower.
 
 ## Licensing
 

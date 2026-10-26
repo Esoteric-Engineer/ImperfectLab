@@ -1,7 +1,8 @@
 // Same-size edits to main.dol that turn the filler roster record 19 into a playable character, and grow the effect cache for a tint.
 // More characters (up to 9, the select grid's third row) need records past the 20th, which the tables have no room for: patchMany moves them into a new data section.
 // The roster tables (Game/unlockables.c in the decomp) hold 0x4C-byte records.
-import { cstring, encodeLatin1, equal, fromHex, i32be, i8, putU32be, u32be } from '../bytes'
+import { sha1 } from '@noble/hashes/legacy.js'
+import { cstring, encodeLatin1, equal, fromHex, i32be, i8, putU32be, toHex, u32be } from '../bytes'
 import { LabError } from '../errors'
 
 export const NORMAL_TABLE = 0x4c751c
@@ -36,6 +37,51 @@ const MIRROR_SKIP: [number, string, string] = [0x8019db24,
   '7c0903785520103a807e0020388000007c0503784bfd48a9480000084800000481610000800b00047c0803a6bbcbfff87d615b784e800020',
   '8083001c2884000041860048c0030004fc0100004081003c80a4003c80c4004034a5ffff4180002ca0e600042807007e40820010c0460000' +
   'fc0208004182000c38c6000c4bffffdcec410028ec21102ad02300044d86002080a3002454a5103a80630020388000004bfd488c60000000']
+
+// fn_80114420 (loads each player's SFX bank) rewritten in place from sfxbanks.s: own banks for new characters, one bank per type ID.
+const SFX_BANKS: [number, number, string] = [0x80114420, 0x3b4, '7298b504a7cb5aa56a512407733250e5f641ca5b']
+const SFX_BANKS_CODE =
+  '9421ffc07c0802a6bf21002490010044800d815c2c0000004182013c800d88302c000000408201303c608055386326ac3c8080493884771c4805e1fd7c7f1b783c608055386321104831e3dd2c030000408200203c608055386321104831e3f52c0300004082000c2c1f0000408200e8' +
+  '3bc000003ba000003c60805538632110483204617c1e1800408000cc3c608055386321107fc4f3784831d3057c7c1b784831ba6d4bf867297c7b1b78281b001f41810018380000017c00d8307fa900394082008c7fbd03783f4080113b5a45e8881a00002c00000041820048387c0004' +
+  '7f44d3784805e1517c791b784800007d387c00047f44d3784805e13d4800006d2c030000418200142c1900004182000c480000594bffffbc7f44d37848000024281b0012418100283d2080113929459c5760103a7c89002e2c04000041820010806d88a838a00001483432153bde0001' +
+  '4bffff28800100447c0803a6bb210024382100404e800020881a00003b5a00012c0000004082fff44e800020'
+// The game's bank names in .rodata, by type ID.
+const SFX_BANK_NAMES: [number, number, string][] = [
+  [1, 0x8049790c, 'SFX_Wolv1'], [2, 0x80497900, 'SFX_Iron2'], [3, 0x80497924, 'SFX_Spidey'], [4, 0x80497930, 'SFX_Venom'],
+  [5, 0x804979a0, 'SFX_Magneto'], [6, 0x80497978, 'SFX_Elektra'], [7, 0x804979b8, 'SFX_Storm'], [8, 0x804979c4, 'SFX_Torch'],
+  [9, 0x8049796c, 'SFX_Devil'], [10, 0x80497918, 'SFX_Thing'], [11, 0x804979ac, 'SFX_Roekel'], [12, 0x80497954, 'SFX_Brigade'],
+  [13, 0x80497960, 'SFX_DefCon'], [14, 0x804979d0, 'SFX_Wink'], [15, 0x80497944, 'SFX_AfterShk'], [16, 0x8049793c, 'SFX_Ohm'],
+  [17, 0x80497984, 'SFX_Hazmat'], [18, 0x80497990, 'SFX_Heatwave'],
+]
+
+export const soundBankName = (internal: string) => `SFX_${internal}`
+
+export function gameSoundBank(typeId: number): string {
+  const row = SFX_BANK_NAMES.find(([id]) => id === typeId)
+  if (!row) throw new LabError(`no sound bank belongs to type ID ${typeId}`)
+  return row[2]
+}
+
+export function soundBanks(dol: Uint8Array, internals: string[]): Uint8Array {
+  const out = dol.slice()
+  const [va, size, digest] = SFX_BANKS
+  const at = fileOffset(out, va)
+  if (toHex(sha1(out.subarray(at, at + size))) !== digest) throw new LabError(`main.dol differs from GVLE69 at 0x${at.toString(16).toUpperCase()}`)
+  const code = fromHex(SFX_BANKS_CODE)
+  const table = new Uint8Array(19 * 4)
+  for (const [id, name, text] of SFX_BANK_NAMES) {
+    if (cstring(out, fileOffset(out, name), fileOffset(out, name) + 0x10) !== text) throw new LabError(`main.dol has no ${text} at 0x${name.toString(16).toUpperCase()}`)
+    putU32be(table, 4 * id, name)
+  }
+  const strings = encodeLatin1(internals.map((n) => [...entityNames(n), soundBankName(n)].join('\0') + '\0').join('') + '\0')
+  if (code.length + table.length + strings.length > size) throw new LabError(`fn_80114420 has no room for ${internals.length} characters' sound banks`)
+  const body = new Uint8Array(size)
+  body.set(code)
+  body.set(table, code.length)
+  body.set(strings, code.length + table.length)
+  out.set(body, at)
+  return out
+}
 
 const TABLE_REFS: [number, number, number][] = [
   [0x42ece4, 0x42ece8, 0x804ca51c], [0x42ecf8, 0x42ecfc, 0x804cab0c], [0x42ed0c, 0x42ed18, 0x804cb0fc], [0x44c0a8, 0x44c0b8, 0x804cb0fc],
