@@ -148,13 +148,14 @@ export function AuraPage() {
         <label>Flame size</label>
         <NumberInput value={f.size} min={FLAME_SIZE[0]} max={FLAME_SIZE[1]} step={0.1} disabled={flameMode === 'none'} onChange={(v) => { f.size = v; edited() }} />
       </div>
-      <label className="check block">
-        <input type="checkbox" checked={f.base_effect} onChange={(e) => { f.base_effect = e.target.checked; edited() }} />
-        {' '}Keep the base's own always-on effect, if it has one (such as Human Torch's body fire)
-      </label>
       <p>
         {flameMode === 'none' ? '' : flameBytes ? `The flames add ${flameBytes} bytes to the game's effect memory.` : 'The flames use the game\'s own effect, which takes no more memory.'}
       </p>
+      <h3>Always-On Effect</h3>
+      <label className="check block">
+        <input type="checkbox" checked={f.base_effect} onChange={(e) => { f.base_effect = e.target.checked; edited() }} />
+        {' '}Keep the base's own always-on effect, if it has one (such as Human Torch's body fire or Elektra's hair).
+      </label>
     </div>
   )
 }
