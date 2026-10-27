@@ -76,7 +76,7 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
   "move_idle": ["Run"],
   "cutscenes": { "finisher": "wolverine", "audio": { "finisher_1": "cutscenes/finisher_1.asf" } },
   "sounds": { "3": {"file": "sounds/sound3.dsp"}, "10": {"game": "spiderman:4"} },
-  "z_button": "jump",
+  "z_button": { "action": "stealth", "stealth": { "undetected": true, "untouchable": true, "visible": 0.2 }, "requires": { "energy": { "seconds": 8, "regen": false } } },
   "files": {"model/model.glb": "<sha256>", "ui/select_ready.png": "<sha256>"}
 }
 ```
@@ -217,7 +217,16 @@ Optional, and left out when no sound changes. The index of a sound in the base's
 A `sounds/` member is a standard Nintendo `.dsp` file. ImperfectLab writes mono, unlooped files at the replaced sound's rate or lower.
 
 ### `z_button`
-Optional, left out when Z does nothing (default). Older ImperfectLab builds refuse the key. See [`LIMITATIONS.md`](LIMITATIONS.md).
+Optional, left out when Z does nothing (default).
+- `action`: what Z does while held. `stealth` is Stealth Mode.
+- `stealth`: Stealth Mode's effects, at least one of them:
+  - `undetected`: `true` when the CPU loses track of the character. Optional, `false` by default.
+  - `untouchable`: `true` when enemies can't hit or grab the character. Optional, `false` by default.
+  - `visible`: how visible the character is, from 0 (not drawn) to 0.95. Optional, left out when the character doesn't fade.
+- `requires`: optional, left out when empty. What the action needs.
+  - `energy`: the action drains energy and can't start with none. `seconds` (1 to 60) is how long a full bar lasts. `regen` (optional, `false` by default) keeps the game's energy regeneration running while active, so the bar lasts longer.
+
+Older ImperfectLab builds refuse the key. See [`LIMITATIONS.md`](LIMITATIONS.md).
 
 ## Licensing
 

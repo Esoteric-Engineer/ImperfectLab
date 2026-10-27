@@ -2,7 +2,7 @@
 // More characters (up to 9, the select grid's third row) need records past the 20th, which the tables have no room for: patchMany moves them into a new data section.
 // The roster tables (Game/unlockables.c in the decomp) hold 0x4C-byte records.
 import { sha1 } from '@noble/hashes/legacy.js'
-import { cstring, encodeLatin1, equal, fromHex, i32be, i8, putU32be, toHex, u32be } from '../bytes'
+import { concat, cstring, encodeLatin1, equal, fromHex, i32be, i8, putF32be, putU32be, toHex, u32be } from '../bytes'
 import { LabError } from '../errors'
 
 export const NORMAL_TABLE = 0x4c751c
@@ -166,25 +166,103 @@ export function mirrorSkip(dol: Uint8Array): Uint8Array {
 }
 
 // fn_800FB488's button bindings: a count, then 0x50-byte records (room for 32) of up to four {min, max, type, button} steps, a timeout and the action they set.
+// Z (button 5) gets a copy of Block's record (step type 3, set while held) for the unused action 19.
 const BINDINGS_COUNT = 0x804cc80c
 const BINDINGS = 0x804cc810
 const BINDING = 0x50
 const GAME_BINDINGS = 18
 const Z_BUTTON = 5
-export const Z_ACTIONS = { jump: [4, 5] } as const
-export type ZAction = keyof typeof Z_ACTIONS
+const Z_LOGICAL = 19
+export const Z_ACTIONS = ['stealth'] as const
+export type ZAction = (typeof Z_ACTIONS)[number]
+export const Z_SECONDS: [number, number] = [1, 60]
 
-export function zButton(dol: Uint8Array, action: ZAction): Uint8Array {
+// fn_80137494 (the AI debug display, never called in retail) rewritten from zactions.s, then its table.
+const Z_CODE: [number, number, string] = [0x80137494, 0x858, '33246b517b202fa554e0792f4a66b6d4c5a84712']
+const Z_ACTIONS_CODE =
+  '9421ffc07c0802a690010044bea100147fbfeb78807f05b42c0300004182021c83c300e42c1e000041820210813f00088389004c3b600000813f000c2c090000418200088369004c3fa080133bbd781c801d00007c00f000418201583bbd0010801d00007c00f000418201482c1c0000418201c8' +
+  '2c1b0000408201c07fc3f3784bf4e9d92c030000408201b03b0000003c60805538632110482fd3d57c181800408001983c608055386321107f04c378482fa2797c771b78482f89e13b1800017c03f0004082ffcc3f4080133b5a783c881a000c2c000000418201603aba000c387700047ea4ab78' +
+  '4803b0d92c030000418200347ea4ab784800016d7c952378387700044803b0bd2c030000418200187ea4ab784800015138840003549a003a4bffffb0c03a00003d208013c0097814fc0100004182001c7fc3f3784bf4f1613d208013c0097814fc010000408100ec3fa080133bbd781c38000002' +
+  '7c0903a63d20805981293c2c801d00002c00000041820020801d00047c004850280000fa408000103bbd00104200ffe0480000ac93dd0000801a0000901d0008801a0004901d000cc03a0008480000a5480000682c1c0000418200707fc3f3784bf4e89d2c03000040820060c03d00083d208013' +
+  'c0097814fc0100004182003c3d208059c0493c38c07e0328ec6300b2ec230824801d000c700000014082000cc09e03ccec2408ba7fc3f3784bf4d3c52c030000418200143d20805980093c2c901d00044800001838000000901d00003d208013c029781848000019baa10014800100447c0803a6' +
+  '382100404e800020807e01bc2c0300004d8200203d208013c04978144806e42888040000388400012c0000004082fff44e800020380000002c0400004d8200203d2080133929781c394000027d4903a6814900007c0a20004082002c3d408059814a3c2c800900047d40505038000000280a00fa' +
+  '408000108149000c7d4a283940820010392900104200ffc84e800020380000014e8000207d8802a67c641b7838a000044bffff917d8803a67c0303784e8000209421fff07c0802a690010014906100084bf794bd2c030000418200148081000838a000044bffff5d68030001800100147c0803a6' +
+  '382100104e8000207d8802a67c641b7838a000024bffff397d8803a62c0000004182000838600000816100004e8000207d8802a638a000024bffff157d8803a62c0000004082000848027a70386000014e800020000000003f800000000000000000000000000000000000000000000000000000' +
+  '0000000000000000'
+const Z_UPDATE = 0x80137494
+const Z_INVULNERABLE = 0x80137770
+const Z_AIR_GRAB = 0x8013778c
+const Z_AI_EXIT = 0x801377c8
+const Z_AI_SKIP = 0x801377f0
+// fn_80085F4C (is the actor invulnerable) keeps its bit test and asks zactions.s otherwise.
+const INVULNERABLE: [number, string] = [0x80085f4c, '9421fff093e1000c7c3f0b787c691b7881690304556007fe7c030378480000048161000083ebfffc7d615b784e800020']
+// {site, old instruction, target}: fn_800FB944 (human input update), fn_800E07A4 (air grab), fn_80150200 and fn_80461948 (AI target), fn_8014F8BC (AI enemy choice).
+const Z_HOOKS: [number, string, number][] = [
+  [0x800fba50, '48000008', Z_UPDATE], [0x800e09cc, '4bfd028d', Z_AIR_GRAB], [0x80150240, '81610000', Z_AI_EXIT],
+  [0x804619b0, '81610000', Z_AI_EXIT], [0x8014fa14, '4800f865', Z_AI_SKIP],
+]
+
+export const Z_VISIBLE: [number, number] = [0, 0.95]
+
+export interface ZCharacter {
+  internal: string
+  seconds: number
+  regen: boolean
+  undetected: boolean
+  untouchable: boolean
+  visible: number
+}
+
+const branch = (from: number, to: number, link: boolean) => (0x48000000 | ((to - from) & 0x3fffffc) | (link ? 1 : 0)) >>> 0
+const word = (v: number) => {
+  const b = new Uint8Array(4)
+  putU32be(b, 0, v)
+  return b
+}
+
+function zTable(chars: ZCharacter[]): Uint8Array {
+  const parts: Uint8Array[] = []
+  for (const c of chars) {
+    if (c.seconds !== 0 && !(c.seconds >= Z_SECONDS[0] && c.seconds <= Z_SECONDS[1])) throw new LabError(`a full energy bar lasts ${Z_SECONDS[0]} to ${Z_SECONDS[1]} seconds, not ${c.seconds}`)
+    if (c.visible !== 1 && !(c.visible >= Z_VISIBLE[0] && c.visible <= Z_VISIBLE[1])) throw new LabError(`a faded character is ${Z_VISIBLE[0] * 100}% to ${Z_VISIBLE[1] * 100}% visible, not ${c.visible * 100}%`)
+    const names = encodeLatin1(entityNames(c.internal).join('\0') + '\0')
+    const entry = new Uint8Array(12 + ((names.length + 3) & ~3))
+    putF32be(entry, 0, c.seconds)
+    putU32be(entry, 4, (c.regen ? 1 : 0) | (c.undetected ? 2 : 0) | (c.untouchable ? 4 : 0))
+    putF32be(entry, 8, c.visible)
+    entry.set(names, 12)
+    parts.push(entry)
+  }
+  parts.push(new Uint8Array(16))
+  return concat(parts)
+}
+
+export function zActions(dol: Uint8Array, chars: ZCharacter[]): Uint8Array {
   const out = dol.slice()
-  const [record, logical] = Z_ACTIONS[action]
-  const from = fileOffset(out, BINDINGS + BINDING * record)
-  if (u32be(out, from) !== 1 || u32be(out, from + 0x48) !== logical) throw new LabError(`main.dol differs from GVLE69 at 0x${from.toString(16).toUpperCase()}`)
-  const next = out.slice(from, from + BINDING)
-  putU32be(next, 0x10, Z_BUTTON)
-  put(out, fileOffset(out, BINDINGS + BINDING * GAME_BINDINGS), new Uint8Array(BINDING), next)
-  const count = new Uint8Array(4)
-  putU32be(count, 0, GAME_BINDINGS + 1)
-  put(out, fileOffset(out, BINDINGS_COUNT), fromHex('00000012'), count)
+  const block = fileOffset(out, BINDINGS)
+  if (u32be(out, block) !== 1 || u32be(out, block + 0x48) !== 0) throw new LabError(`main.dol differs from GVLE69 at 0x${block.toString(16).toUpperCase()}`)
+  const z = out.slice(block, block + BINDING)
+  putU32be(z, 0x10, Z_BUTTON)
+  putU32be(z, 0x48, Z_LOGICAL)
+  put(out, fileOffset(out, BINDINGS + BINDING * GAME_BINDINGS), new Uint8Array(BINDING), z)
+  put(out, fileOffset(out, BINDINGS_COUNT), word(GAME_BINDINGS), word(GAME_BINDINGS + 1))
+
+  const [va, size, digest] = Z_CODE
+  const at = fileOffset(out, va)
+  if (toHex(sha1(out.subarray(at, at + size))) !== digest) throw new LabError(`main.dol differs from GVLE69 at 0x${at.toString(16).toUpperCase()}`)
+  const code = fromHex(Z_ACTIONS_CODE)
+  const table = zTable(chars)
+  if (code.length + table.length > size) throw new LabError(`fn_80137494 has no room for ${chars.length} characters' Z-button actions`)
+  const body = new Uint8Array(size)
+  body.set(code)
+  body.set(table, code.length)
+  out.set(body, at)
+
+  const [fn, old] = INVULNERABLE
+  // lwz r0,0x304(r3); clrlwi. r0,r0,31; beq +12; li r3,1; blr; b invulnerable
+  const next = concat([fromHex('80030304540007ff4182000c386000014e800020'), word(branch(fn + 0x14, Z_INVULNERABLE, false)), fromHex('60000000'.repeat(6))])
+  put(out, fileOffset(out, fn), fromHex(old), next)
+  for (const [site, instruction, target] of Z_HOOKS) put(out, fileOffset(out, site), fromHex(instruction), word(branch(site, target, true)))
   return out
 }
 

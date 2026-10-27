@@ -209,11 +209,24 @@ describe('round trip', () => {
   it('saves and loads the Z button action', () => {
     const c = character()
     expect(imperfect.manifest(c).z_button).toBeUndefined()
-    c.zButton = 'jump'
-    expect(imperfect.load(imperfect.save(c)).zButton).toBe('jump')
+    c.zButton = { action: 'stealth', stealth: { undetected: true, untouchable: false, visible: null }, requires: {} }
+    expect(JSON.parse(JSON.stringify(imperfect.manifest(c).z_button))).toEqual({ action: 'stealth', stealth: { undetected: true } })
+    expect(imperfect.load(imperfect.save(c)).zButton).toEqual(c.zButton)
+    c.zButton.stealth = { undetected: false, untouchable: true, visible: 0.35 }
+    c.zButton.requires.energy = { seconds: 12, regen: true }
+    expect(imperfect.load(imperfect.save(c)).zButton).toEqual(c.zButton)
     const m = imperfect.manifest(c) as Json
-    expect(() => imperfect.fromManifest({ ...m, z_button: 'fly' }, new Map())).toThrow(/z_button/)
-    expect(() => imperfect.fromManifest({ ...m, z_button: true }, new Map())).toThrow(/z_button/)
+    const bad = (z: unknown) => expect(() => imperfect.fromManifest({ ...m, z_button: z } as Json, new Map())).toThrow(/z_button/)
+    bad('stealth')
+    bad({ action: 'fly' })
+    bad({ action: 'stealth' })
+    bad({ action: 'stealth', stealth: { undetected: false } })
+    bad({ action: 'stealth', stealth: { visible: 1 } })
+    bad({ action: 'stealth', stealth: { hidden: true } })
+    bad({ action: 'stealth', stealth: { untouchable: true }, requires: { health: {} } })
+    bad({ action: 'stealth', stealth: { untouchable: true }, requires: { energy: { seconds: 0 } } })
+    bad({ action: 'stealth', stealth: { untouchable: true }, requires: { energy: { seconds: 8, regen: 'yes' } } })
+    bad({ action: 'stealth', extra: 1 })
   })
 
   it('finds problems with moves', () => {

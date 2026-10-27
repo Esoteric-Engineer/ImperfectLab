@@ -74,20 +74,37 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(() => D.mirrorSkip(out)).toThrow(LabError)
   })
 
-  it('binds the Z button to jump', () => {
+  it('binds Z to Stealth Mode', () => {
     const dol = gameSource().dol
-    const out = D.zButton(dol, 'jump')
+    const out = D.zActions(dol, [{ internal: 'Synth', seconds: 8, regen: true, undetected: false, untouchable: true, visible: 0.25 }, { internal: 'Other', seconds: 0, regen: false, undetected: true, untouchable: false, visible: 1 }])
     const at = (va: number) => D.fileOffset(dol, va)
-    const jump = at(0x804cc810 + 4 * 0x50), z = at(0x804cc810 + 18 * 0x50)
+    const block = at(0x804cc810), z = at(0x804cc810 + 18 * 0x50)
     expect(u32be(out, at(0x804cc80c))).toBe(19)
-    expect(u32be(out, jump + 0x10)).toBe(2)
     expect(u32be(out, z + 0x10)).toBe(5)
-    expect(u32be(out, z + 0x48)).toBe(5)
-    expect([...out.subarray(z, z + 0x10)]).toEqual([...out.subarray(jump, jump + 0x10)])
-    expect([...out.subarray(z + 0x14, z + 0x50)]).toEqual([...out.subarray(jump + 0x14, jump + 0x50)])
+    expect(u32be(out, z + 0x48)).toBe(19)
+    expect(u32be(out, z + 0xc)).toBe(3)
+    expect([...out.subarray(z + 0x14, z + 0x48)]).toEqual([...out.subarray(block + 0x14, block + 0x48)])
+    const bl = (from: number) => (from + ((((u32be(out, at(from)) << 6) >> 6) & ~3))) >>> 0
+    expect(bl(0x800fba50)).toBe(0x80137494)
+    expect(bl(0x80150240)).toBe(bl(0x804619b0))
+    for (const site of [0x800e09cc, 0x80150240, 0x8014fa14]) expect(bl(site) > 0x80137494 && bl(site) < 0x80137494 + 0x3a8).toBe(true)
+    expect(u32be(out, at(0x80085f4c))).toBe(0x80030304)
+    const t = at(0x80137494) + 0x3a8
+    expect(latin1(out, t, at(0x80137494) + 0x858)).toContain('plr_synth\0plr_altSynth\0')
+    expect([u32be(out, t), u32be(out, t + 4), u32be(out, t + 8)]).toEqual([0x41000000, 5, 0x3e800000])
+    const other = t + 12 + 24
+    expect(latin1(out, other + 12, other + 36)).toBe('plr_other\0plr_altOther\0\0')
+    expect([u32be(out, other), u32be(out, other + 4), u32be(out, other + 8)]).toEqual([0, 2, 0x3f800000])
+    const sites = [[0x804cc80c, 4], [0x804cc810 + 18 * 0x50, 0x50], [0x80137494, 0x858], [0x80085f4c, 0x30],
+      [0x800fba50, 4], [0x800e09cc, 4], [0x80150240, 4], [0x804619b0, 4], [0x8014fa14, 4]].map(([va, n]) => [at(va), at(va) + n])
     const changed = [...out].flatMap((b, i) => (b !== dol[i] ? [i] : []))
-    expect(changed.every((i) => (i >= z && i < z + 0x50) || (i >= at(0x804cc80c) && i < at(0x804cc80c) + 4))).toBe(true)
-    expect(() => D.zButton(out, 'jump')).toThrow(LabError)
+    expect(changed.every((i) => sites.some(([lo, hi]) => i >= lo && i < hi))).toBe(true)
+    expect(() => D.zActions(out, [])).toThrow(LabError)
+    const one = { internal: 'Synth', seconds: 8, regen: false, undetected: true, untouchable: true, visible: 0.2 }
+    expect(() => D.zActions(dol, [{ ...one, seconds: 61 }])).toThrow(LabError)
+    expect(() => D.zActions(dol, [{ ...one, visible: 0.99 }])).toThrow(LabError)
+    const many = Array.from({ length: 40 }, (_, i) => ({ ...one, internal: `Character${i}` }))
+    expect(() => D.zActions(dol, many)).toThrow(/no room/)
   })
 
   it('refuses a patched main.dol', () => {
@@ -349,11 +366,11 @@ describe.skipIf(!ISO)('game', () => {
     c.mapping = auto.mapping
     c.overrides = auto.overrides
     c.gameplay = { lift: 'heavy' }
-    c.zButton = 'jump'
+    c.zButton = { action: 'stealth', stealth: { undetected: true, untouchable: false, visible: 0.5 }, requires: { energy: { seconds: 5, regen: false } } }
     const r = new Builder(src(), c).build()
     expect(r.adds.has('Bundles/synth.ngm')).toBe(true)
-    expect(equal(r.dol!, D.zButton(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt), 'jump'))).toBe(true)
-    expect(report(c, r)).toContain('Z button')
+    expect(equal(r.dol!, D.zActions(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt), [{ internal: 'Synth', seconds: 5, regen: false, undetected: true, untouchable: false, visible: 0.5 }]))).toBe(true)
+    expect(report(c, r)).toContain('Stealth Mode')
     expect(r.adds.has('Bundles/synth_alt.tpl')).toBe(true)
     const t = new R.Templates(r.sets.get('Misc/Global.not')!)
     expect(R.u32(t.prop('plr_Synth', R.P_ABILITIES))! & 0x30).toBe(0x20)
@@ -496,7 +513,7 @@ describe.skipIf(!ISO)('game', () => {
 
   it('builds two characters, the second on the first', () => {
     const a = tinted('johnnyohm')
-    const b = { ...tinted('humantorch'), internalName: 'Other', displayName: 'OTHER', zButton: 'jump' as const }
+    const b = { ...tinted('humantorch'), internalName: 'Other', displayName: 'OTHER', zButton: { action: 'stealth' as const, stealth: { undetected: true, untouchable: true, visible: null }, requires: {} } }
     b.ui = { ...b.ui, ready_voice: 'FE_SFX_TORCH' }
     b.files = new Map([...b.files, ['ui/select_ready.png', pngBytes(200, 400)], ['ui/tile.png', pngBytes(64, 32)]])
     const r = buildBatch(src(), [a, b])

@@ -9,7 +9,7 @@ import type { RgbaImage } from '../image/rgba'
 import type { DamageKey } from '../build/damage'
 import { LOW_ENERGY_STUN, MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
 import { DISTANCE, JUMP_DISTANCE, JUMPS, type Limb, LIMBS } from '../build/reach'
-import { type ZAction, Z_ACTIONS } from '../game/dol'
+import { type ZAction, Z_ACTIONS, Z_SECONDS, Z_VISIBLE } from '../game/dol'
 import { BASES } from '../game/roster'
 import * as asftool from '../mnroi/asftool'
 import { GLB, type Json } from '../mnroi/gltf'
@@ -139,6 +139,12 @@ export type Cutscenes = Partial<Record<CutsceneKind, string>> & { audio: Record<
 
 export type SoundSource = { game: string } | { file: string }
 
+export interface ZButton {
+  action: ZAction
+  stealth: { undetected: boolean; untouchable: boolean; visible: number | null }
+  requires: { energy?: { seconds: number; regen: boolean } }
+}
+
 export interface Character {
   internalName: string
   displayName: string
@@ -163,7 +169,7 @@ export interface Character {
   moveIdle: string[]
   cutscenes: Cutscenes
   sounds: Record<string, SoundSource>
-  zButton: ZAction | null
+  zButton: ZButton | null
   ui: { select: Partial<Record<Pose, Placement>>; fade: number; strip_scale: number | null; ready_voice: string | null; banner: boolean }
   files: Map<string, Uint8Array>
 }
@@ -276,7 +282,11 @@ export function manifest(c: Character): Json {
     move_idle: c.moveIdle.length ? c.moveIdle : undefined,
     cutscenes: hasCutscenes(c.cutscenes) ? { ...c.cutscenes, effects: Object.keys(c.cutscenes.effects).length ? c.cutscenes.effects : undefined } : undefined,
     sounds: Object.keys(c.sounds).length ? c.sounds : undefined,
-    z_button: c.zButton ?? undefined,
+    z_button: c.zButton ? {
+      action: c.zButton.action,
+      stealth: { undetected: c.zButton.stealth.undetected || undefined, untouchable: c.zButton.stealth.untouchable || undefined, visible: c.zButton.stealth.visible ?? undefined },
+      requires: Object.keys(c.zButton.requires).length ? c.zButton.requires : undefined,
+    } : undefined,
     files: Object.fromEntries([...files].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, v]) => [k, sha(v)])),
   }
 }
@@ -618,8 +628,21 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   }
   c.zButton = null
   if (m.z_button !== undefined && m.z_button !== null) {
-    if (typeof m.z_button !== 'string' || !Object.hasOwn(Z_ACTIONS, m.z_button)) throw new LabError(`manifest: z_button is one of ${Object.keys(Z_ACTIONS).join(', ')}`)
-    c.zButton = m.z_button as ZAction
+    const z = keys(m.z_button, ['action', 'stealth', 'requires'], 'z_button')
+    if (!Z_ACTIONS.includes(z.action as ZAction)) throw new LabError(`manifest: z_button.action is one of ${Z_ACTIONS.join(', ')}`)
+    const s = keys(z.stealth ?? {}, ['undetected', 'untouchable', 'visible'], 'z_button.stealth')
+    const stealth = {
+      undetected: typed<boolean>(s.undetected ?? false, 'boolean', 'z_button.stealth.undetected'),
+      untouchable: typed<boolean>(s.untouchable ?? false, 'boolean', 'z_button.stealth.untouchable'),
+      visible: num(s.visible, 'z_button.stealth.visible', ...Z_VISIBLE),
+    }
+    if (!stealth.undetected && !stealth.untouchable && stealth.visible === null) throw new LabError('manifest: z_button.stealth needs at least one of undetected, untouchable and visible')
+    const requires = keys(z.requires ?? {}, ['energy'], 'z_button.requires')
+    c.zButton = { action: z.action as ZAction, stealth, requires: {} }
+    if (requires.energy !== undefined) {
+      const e = keys(requires.energy, ['seconds', 'regen'], 'z_button.requires.energy')
+      c.zButton.requires.energy = { seconds: num(e.seconds, 'z_button.requires.energy.seconds', ...Z_SECONDS, false)!, regen: typed<boolean>(e.regen ?? false, 'boolean', 'z_button.requires.energy.regen') }
+    }
   }
   c.glb = files.get('model/model.glb') ?? null
   files.delete('model/model.glb')

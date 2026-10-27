@@ -123,7 +123,7 @@ export class Builder {
     if (this.r.cache !== null) this.r.dol = D.growEffectCache(this.r.dol, this.r.cache)
     if (mirrors(c)) this.r.dol = D.mirrorSkip(this.r.dol)
     if (ownSounds(c)) this.r.dol = D.soundBanks(this.r.dol, [c.internalName])
-    if (c.zButton) this.r.dol = D.zButton(this.r.dol, c.zButton)
+    if (c.zButton) this.r.dol = D.zActions(this.r.dol, zCharacters([c]))
     return this.r
   }
 
@@ -538,6 +538,14 @@ export function ownSounds(c: Character): boolean {
   return Object.keys(c.sounds).length > 0
 }
 
+export function zCharacters(chars: Character[]): D.ZCharacter[] {
+  return chars.flatMap((c) => {
+    const z = c.zButton
+    if (!z) return []
+    return [{ internal: c.internalName, seconds: z.requires.energy?.seconds ?? 0, regen: z.requires.energy?.regen ?? false, ...z.stealth, visible: z.stealth.visible ?? 1 }]
+  })
+}
+
 // The gameplay fields that go in the character's own tuning file.
 export function tuningFields(c: Character): Record<string, unknown> {
   const out: Record<string, unknown> = Object.fromEntries(Object.entries(c.gameplay).filter(([k]) => k in tuning.FIELDS || k === 'damage_taken'))
@@ -601,8 +609,7 @@ export function report(characters: Character | Character[], result: Result): str
   else lines.push(`main.dol: roster records 19 to ${18 + chars.length} in a new data section, select-screen limits 18 -> ${18 + chars.length}`, `main.dol: arena starts at 0x${D.arenaLo(result.dol!).toString(16).toUpperCase()}`)
   if (chars.some(mirrors)) lines.push('main.dol: fn_8019DB24 mirrors a long throw\'s or stretch\'s return on a hit')
   if (chars.some(ownSounds)) lines.push('main.dol: fn_80114420 loads a new character\'s own sound bank, and one bank per type ID')
-  const z = chars.find((c) => c.zButton)?.zButton
-  if (z) lines.push(`main.dol: fn_800FB488's bindings put ${z} on the Z button for every character`)
+  if (chars.some((c) => c.zButton)) lines.push('main.dol: Z is bound for every human player; fn_80137494 is rewritten to run Stealth Mode, hooked from fn_800FB944, fn_80085F4C, fn_800E07A4, fn_80150200, fn_80461948 and fn_8014F8BC')
   const cache = result.dol ? D.readEffectCache(result.dol) : null
   if (cache && cache !== nfxtool.CACHE_SIZE) lines.push(`main.dol: effect cache ${nfxtool.CACHE_SIZE} -> ${cache} bytes`)
   const sorted = (m: Map<string, Uint8Array>) => [...m].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))

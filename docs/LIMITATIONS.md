@@ -156,8 +156,8 @@ Sounds replaced on the **Sounds** page (`sounds`, [`FORMAT.md`](FORMAT.md)):
 
 The action picked on the **Z-Button Actions** page (`z_button`, [`FORMAT.md`](FORMAT.md)):
 
-- **Every character gets it.** The game turns buttons into actions through one table in `main.dol` (`fn_800FB488`'s bindings, 18 of its 32 records used, none on Z).
 - **CPU players never press it.** Their input class doesn't read the table.
+- **Two players at once.** The rewrite has room for two active players, which a versus match never exceeds.
 
 ## More characters
 
