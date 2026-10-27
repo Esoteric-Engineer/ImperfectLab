@@ -76,6 +76,7 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
   "move_idle": ["Run"],
   "cutscenes": { "finisher": "wolverine", "audio": { "finisher_1": "cutscenes/finisher_1.asf" } },
   "sounds": { "3": {"file": "sounds/sound3.dsp"}, "10": {"game": "spiderman:4"} },
+  "z_button": "jump",
   "files": {"model/model.glb": "<sha256>", "ui/select_ready.png": "<sha256>"}
 }
 ```
@@ -214,6 +215,9 @@ Optional, and left out when no sound changes. The index of a sound in the base's
 - `file`: a `sounds/` member. Several sounds may name the same one.
 
 A `sounds/` member is a standard Nintendo `.dsp` file. ImperfectLab writes mono, unlooped files at the replaced sound's rate or lower.
+
+### `z_button`
+Optional, left out when Z does nothing (default). Older ImperfectLab builds refuse the key. See [`LIMITATIONS.md`](LIMITATIONS.md).
 
 ## Licensing
 

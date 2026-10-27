@@ -152,6 +152,13 @@ Sounds replaced on the **Sounds** page (`sounds`, [`FORMAT.md`](FORMAT.md)):
 - **Rates.** A sound with no rate in its bank header plays at 24,000 Hz (`fn_80258188`, the bank parser, sets it before reading the header).
 - **Names.** The game has none, only each sound's place in its bank. The names the **Sounds** page shows are our own, from `src/core/game/sounds.json` (base -> the sound's number as the page lists it -> name); a sound with an empty name shows only its number.
 
+## Z button
+
+The action picked on the **Z-Button Actions** page (`z_button`, [`FORMAT.md`](FORMAT.md)):
+
+- **Every character gets it.** The game turns buttons into actions through one table in `main.dol` (`fn_800FB488`'s bindings, 18 of its 32 records used, none on Z).
+- **CPU players never press it.** Their input class doesn't read the table.
+
 ## More characters
 
 The roster tables in `main.dol` hold 20 records, and the 19th character takes the last one (a filler copy of the Thing). For a 20th and more, up to a 27th, the patch copies the three tables, grown to one record per character, into a new data section, and points their only four readers (`fn_80431CCC` and `fn_8044F070`) at the copies. `fn_8044F070` searches the order table up to a fixed index, which is raised with the count.

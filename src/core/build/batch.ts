@@ -126,6 +126,8 @@ export function buildBatch(source: GameSource, chars: Batch, progress: Progress 
   }
   if (batch.some(mirrors)) r.dol = D.mirrorSkip(r.dol)
   if (batch.some(ownSounds)) r.dol = D.soundBanks(r.dol, batch.filter(ownSounds).map((c) => c.internalName))
+  const z = batch.find((c) => c.zButton)?.zButton
+  if (z) r.dol = D.zButton(r.dol, z)
   r.notes = [...notes, ...results.flatMap((x, i) => x.notes.map((n) => `${batch[i].displayName}: ${n}`))]
   return r
 }

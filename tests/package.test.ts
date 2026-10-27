@@ -206,6 +206,16 @@ describe('round trip', () => {
     expect(imperfect.problems(c).some(([l, msg]) => l === 'error' && msg.includes("can't stretch"))).toBe(true)
   })
 
+  it('saves and loads the Z button action', () => {
+    const c = character()
+    expect(imperfect.manifest(c).z_button).toBeUndefined()
+    c.zButton = 'jump'
+    expect(imperfect.load(imperfect.save(c)).zButton).toBe('jump')
+    const m = imperfect.manifest(c) as Json
+    expect(() => imperfect.fromManifest({ ...m, z_button: 'fly' }, new Map())).toThrow(/z_button/)
+    expect(() => imperfect.fromManifest({ ...m, z_button: true }, new Map())).toThrow(/z_button/)
+  })
+
   it('finds problems with moves', () => {
     const c = character()
     c.base = 'daredevil'

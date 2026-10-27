@@ -11,7 +11,7 @@ import { Builder, report } from '../src/core/build/patch'
 import * as templates from '../src/core/build/templates'
 import * as tuning from '../src/core/build/tuning'
 import * as ui from '../src/core/build/ui'
-import { latin1 } from '../src/core/bytes'
+import { equal, latin1, u32be } from '../src/core/bytes'
 import { LabError } from '../src/core/errors'
 import * as D from '../src/core/game/dol'
 import * as R from '../src/core/game/roster'
@@ -72,6 +72,22 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(changed.length).toBeGreaterThan(0)
     expect(changed.every((i) => i >= at && i < at + 0x70)).toBe(true)
     expect(() => D.mirrorSkip(out)).toThrow(LabError)
+  })
+
+  it('binds the Z button to jump', () => {
+    const dol = gameSource().dol
+    const out = D.zButton(dol, 'jump')
+    const at = (va: number) => D.fileOffset(dol, va)
+    const jump = at(0x804cc810 + 4 * 0x50), z = at(0x804cc810 + 18 * 0x50)
+    expect(u32be(out, at(0x804cc80c))).toBe(19)
+    expect(u32be(out, jump + 0x10)).toBe(2)
+    expect(u32be(out, z + 0x10)).toBe(5)
+    expect(u32be(out, z + 0x48)).toBe(5)
+    expect([...out.subarray(z, z + 0x10)]).toEqual([...out.subarray(jump, jump + 0x10)])
+    expect([...out.subarray(z + 0x14, z + 0x50)]).toEqual([...out.subarray(jump + 0x14, jump + 0x50)])
+    const changed = [...out].flatMap((b, i) => (b !== dol[i] ? [i] : []))
+    expect(changed.every((i) => (i >= z && i < z + 0x50) || (i >= at(0x804cc80c) && i < at(0x804cc80c) + 4))).toBe(true)
+    expect(() => D.zButton(out, 'jump')).toThrow(LabError)
   })
 
   it('refuses a patched main.dol', () => {
@@ -333,8 +349,11 @@ describe.skipIf(!ISO)('game', () => {
     c.mapping = auto.mapping
     c.overrides = auto.overrides
     c.gameplay = { lift: 'heavy' }
+    c.zButton = 'jump'
     const r = new Builder(src(), c).build()
     expect(r.adds.has('Bundles/synth.ngm')).toBe(true)
+    expect(equal(r.dol!, D.zButton(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt), 'jump'))).toBe(true)
+    expect(report(c, r)).toContain('Z button')
     expect(r.adds.has('Bundles/synth_alt.tpl')).toBe(true)
     const t = new R.Templates(r.sets.get('Misc/Global.not')!)
     expect(R.u32(t.prop('plr_Synth', R.P_ABILITIES))! & 0x30).toBe(0x20)
@@ -477,13 +496,14 @@ describe.skipIf(!ISO)('game', () => {
 
   it('builds two characters, the second on the first', () => {
     const a = tinted('johnnyohm')
-    const b = { ...tinted('humantorch'), internalName: 'Other', displayName: 'OTHER' }
+    const b = { ...tinted('humantorch'), internalName: 'Other', displayName: 'OTHER', zButton: 'jump' as const }
     b.ui = { ...b.ui, ready_voice: 'FE_SFX_TORCH' }
     b.files = new Map([...b.files, ['ui/select_ready.png', pngBytes(200, 400)], ['ui/tile.png', pngBytes(64, 32)]])
     const r = buildBatch(src(), [a, b])
     const [normal, alt] = D.tables(r.dol!)
     expect(D.readRecord(r.dol!, normal, 19).name).toBe('plr_synth')
     expect(D.readRecord(r.dol!, alt, 20)).toMatchObject({ name: 'plr_altOther', key: 'OTHER' })
+    expect(u32be(r.dol!, D.fileOffset(r.dol!, 0x804cc80c))).toBe(19)
     for (const name of ['Bundles/synth.ngm', 'Bundles/other_alt.tpl', 'Misc/PLAYER_Synth.nvb', 'Misc/PLAYER_Other.nvb']) expect(r.adds.has(name), name).toBe(true)
     // the base's portraits under both ids: 18 had placeholders to replace, 19 is new
     expect(r.sets.has(ui.P + 'portraits/c18_p0.big')).toBe(true)

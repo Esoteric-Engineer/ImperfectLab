@@ -9,6 +9,7 @@ import type { RgbaImage } from '../image/rgba'
 import type { DamageKey } from '../build/damage'
 import { LOW_ENERGY_STUN, MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
 import { DISTANCE, JUMP_DISTANCE, JUMPS, type Limb, LIMBS } from '../build/reach'
+import { type ZAction, Z_ACTIONS } from '../game/dol'
 import { BASES } from '../game/roster'
 import * as asftool from '../mnroi/asftool'
 import { GLB, type Json } from '../mnroi/gltf'
@@ -162,6 +163,7 @@ export interface Character {
   moveIdle: string[]
   cutscenes: Cutscenes
   sounds: Record<string, SoundSource>
+  zButton: ZAction | null
   ui: { select: Partial<Record<Pose, Placement>>; fade: number; strip_scale: number | null; ready_voice: string | null; banner: boolean }
   files: Map<string, Uint8Array>
 }
@@ -211,6 +213,7 @@ export function newCharacter(): Character {
     moveIdle: [],
     cutscenes: { audio: {}, effects: {} },
     sounds: {},
+    zButton: null,
     ui: { select: {}, fade: 36, strip_scale: null, ready_voice: null, banner: true },
     files: new Map(),
   }
@@ -273,6 +276,7 @@ export function manifest(c: Character): Json {
     move_idle: c.moveIdle.length ? c.moveIdle : undefined,
     cutscenes: hasCutscenes(c.cutscenes) ? { ...c.cutscenes, effects: Object.keys(c.cutscenes.effects).length ? c.cutscenes.effects : undefined } : undefined,
     sounds: Object.keys(c.sounds).length ? c.sounds : undefined,
+    z_button: c.zButton ?? undefined,
     files: Object.fromEntries([...files].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, v]) => [k, sha(v)])),
   }
 }
@@ -393,7 +397,7 @@ function upgrade(m: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Character {
-  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'cutscenes', 'sounds', 'files'], 'the manifest')
+  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'cutscenes', 'sounds', 'z_button', 'files'], 'the manifest')
   if (m.format !== FORMAT) throw new LabError('not a .imperfect file')
   upgrade(m)
   if (m.game !== GAME) throw new LabError(`this file is for ${m.game}, not ${GAME}`)
@@ -611,6 +615,11 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
       if (!files.has(file)) throw new LabError(`manifest: sounds.${slot} names ${file}, which the file lacks`)
       c.sounds[slot] = { file }
     }
+  }
+  c.zButton = null
+  if (m.z_button !== undefined && m.z_button !== null) {
+    if (typeof m.z_button !== 'string' || !Object.hasOwn(Z_ACTIONS, m.z_button)) throw new LabError(`manifest: z_button is one of ${Object.keys(Z_ACTIONS).join(', ')}`)
+    c.zButton = m.z_button as ZAction
   }
   c.glb = files.get('model/model.glb') ?? null
   files.delete('model/model.glb')

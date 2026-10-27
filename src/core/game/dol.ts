@@ -165,6 +165,29 @@ export function mirrorSkip(dol: Uint8Array): Uint8Array {
   return out
 }
 
+// fn_800FB488's button bindings: a count, then 0x50-byte records (room for 32) of up to four {min, max, type, button} steps, a timeout and the action they set.
+const BINDINGS_COUNT = 0x804cc80c
+const BINDINGS = 0x804cc810
+const BINDING = 0x50
+const GAME_BINDINGS = 18
+const Z_BUTTON = 5
+export const Z_ACTIONS = { jump: [4, 5] } as const
+export type ZAction = keyof typeof Z_ACTIONS
+
+export function zButton(dol: Uint8Array, action: ZAction): Uint8Array {
+  const out = dol.slice()
+  const [record, logical] = Z_ACTIONS[action]
+  const from = fileOffset(out, BINDINGS + BINDING * record)
+  if (u32be(out, from) !== 1 || u32be(out, from + 0x48) !== logical) throw new LabError(`main.dol differs from GVLE69 at 0x${from.toString(16).toUpperCase()}`)
+  const next = out.slice(from, from + BINDING)
+  putU32be(next, 0x10, Z_BUTTON)
+  put(out, fileOffset(out, BINDINGS + BINDING * GAME_BINDINGS), new Uint8Array(BINDING), next)
+  const count = new Uint8Array(4)
+  putU32be(count, 0, GAME_BINDINGS + 1)
+  put(out, fileOffset(out, BINDINGS_COUNT), fromHex('00000012'), count)
+  return out
+}
+
 function checkStats(values: number[]) {
   if (values.length !== 6 || !values.every((v) => v >= 0 && v <= 10)) throw new LabError('stats must be six values from 0 to 10')
 }
