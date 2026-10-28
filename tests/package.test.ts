@@ -159,6 +159,26 @@ describe('round trip', () => {
     expect(() => imperfect.fromManifest({ ...m, stats: { gameplay: { attack_damage_6: 10 } } }, new Map())).toThrow(/unknown key/)
   })
 
+  it('saves and loads energy costs', () => {
+    const c = character()
+    c.gameplay = { energy_super_attack: 0, energy_super_low: 0.5, energy_super_run: 2.5 }
+    expect(imperfect.load(imperfect.save(c)).gameplay).toEqual(c.gameplay)
+    const m = imperfect.manifest(c) as Json
+    expect(() => imperfect.fromManifest({ ...m, stats: { gameplay: { energy_super_low: 0 } } }, new Map())).toThrow(/from 0.1 to 100/)
+    expect(() => imperfect.fromManifest({ ...m, stats: { gameplay: { energy_super_throw: 101 } } }, new Map())).toThrow(/from 0 to 100/)
+    expect(() => imperfect.fromManifest({ ...m, stats: { gameplay: { energy_super_dance: 10 } } }, new Map())).toThrow(/unknown key/)
+  })
+
+  it('warns about flight energy on a character that can\'t fly', () => {
+    const c = character()
+    c.gameplay = { energy_flight: 5 }
+    expect(imperfect.problems(c).some(([l, m]) => l === 'warning' && m.includes('flight energy'))).toBe(true)
+    c.base = 'storm'
+    expect(imperfect.problems(c).some(([, m]) => m.includes('flight energy'))).toBe(false)
+    c.gameplay.flight = false
+    expect(imperfect.problems(c).some(([l, m]) => l === 'warning' && m.includes('flight energy'))).toBe(true)
+  })
+
   it('saves and loads stretched moves', () => {
     const c = character()
     expect(imperfect.manifest(c).move_reach).toBeUndefined()
@@ -423,6 +443,7 @@ describe('hostile files', () => {
       (m) => (m.stats.display.normal = [9, 9, 9, 9, 9, 9]),
       (m) => (m.stats.gameplay.damage_taken = 'lots'),
       (m) => (m.stats.gameplay.attack_damage_1 = 'lots'),
+      (m) => (m.stats.gameplay.energy_super_attack = 'lots'),
       (m) => (m.stats.gameplay.flight = true),
       (m) => (m.stats.gameplay.flight = 'no'),
       (m) => (m.stats.gameplay.low_energy_stun = 'no'),

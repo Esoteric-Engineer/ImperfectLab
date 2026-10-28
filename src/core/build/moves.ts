@@ -15,6 +15,7 @@ import { loadTable, Skeleton } from '../model/skeleton'
 import type { MoveEffect, MoveLines, MoveReach } from '../package/imperfect'
 import * as basemoves from './basemoves'
 import * as damage from './damage'
+import * as energy from './energy'
 import type { Effects } from './effects'
 import { EFFECT_FIELDS, effectNames, OWN_EFFECTS, Slots } from './effectslots'
 import * as reach from './reach'
@@ -215,6 +216,14 @@ export function damageMoves(cat: Catalog, base: string, picked: Record<string, s
     for (const t of ts) out[t].push(move)
   }
   return out
+}
+
+// The moves each energy cost applies to that the character has, by the animations it ends up with (picked: move id -> base).
+export function energyMoves(cat: Catalog, base: string, picked: Record<string, string>): Record<string, Move[]> {
+  return Object.fromEntries(energy.COSTS.map((e) => [e.key, e.moves.flatMap((id) => {
+    const move = MOVE_IDS.get(id)
+    return move && animations(cat, picked[id] ?? base, move) ? [move] : []
+  })]))
 }
 
 export interface MoveOption {

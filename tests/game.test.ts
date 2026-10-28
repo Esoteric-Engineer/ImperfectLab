@@ -989,6 +989,29 @@ describe.skipIf(!ISO)('moves', () => {
     expect(tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, 23)).toEqual([15, 11, 15, 20, 15, 15])
   })
 
+  it('reads energy costs and the moves they apply to', () => {
+    expect(new tuning.Tuning(src(), new R.BaseCharacter(src(), 'thing')).gameplay().energy_super_attack).toBe(15)
+    expect(new tuning.Tuning(src(), new R.BaseCharacter(src(), 'wolverine')).gameplay().energy_super_attack).toBe(7)
+    const cat = catalog()
+    const ids = (base: string, picked: Record<string, string> = {}) => Object.fromEntries(Object.entries(moves.energyMoves(cat, base, picked)).map(([k, ms]) => [k, ms.map((m) => m.id)]))
+    const thing = ids('thing')
+    expect(thing.energy_super_attack).toContain('SuperAttack1')
+    expect(thing.energy_super_throw).toEqual(['SuperThrow'])
+    expect(thing.energy_wire_extend).toEqual([])
+    expect(ids('spiderman').energy_wire_extend).toEqual(['WireExtend'])
+    expect(ids('thing', { WireExtend: 'spiderman' }).energy_wire_extend).toEqual(['WireExtend'])
+  })
+
+  it('doubles Thing\'s super attack energy cost in every tuning slot', () => {
+    const c = tinted('thing')
+    c.aura = { ...c.aura, mode: 'base' }
+    c.gameplay = { energy_super_attack: 30 }
+    const r = new Builder(src(), c).build()
+    const base = new tuning.Tuning(src(), new R.BaseCharacter(src(), 'thing'))
+    expect(tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, 31)).toEqual(Array.from({ length: tuning.SLOTS }, (_, s) => base.num(31, s) * 2))
+    expect(tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, 36)).toEqual(Array.from({ length: tuning.SLOTS }, (_, s) => base.num(36, s)))
+  })
+
   it('plays Daredevil\'s cable when Wolverine takes his super throw', () => {
     const c = wolverine()
     c.moveEffects = { SuperThrow: 'theirs' }

@@ -1,5 +1,6 @@
 import * as damage from '../../core/build/damage'
-import { damageMoves } from '../../core/build/moves'
+import * as energy from '../../core/build/energy'
+import { damageMoves, energyMoves, type Move } from '../../core/build/moves'
 import { formatG } from '../../core/format'
 import { FLYERS, type Gameplay, GAMEPLAY as RANGES } from '../../core/package/imperfect'
 import { Note, NumberInput } from '../components/common'
@@ -139,6 +140,7 @@ export function StatsPage() {
         </tbody>
       </table>
       {store.game && <Damage />}
+      {store.game && <Energy />}
     </div>
   )
 }
@@ -189,3 +191,62 @@ function Damage() {
   )
 }
 
+
+function setEnergy(key: energy.EnergyKey, v: number | null) {
+  const gp = store.character.gameplay
+  if (v === null) delete gp[key]
+  else gp[key] = Math.round(v * 10) / 10
+  store.touch('character')
+}
+
+function EnergyTable({ costs, users }: { costs: energy.Cost[]; users: Record<string, Move[]> | null }) {
+  const c = store.character
+  const gp = c.gameplay
+  const bv = store.baseDetails()
+  return (
+    <table className="gameplay grid damage">
+      <thead><tr><th>Cost</th><th>Moves</th><th className="num">Base</th><th>New</th><th className="num">Change</th></tr></thead>
+      <tbody>
+        {costs.map(({ key, label }) => {
+          const base = bv?.gameplay[key]
+          const have = gp[key] !== undefined
+          const [lo, hi] = RANGES[key]
+          const scaled = have && base! > 0 && gp[key] !== base
+          return (
+            <tr key={key}>
+              <td><label className="check"><input type="checkbox" checked={have} disabled={base === undefined} onChange={(e) => setEnergy(key, e.target.checked ? base! : null)} /> {label}</label></td>
+              <td>
+                {!users ? <span className="muted">reading moves...</span> : users[key].length ? <div className="chips">{users[key].map((m) => <span key={m.id} className="chip">{m.label}</span>)}</div> : <span className="muted">none</span>}
+              </td>
+              <td className="num">{base === undefined ? '-' : formatG(base)}</td>
+              <td><NumberInput className="short" disabled={!have} min={lo} max={hi} step={1} value={gp[key] ?? base ?? null} onChange={(v) => setEnergy(key, v)} /></td>
+              <td className="num muted">{scaled ? `×${formatG(Math.round((gp[key]! / base!) * 100) / 100)}` : ''}</td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
+  )
+}
+
+function Energy() {
+  const c = store.character
+  const cat = store.moveCatalog()
+  const users = cat?.[c.base] ? energyMoves(cat, c.base, c.moves) : null
+  const flies = FLYERS.includes(c.base) && c.gameplay.flight !== false
+  const other = energy.OTHER.filter((e) => c.gameplay[e.key] !== undefined || (e.flight ? flies : !users || users[e.key].length > 0))
+  return (
+    <>
+      <h3>Energy costs</h3>
+      <Note>
+        A full energy bar is 100. A move can't start without enough energy for it. Moves that share a cost can't be set apart.<br />
+        A super move other than the super attack set to 0 costs the super attack's amount instead, so it goes down to 0.1.
+      </Note>
+      <EnergyTable costs={energy.SUPER} users={users} />
+      {other.length > 0 && <>
+        <h4>Other energy use</h4>
+        <EnergyTable costs={other} users={users} />
+      </>}
+    </>
+  )
+}
