@@ -147,8 +147,10 @@ Older ImperfectLab builds refuse a file with `flames`.
     `energy_super_swing` (super swing and wire attacks), `energy_dodge_super`, `energy_super_throw`, `energy_super_air_throw` and
     `energy_super_ranged`; all but `energy_super_attack`, `energy_super_throw` and `energy_super_ranged` start at 0.1. Other use: `energy_super_run` (per second, and the wire swing),
     `energy_super_jump`, `energy_flight` (per second flying up), `energy_flight_min` (needed to take off) and `energy_wire_extend`.
-  - Experimental: `health` (integer 10-1000), `run_speed` (1-30), `sprint_speed` (1-40), `rage_per_super` (0-100)
-    and `rage_duration` (integer 1000-120000).
+  - `health`: integer 10-1000.
+  - `run_speed`: 1-30. `sprint_speed`: 1-40.
+  - `rage_duration`: integer 1000-120000, in milliseconds.
+  - Experimental: `rage_per_super` (0-100).
 
   The base's spread between the human player and the CPU difficulty levels is kept.
 

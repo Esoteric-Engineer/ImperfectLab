@@ -15,10 +15,10 @@ const GAMEPLAY: [Key, string, string, number, number, boolean][] = [
   ['wire_swing', 'Wire swing', '', 0, 0, true],
   ['flight', 'Flight', '', 0, 0, true],
   ['health', 'Health', '', 10, 1000, true],
-  ['run_speed', 'Run speed', '', 1, 30, false],
-  ['sprint_speed', 'Sprint speed', '', 1, 40, false],
+  ['run_speed', 'Run speed', '', 1, 30, true],
+  ['sprint_speed', 'Sprint speed', '', 1, 40, true],
   ['rage_per_super', 'Rage per super attack', '', 0, 100, false],
-  ['rage_duration', 'Rage duration', ' ms', 1000, 120000, false],
+  ['rage_duration', 'Rage duration', ' ms', 1000, 120000, true],
 ]
 
 function StatBar({ value, base }: { value: number; base: number | null }) {
