@@ -91,6 +91,39 @@ describe('round trip', () => {
     expect(d.baseMoves).toEqual({ throw_reach: 35, throw_cable: false })
   })
 
+  it('saves and loads the holster, which needs a prop on the club and the cable off', () => {
+    const c = character()
+    c.base = 'daredevil'
+    c.baseMoves = { holster: { position: [0.05, -0.2, 0.1], rotation: [0, 90, -45] } }
+    const errors = (x: imperfect.Character) => imperfect.problems(x).filter(([l]) => l === 'error').map(([, m]) => m).join(' ')
+    expect(errors(c)).toContain('cable')
+    expect(errors(c)).toContain('bone 39')
+    c.baseMoves.throw_cable = false
+    c.materials[0].bind = 39
+    expect(errors(c)).toBe('')
+    const d = imperfect.load(imperfect.save(c))
+    expect(d.baseMoves).toEqual(c.baseMoves)
+    d.materials[0].bind = null
+    d.mapping.set(39, 'mixamorig:RightHand')
+    expect(errors(d)).toBe('')
+    d.base = 'wolverine'
+    expect(errors(d)).toContain('Daredevil')
+  })
+
+  it('saves and loads moves held apart from the holster default', () => {
+    const c = character()
+    c.base = 'daredevil'
+    c.materials[0].bind = 39
+    c.baseMoves = { throw_cable: false, holster: { ...imperfect.defaultHolster(), drawn: { Block: true, SuperBlock: false } } }
+    const errors = (x: imperfect.Character) => imperfect.problems(x).filter(([l]) => l === 'error').map(([, m]) => m).join(' ')
+    expect(errors(c)).toBe('')
+    expect(imperfect.load(imperfect.save(c)).baseMoves).toEqual(c.baseMoves)
+    c.baseMoves.holster!.drawn = { SuperAttackFar: false }
+    expect(errors(c)).toContain('throws or hits with the club')
+    c.baseMoves.holster!.drawn = { PowerOn: true }
+    expect(errors(c)).toContain('the holster decides')
+  })
+
   it('saves and loads the range grab', () => {
     const c = character()
     c.base = 'daredevil'
@@ -467,6 +500,13 @@ describe('hostile files', () => {
       (m) => ((m.base = 'daredevil'), (m.base_moves = { throw_cable: 'no' })),
       (m) => ((m.base = 'daredevil'), (m.base_moves = { grab: 'thing' })),
       (m) => ((m.base = 'daredevil'), (m.base_moves = { range_grab: 'yes' })),
+      (m) => (m.base_moves = { holster: { position: [0, 0, 0], rotation: [0, 0, 0] } }),
+      (m) => ((m.base = 'daredevil'), (m.base_moves = { holster: { position: [0, 0, 2], rotation: [0, 0, 0] } })),
+      (m) => ((m.base = 'daredevil'), (m.base_moves = { holster: { position: [0, 0], rotation: [0, 0, 0] } })),
+      (m) => ((m.base = 'daredevil'), (m.base_moves = { holster: { position: [0, 0, 0] } })),
+      (m) => ((m.base = 'daredevil'), (m.base_moves = { holster: { position: [0, 0, 0], rotation: [0, 0, 0], at: 'back' } })),
+      (m) => ((m.base = 'daredevil'), (m.base_moves = { holster: { position: [0, 0, 0], rotation: [0, 0, 0], drawn: { Dance: true } } })),
+      (m) => ((m.base = 'daredevil'), (m.base_moves = { holster: { position: [0, 0, 0], rotation: [0, 0, 0], drawn: { Block: 'yes' } } })),
       (m) => (m.base_moves = { range_grab: true }),
       (m) => (m.moves = { NotAMove: 'thing' }),
       (m) => (m.moves = { SuperThrow: 'galactus' }),

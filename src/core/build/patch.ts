@@ -26,6 +26,7 @@ import * as cutscenes from './cutscenes'
 import * as effects from './effects'
 import * as basemoves from './basemoves'
 import * as flames from './flames'
+import * as holster from './holster'
 import * as moves from './moves'
 import * as portraits from './portraits'
 import * as reach from './reach'
@@ -77,6 +78,7 @@ export class Builder {
   tint: string | null = null
   greyTint: [boolean, boolean] = [false, false] // whether tinted effects draw the grey fire sprite
   moveFx: moves.EffectPlan | null = null
+  propCenter: [number, number, number] | null = null
 
   constructor(source: GameSource, character: Character, progress?: Progress, model?: Model) {
     this.src = source
@@ -185,6 +187,7 @@ export class Builder {
       if (m.bind !== null && m.bind >= sk.nodes.length) throw new LabError(`material ${m.name} is bound to game bone ${m.bind}, which ${base.label} does not have`)
     }
     const tris = f.triangles(slots)
+    this.propCenter = c.baseMoves.holster ? holster.center(tris.values()) : null
     const far = Object.keys(c.moveReach).length ? moves.farLimb(this.src, base, c.moveReach, c.moves) : null
     const imgs = this.materialImages(model)
     const normals = new bundle.NormalIndex(bundle.readNormals(this.src.entry('Misc/NormalTable.ngn')))
@@ -382,7 +385,9 @@ export class Builder {
     if (!ownMotions(c)) return null
     const thrown = c.baseMoves.throw_reach
     const fx = Object.keys(c.moveReach).length ? new effects.Effects(this.src.entry('Misc/game.nfx')) : null
-    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle)
+    const h = c.baseMoves.holster
+    const onBack = h && this.propCenter ? { ...h, center: this.propCenter } : null
+    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, onBack)
     for (const [k, v] of m.files) this.r.adds.set(k, v)
     if (thrown !== undefined) this.note(`baton throw: reaches ${thrown} m (${this.base.label}'s about 8)`)
     for (const n of m.notes) this.note(n)
@@ -525,7 +530,7 @@ export class Builder {
 
 // Whether the character gets its own motion set and animation bundles (Builder.motions).
 export function ownMotions(c: Character): boolean {
-  return c.baseMoves.throw_reach !== undefined || Object.keys(c.moves).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1
+  return c.baseMoves.throw_reach !== undefined || c.baseMoves.holster !== undefined || Object.keys(c.moves).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1
 }
 
 // A stretched hit that comes back from where it lands needs RETURN_ABILITY and main.dol's mirrored skip.

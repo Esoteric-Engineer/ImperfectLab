@@ -150,18 +150,18 @@ function frames(a: number, b: number, also: number[]): number[] {
   return [...new Set([...out, ...also.filter((f) => a < f && f < b)])].sort((x, y) => x - y)
 }
 
-// Replaces the bone's translation keys from the first key's frame to the last's, or adds a track.
-function withKeys(rec: ngbtool.Record, bone: number, keys: ngbtool.Key[]): ngbtool.Record {
+// Replaces the bone's keys on channel ch (translation by default) from the first key's frame to the last's, or adds a track.
+export function withKeys(rec: ngbtool.Record, bone: number, keys: ngbtool.Key[], ch = 1): ngbtool.Record {
   const lo = keys[0][0], hi = keys[keys.length - 1][0]
   const tracks = [...rec.tracks], pointers = [...rec.pointers]
-  const at = tracks.findIndex(([b, ch]) => b === bone && ch === 1)
+  const at = tracks.findIndex(([b, c]) => b === bone && c === ch)
   if (at >= 0) {
     const old = tracks[at][2]
-    tracks[at] = [bone, 1, [...old.filter(([f]) => f < lo), ...keys, ...old.filter(([f]) => f > hi)]]
+    tracks[at] = [bone, ch, [...old.filter(([f]) => f < lo), ...keys, ...old.filter(([f]) => f > hi)]]
   } else {
-    let i = tracks.findIndex(([b, ch]) => (b & 0xffff) > bone || (b === bone && ch > 1))
+    let i = tracks.findIndex(([b, c]) => (b & 0xffff) > bone || (b === bone && c > ch))
     if (i < 0) i = tracks.length
-    tracks.splice(i, 0, [bone, 1, keys])
+    tracks.splice(i, 0, [bone, ch, keys])
     pointers.splice(i, 0, 0)
   }
   return { ...rec, tracks, pointers, length: Math.max(rec.length, hi) }

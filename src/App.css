@@ -627,6 +627,10 @@ table.fixed th.c-fx {
   width: 240px;
 }
 
+table.fixed th.c-held {
+  width: 110px;
+}
+
 table.fixed td.anim {
   color: var(--muted);
   font-size: 13px;
@@ -711,6 +715,19 @@ table.credits input {
   border: 1px solid var(--line);
   border-radius: 4px;
   touch-action: none;
+}
+
+.holster-view {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-self: stretch;
+  min-width: 280px;
+  max-width: 520px;
+}
+
+.holster-view .viewport {
+  min-height: 360px;
 }
 
 .hint {

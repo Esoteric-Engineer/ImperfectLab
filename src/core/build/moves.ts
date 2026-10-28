@@ -16,6 +16,7 @@ import type { MoveEffect, MoveLines, MoveReach } from '../package/imperfect'
 import * as basemoves from './basemoves'
 import * as damage from './damage'
 import * as energy from './energy'
+import * as holster from './holster'
 import type { Effects } from './effects'
 import { EFFECT_FIELDS, effectNames, OWN_EFFECTS, Slots } from './effectslots'
 import * as reach from './reach'
@@ -125,6 +126,7 @@ export const MOVES: Move[] = (() => {
   return out
 })()
 export const MOVE_IDS = new Map(MOVES.map((m) => [m.id, m]))
+const MOVE_OF = new Map(MOVES.flatMap((m) => m.states.map((s): [string, string] => [s.toLowerCase(), m.id])))
 
 export function motionSetName(internal: string): string {
   return `${internal}.nms`
@@ -521,7 +523,7 @@ export interface MotionFiles {
 
 export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: string, moves: Record<string, string>, throwReach?: number,
   choice: Record<string, MoveEffect> = {}, plan: EffectPlan | null = null, stretches: Record<string, MoveReach> = {}, fx: Effects | null = null,
-  size = 1, idle: string[] = []): MotionFiles {
+  size = 1, idle: string[] = [], onBack: holster.Plan | null = null): MotionFiles {
   const set = motionSetOf(base), stem = stemOf(set), name = internal.toLowerCase()
   const own = nmstool.parse(src.entry(`Motions/${set}`))
   const bundles = loadBundles(src, stem)
@@ -693,6 +695,43 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       notes.push(`reach: ${move.label} stretches the ${r.limbs.map((l) => reach.LIMB_LABELS[l]).join(' and ')} ${how}${r.returns ? ', coming back from where it hits' : ''}${r.hold ? ', held while airborne' : ''}`)
     }
   }
+  if (onBack) {
+    const k3 = (v: ngbtool.Vec3) => v.map((x) => x * size) as ngbtool.Vec3
+    const plan = { ...onBack, position: k3(onBack.position), center: k3(onBack.center) }
+    const arm = holster.armOf(new Skeleton(models[0], base.body))
+    const groups = new Map<string, [Exclude<holster.Role, 'drawn'>, string, nmstool.Motion[]]>()
+    for (const m of resolved(src, own, holds(bundles)).values()) {
+      const own = holster.role(m.state)
+      const picked = onBack.drawn?.[MOVE_OF.get(m.state.toLowerCase()) ?? '']
+      const role = (own === 'stowed' || own === 'drawn') && picked !== undefined ? (picked ? 'drawn' : 'stowed') : own
+      if (role === null || role === 'drawn') continue
+      const key = `${role} ${m.anim.toLowerCase()}`
+      if (!groups.has(key)) groups.set(key, [role, m.anim.toLowerCase(), []])
+      groups.get(key)![2].push(m)
+    }
+    let held = 0
+    for (const [role, anim, states] of groups.values()) {
+      const found = SLOTS.flatMap((slot): [string, ngbtool.Record][] => {
+        const rec = bundles.get(slot)?.find((r) => r.name.toLowerCase() === anim)
+        return rec ? [[slot, rec]] : []
+      })
+      if (!found.length) continue
+      const out = found.map(([, rec]) => {
+        if (role === 'stowed') return holster.stow(rec, models[0], plan)
+        if (role === 'free') return holster.free(rec)
+        return holster.draw(rec, models[0], plan, arm, role)
+      })
+      const named = ownName(out[0])
+      found.forEach(([slot], i) => {
+        const into = bundles.get(slot)!
+        if (!into.some((r) => r.name.toLowerCase() === named.toLowerCase())) into.push({ ...out[i], name: named })
+      })
+      for (const m of states) own.set({ ...m, anim: named })
+      displaced.add(anim)
+      held++
+    }
+    notes.push(`holster: ${base.label}'s club rides on the back outside power mode (${held} animations); power-on draws it and power-off puts it back`)
+  }
   // the base's records the moves replaced, unless another state still plays them
   const used = new Set([...resolved(src, own, () => true).values()].map((m) => m.anim.toLowerCase()))
   for (const l of own.lines) if (l.motion) used.add(l.motion.anim.toLowerCase())
@@ -718,6 +757,6 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     after += data.length
     files.set(`Bundles/${name}${slot}.ngb`, data)
   }
-  if (Object.keys(moves).length || idle.length || size !== 1) notes.push(`${size !== 1 ? 'size' : 'moves'}: animations ${Math.round(after / 1024)} KB (${base.label}'s ${Math.round(before / 1024)} KB)`)
+  if (Object.keys(moves).length || idle.length || size !== 1 || onBack) notes.push(`${size !== 1 ? 'size' : 'moves'}: animations ${Math.round(after / 1024)} KB (${base.label}'s ${Math.round(before / 1024)} KB)`)
   return { motionSet: motionSetName(internal), files, notes }
 }

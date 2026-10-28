@@ -24,7 +24,7 @@ import { Model } from '../core/model/glb'
 import * as mapping from '../core/model/mapping'
 import { Skeleton } from '../core/model/skeleton'
 import * as imperfect from '../core/package/imperfect'
-import { baseMeshes, costumeImage, fittedMeshes, gameBones, materialImages, type MeshData, sourceBones, sourceMeshes } from '../core/preview'
+import { baseMeshes, type BoneLine, costumeImage, fittedMeshes, gameBones, holsteredTris, materialImages, type MeshData, sourceBones, sourceMeshes } from '../core/preview'
 import type { BaseDetails, BaseInfo, CheckResult, ComposeArgs, DiscInfo, ImportedModel, BatchCheckResult, LayoutInfo, ModelInfo, PreviewResult } from './protocol'
 
 const DEFAULT_SIZES: Record<string, [number, number]> = {
@@ -364,6 +364,21 @@ export class Service {
       gameBones: gameBones(sk, c.size),
       sourceBones: sourceBones(m, f.flip),
       stats,
+    }
+  }
+
+  // The fitted model with the holster's prop on the back, or why it can't be shown.
+  holsterPreview(c: imperfect.Character): { meshes: MeshData[]; bones: BoneLine[] } | string {
+    const h = c.baseMoves.holster
+    if (!h) return 'the holster is off'
+    try {
+      const { m, sk, included, tris } = this.fitted(c)
+      const images = materialImages(m, c)
+      const bySlot = new Map(included.map((x, i) => [i, images.get(x.gltfMaterial) ?? null]))
+      return { meshes: previewTextures(fittedMeshes(holsteredTris(tris, sk, h), bySlot, c.size)), bones: gameBones(sk, c.size) }
+    } catch (e) {
+      if (!(e instanceof LabError)) throw e
+      return e.message
     }
   }
 

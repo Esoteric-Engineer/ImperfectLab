@@ -55,6 +55,18 @@ A Daredevil-based character's `throw_reach` (`base_moves`, [`FORMAT.md`](FORMAT.
 - **Memory and space.** The character has its own copy of Daredevil's animations (about 2.7 MB on the disc), so a match against Daredevil loads both. It needs its own tuning file, so it takes a line in the tuning list (above).
 - **`main.dol` changes.** `fn_8019DB24` (animation time setter) is rewritten in place so that a club that hits comes back from where it hit.
 
+## Holster
+
+A Daredevil-based character's `holster` (`base_moves`, [`FORMAT.md`](FORMAT.md)):
+
+- **Only power-on and power-off reach for it.** Any other move that has the prop somewhere else than the move before it (the ranged attack outside power mode, or a move set in hand outside it) slides it between the back and the hand while the game fades into the animation.
+- **The arm reach is approximate.** Power-on and power-off keep their length (Wolverine's power-on is 10 frames), so the reach is quick and the arm can pass through the head or shoulder. The prop jumps from the back to the hand.
+- **Animations that aren't the character's own** show the prop where the club would be: cutscenes, and the victim's side of an opponent's throw.
+- **Daredevil's own power-on** has flagged torso tracks (bone words `0x10000` and up) that the holster ignores, so the prop may sit a little off the back early in it.
+- **The cable must be off**, since it is drawn from the forearm to the club.
+- **The fingers keep their grip** from the `IKClaws` clip, which the game plays over every animation, even with the prop on the back.
+- **Memory and space** are as for swapped moves: the character has its own copy of the base's animations, and the club's keys on the back add about 115 KB to it.
+
 ## Swapped moves
 
 Moves taken from other bases (`moves`, [`FORMAT.md`](FORMAT.md)):
