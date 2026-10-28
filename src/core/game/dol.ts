@@ -38,6 +38,13 @@ const MIRROR_SKIP: [number, string, string] = [0x8019db24,
   '8083001c2884000041860048c0030004fc0100004081003c80a4003c80c4004034a5ffff4180002ca0e600042807007e40820010c0460000' +
   'fc0208004182000c38c6000c4bffffdcec410028ec21102ad02300044d86002080a3002454a5103a80630020388000004bfd488c60000000']
 
+// fn_8009D71C (caches the energy regeneration rates) rewritten in place: the rate while holding R (+0x3D0) also adds tuning field 245, which only ImperfectLab sets.
+const CHARGE_RATE: [number, string, string] = [0x8009d71c,
+  '9421fff07c0802a6bfc10008900100147c3f0b787c7e1b787fc3f3783880002d48014149fc000890d01e03cc7fc3f3783880002b48014135fc000890d01e03c47fc3f378' +
+  '3880002c48014121fc000890d01e03c8806d91e83880003938a00000483965a5fc000890c1be03ccec000372d01e03d081610000800b00047c0803a6bbcbfff87d615b784e800020',
+  '9421fff07c0802a6bfc10008900100147c7e1b783880002d48014151d03e03cc7fc3f3783880002b48014141d03e03c47fc3f3783880002c48014131d03e03c8806d91e8' +
+  '3880003938a00000483965b9c1be03ccec010372d01e03d07fc3f378388000f548014105c01e03d0ec00082ad01e03d0800100147c0803a6bbc10008382100104e80002060000000']
+
 // fn_80114420 (loads each player's SFX bank) rewritten in place from sfxbanks.s: own banks for new characters, one bank per type ID.
 const SFX_BANKS: [number, number, string] = [0x80114420, 0x3b4, '7298b504a7cb5aa56a512407733250e5f641ca5b']
 const SFX_BANKS_CODE =
@@ -161,6 +168,13 @@ export function growEffectCache(dol: Uint8Array, size: number): Uint8Array {
 export function mirrorSkip(dol: Uint8Array): Uint8Array {
   const out = dol.slice()
   const [va, old, next] = MIRROR_SKIP
+  put(out, fileOffset(out, va), fromHex(old), fromHex(next))
+  return out
+}
+
+export function chargeRate(dol: Uint8Array): Uint8Array {
+  const out = dol.slice()
+  const [va, old, next] = CHARGE_RATE
   put(out, fileOffset(out, va), fromHex(old), fromHex(next))
   return out
 }

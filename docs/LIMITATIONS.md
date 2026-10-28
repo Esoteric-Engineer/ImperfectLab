@@ -59,7 +59,7 @@ A Daredevil-based character's `throw_reach` (`base_moves`, [`FORMAT.md`](FORMAT.
 
 Moves taken from other bases (`moves`, [`FORMAT.md`](FORMAT.md)):
 
-- **Only the animation changes.** Cost, reach and sounds stay the base's. Damage is one of the character's five values (below), though an animation that picks one brings its pick along. Effects stay the base's too unless taken (`move_effects`), and a cue the base has no effect for does nothing (the Thing's super throw on Daredevil has no hit flash).
+- **Only the animation changes.** Reach and sounds stay the base's, and the energy cost is the move's (below), not the animation's. Damage is one of the character's five values (below), though an animation that picks one brings its pick along. Effects stay the base's too unless taken (`move_effects`), and a cue the base has no effect for does nothing (the Thing's super throw on Daredevil has no hit flash).
 - **Other body classes are approximate.** Their animations are mapped bone by bone, but limbs differ: a brute's grab on a male character holds the opponent at arm's length.
 - **Memory and space.** The character has its own copy of the base's animations (about 1 to 3 MB on the disc), so a match against the base loads both.
 - **Finishing moves are not moves.** They are cutscenes (below), not motion-set animations.
@@ -87,6 +87,23 @@ The character's five damage values (`attack_damage_1` to `_5`, [`FORMAT.md`](FOR
 - **A held object's swing** uses the object's strength, not these values.
 - **Projectiles keep their damage.** They pass their own damage to the hit (`fn_800A0488`), so a ranged attack is unchanged.
 - **Memory and space.** Changed values need the character's own tuning file, so they take a line in the tuning list (above).
+
+## Energy costs
+
+The character's energy costs (`energy_*`, [`FORMAT.md`](FORMAT.md)):
+
+- **Costs, not moves.** `fn_800DA884` gives a super move its cost from a tuning field, so moves that share one can't be set apart.
+- **0 is the super attack cost.** A super move that caches its cost (all but the super attack, super throw and super ranged attack) takes the super attack cost when its own is 0, so those go down to 0.1.
+- **The wall-climb ranged attack is a super attack.** Spider-Man's and Venom's shot from a wall (Super + attack, `WallClimb`, `fn_800D05BC`) has no case in `fn_800DA884`, so it costs the super attack cost, not the ranged one. Flyers' shots while hovering (`fn_800D875C`) set no cost of their own.
+- **The super attack cost has another reader.** `fn_8009D818` regenerates health (field 43, Wolverine's healing) only while energy is at least the super attack cost.
+- **Memory and space.** Changed costs need the character's own tuning file, so they take a line in the tuning list (above).
+
+## Energy recharge
+
+The character's energy recharge rates (`energy_regen`, `energy_charge`, [`FORMAT.md`](FORMAT.md)):
+
+- **main.dol changes.** The game sets the held rate to 4 times the passive one (GLOBALS field 57) in `fn_8009D71C`. That function is rewritten to also add tuning field 245, which the game never reads otherwise. Characters that don't set it, the game's own included, are unchanged.
+- **Memory and space.** Changed rates need the character's own tuning file, so they take a line in the tuning list (above).
 
 ## Wall climbing and running
 

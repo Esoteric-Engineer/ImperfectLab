@@ -7,6 +7,7 @@ import { decodeImage } from '../image/decode'
 import { encodePng, pngSize } from '../image/png'
 import type { RgbaImage } from '../image/rgba'
 import type { DamageKey } from '../build/damage'
+import { COSTS, type EnergyKey, FALLBACK, RECHARGE, type RechargeKey } from '../build/energy'
 import { LOW_ENERGY_STUN, MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
 import { DISTANCE, JUMP_DISTANCE, JUMPS, type Limb, LIMBS } from '../build/reach'
 import { type ZAction, Z_ACTIONS, Z_SECONDS, Z_VISIBLE } from '../game/dol'
@@ -46,6 +47,8 @@ export const GAMEPLAY: Record<string, [number, number, boolean]> = {
   super_throw_range: [1.0, 20.0, false],
   attack_damage_1: [1, 1000, false], attack_damage_2: [1, 1000, false], attack_damage_3: [1, 1000, false],
   attack_damage_4: [1, 1000, false], attack_damage_5: [1, 1000, false],
+  ...Object.fromEntries(COSTS.map((c): [string, [number, number, boolean]] => [c.key, [FALLBACK.includes(c.key) ? 0.1 : 0, 100, false]])),
+  ...Object.fromEntries(RECHARGE.map((r): [string, [number, number, boolean]] => [r.key, [0, 100, false]])),
 }
 export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable', 'range_grab'] }
 export type WallKey = 'wall_climb' | 'wall_run'
@@ -97,7 +100,7 @@ export interface Credit {
   url: string
 }
 
-export type Gameplay = Partial<Record<'damage_taken' | 'health' | 'run_speed' | 'sprint_speed' | 'rage_per_super' | 'rage_duration' | 'super_throw_range' | DamageKey, number>> & {
+export type Gameplay = Partial<Record<'damage_taken' | 'health' | 'run_speed' | 'sprint_speed' | 'rage_per_super' | 'rage_duration' | 'super_throw_range' | DamageKey | EnergyKey | RechargeKey, number>> & {
   lift?: string
   wire_swing?: boolean
   flight?: boolean
@@ -321,6 +324,9 @@ export function problems(c: Character): Problem[] {
       } else if (!has && w.states.some((id) => c.moves[id])) out.push(['warning', `${w.label} animations are picked but ${w.label} is off, so they never play`])
     }
     if (c.gameplay.flight === false && !FLYERS.includes(c.base)) out.push(['error', `${BASES[c.base][0]} can't fly: untick flight on the Stats page`])
+    if (COSTS.some((e) => e.flight && c.gameplay[e.key] !== undefined) && (c.gameplay.flight === false || !FLYERS.includes(c.base))) {
+      out.push(['warning', "flight energy costs are set but the character can't fly, so they do nothing"])
+    }
     const stuns = STUN_BASES.includes(c.base), stun = c.gameplay.low_energy_stun
     if (stun === stuns) out.push(['error', `${BASES[c.base][0]} ${stuns ? 'already has' : 'has no'} low-energy stun: set it back on the Moves page`])
     else if (stun) {
