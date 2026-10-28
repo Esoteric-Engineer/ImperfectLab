@@ -130,11 +130,30 @@ function compareScore(a: [number, number], b: [number, number]): number {
   return a[0] !== b[0] ? a[0] - b[0] : a[1] - b[1]
 }
 
+// Rigs built on an exported base keep this tool's own bone names. Covers every node.
+const gameName: Normalize = (name) => name.replace(/[\s_]+/g, ' ').trim().toLowerCase()
+
+function gameNameMap(model: Model, skeleton: Skeleton): Mapping {
+  const lookup = new Map<string, string>()
+  for (const n of model.jointNames()) {
+    const k = gameName(n)
+    if (!lookup.has(k)) lookup.set(k, n)
+  }
+  const mapping: Mapping = new Map()
+  for (const node of skeleton.nodes) {
+    const j = lookup.get(gameName(node.name))
+    if (j !== undefined) mapping.set(node.index, j)
+  }
+  return mapping
+}
+
 export function autoMap(model: Model, skeleton: Skeleton): AutoMap {
   const weighted = model.weighted()
   const names = model.jointNames()
-  let best: [[number, number], AutoMap] | null = null
   const required = skeleton.requiredRoles()
+  const native = gameNameMap(model, skeleton)
+  let best: [[number, number], AutoMap] | null = [[required.filter((r) => native.has(skeleton.node(r)!)).length, native.size],
+    { preset: 'game bone names', mapping: native, overrides: new Map() }]
   for (const preset of PRESETS) {
     const lookup = new Map<string, string>()
     for (const n of names) {

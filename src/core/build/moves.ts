@@ -10,12 +10,15 @@ import type { GameSource } from '../game/source'
 import * as ngbtool from '../mnroi/ngbtool'
 import * as ngmtool from '../mnroi/ngmtool'
 import * as nmstool from '../mnroi/nmstool'
+import { scaleModel } from '../model/bundle'
 import { loadTable, Skeleton } from '../model/skeleton'
 import type { MoveEffect, MoveLines, MoveReach } from '../package/imperfect'
 import * as basemoves from './basemoves'
+import * as damage from './damage'
 import type { Effects } from './effects'
 import { EFFECT_FIELDS, effectNames, OWN_EFFECTS, Slots } from './effectslots'
 import * as reach from './reach'
+import { scaleMotionSet, scaleRecord, strides } from './size'
 import * as tuning from './tuning'
 
 export const SLOTS = ['', '-t0', '-t1', '-t2']
@@ -142,12 +145,14 @@ function resolved(src: GameSource, own: nmstool.MotionSet, has: (anim: string) =
   return out
 }
 
-// Each base's animations by lowercased state, its super throw range, and what each animation can stretch (by lowercased name), for the Moves page.
+// Each base's animations by lowercased state, its super throw range, its damage values, and what each animation can stretch and which damage values it hits with (by lowercased name), for the Moves page.
 export interface BaseMotions {
   body: string
   motions: Record<string, string>
   range: number
+  damage: number[]
   reach?: Record<string, reach.Summary>
+  strikes?: Record<string, number[]>
 }
 export type Catalog = Record<string, BaseMotions>
 
@@ -168,17 +173,23 @@ export function catalog(src: GameSource, fx: Effects): Catalog {
       const lines = linesOf(fx, tun)
       const names = new Set<string>()
       const plans: Record<string, reach.Summary> = {}
+      const strikes: Record<string, number[]> = {}
       for (const slot of SLOTS) {
         if (!src.has(`Bundles/${stem}${slot}.ngb`)) continue
         for (const [n, length, events] of ngbtool.events(src.entry(`Bundles/${stem}${slot}.ngb`))) {
-          names.add(n.toLowerCase())
-          const p = plans[n.toLowerCase()] ? null : reach.plan(events, length, lines)
-          if (p) plans[n.toLowerCase()] = reach.summary(p)
+          const k = n.toLowerCase()
+          if (names.has(k)) continue
+          names.add(k)
+          const p = reach.plan(events, length, lines)
+          if (p) plans[k] = reach.summary(p)
+          const hits = damage.strikes(events)
+          if (hits.length) strikes[k] = hits
         }
       }
       const m = resolved(src, nmstool.parse(src.entry(`Motions/${set}`)), (a) => names.has(a.toLowerCase()))
       const range = tun.num(tuning.FIELDS.super_throw_range)
-      out[key] = { body: base.body, motions: Object.fromEntries([...m].map(([k, v]) => [k, v.anim])), range, reach: plans }
+      const values = damage.KEYS.map((k) => tun.num(tuning.FIELDS[k]))
+      out[key] = { body: base.body, motions: Object.fromEntries([...m].map(([k, v]) => [k, v.anim])), range, damage: values, reach: plans, strikes }
     } catch (e) {
       if (!(e instanceof LabError)) throw e
     }
@@ -191,6 +202,19 @@ export function animations(cat: Catalog, base: string, move: Move): (string | nu
   if (!own) return null
   const out = move.states.map((s) => own.motions[s.toLowerCase()] ?? null)
   return out.some((a) => a !== null) ? out : null
+}
+
+// The moves that hit with each damage value, by the animations the character ends up with (picked: move id -> base).
+export function damageMoves(cat: Catalog, base: string, picked: Record<string, string>): Move[][] {
+  const out: Move[][] = damage.KEYS.map(() => [])
+  for (const move of MOVES) {
+    const from = picked[move.id] ?? base
+    const anims = animations(cat, from, move)
+    if (!anims) continue
+    const ts = new Set(move.states.flatMap((s, i) => (anims[i] ? damage.tiers(s, cat[from].strikes?.[anims[i]!.toLowerCase()]) : [])))
+    for (const t of ts) out[t].push(move)
+  }
+  return out
 }
 
 export interface MoveOption {
@@ -225,6 +249,7 @@ export const WALL_RUN = ['WallRunUp', 'WallRunLeft', 'WallRunRight']
 export const WALL_JUMPS = ['WallJumpOff', 'WallJumpToWall', 'WallRunJumpOff']
 export const WALL_STATES = [...WALL_CLIMB, ...WALL_RUN, ...WALL_JUMPS]
 export const RANGE_GRAB = ['WirePull']
+export const LOW_ENERGY_STUN = ['LowEnergyStun']
 
 export function addOptions(cat: Catalog, base: string, move: Move): MoveOption[] {
   return grouped(cat, base, move, move.states.map(() => null))
@@ -265,6 +290,44 @@ export function remapRecord(rec: ngbtool.Record, map: Map<number, number>): ngbt
 export function ownName(rec: ngbtool.Record): string {
   const hash = toHex(sha256(ngbtool.writeRecord({ ...rec, name: '' }))).slice(0, 6)
   return `${rec.name.replace(/\.nad$/i, '').slice(0, 20)}_${hash}.nad`
+}
+
+const isRoot = (bone: number) => (bone & 0xffff) === 0
+export const loops = (opts: string[]) => !opts.some((o) => o.toLowerCase() === 'noloop')
+const RATES = ['fps', 'move']
+// A loop playing the idle keeps the idle's own rate: the move's stride would play it at the pace of the feet.
+export function idleOpts(opts: string[], stand: string[]): string[] {
+  const kept = opts.filter((o, i) => !RATES.includes(o.toLowerCase()) && !RATES.includes(opts[i - 1]?.toLowerCase()))
+  const at = stand.findIndex((o) => o.toLowerCase() === 'fps')
+  return at >= 0 ? [...kept, ...stand.slice(at, at + 2)] : kept
+}
+
+// A track over the move's time: looped every period from its first frame and cut at length.
+function fitTrack([bone, ch, keys]: ngbtool.Track, period: number, length: number): ngbtool.Track {
+  if (keys.length < 2 || period <= 0) return [bone, ch, keys]
+  const out: ngbtool.Key[] = []
+  for (let start = 0; start < length; start += period) {
+    for (const [f, v] of keys) {
+      const t = start + f
+      if (t >= length) break
+      if (!out.length || t > out[out.length - 1][0]) out.push([t, v])
+    }
+  }
+  const k = Math.floor(length / period)
+  const at = length - k * period || period
+  const end: ngbtool.Packed = ch === 1
+    ? ngbtool.encodeTranslation(ngbtool.sample(keys.map(([f, v]): [number, ngbtool.Vec3] => [f, ngbtool.translation(v)]), at))
+    : ngbtool.sample(keys, at).map(Math.round) as ngbtool.Packed
+  out.push([length, end])
+  return [bone, ch, out]
+}
+
+// The idle's pose over a move: the move's length, events and root (its travel and turning), and the idle's other bones looped to fit.
+export function idleRecord(rec: ngbtool.Record, idle: ngbtool.Record): ngbtool.Record {
+  const root = rec.tracks.flatMap((t, i): [ngbtool.Track, number][] => (isRoot(t[0]) ? [[t, rec.pointers[i] ?? 0]] : []))
+  const body = idle.tracks.flatMap((t, i): [ngbtool.Track, number][] => (isRoot(t[0]) ? [] : [[fitTrack(t, idle.length, rec.length), idle.pointers[i] ?? 0]]))
+  const all = [...root, ...body]
+  return { ...rec, tracks: all.map(([t]) => t), pointers: all.map(([, p]) => p) }
 }
 
 function loadBundles(src: GameSource, stem: string): Map<string, ngbtool.Record[]> {
@@ -448,7 +511,8 @@ export interface MotionFiles {
 }
 
 export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: string, moves: Record<string, string>, throwReach?: number,
-  choice: Record<string, MoveEffect> = {}, plan: EffectPlan | null = null, stretches: Record<string, MoveReach> = {}, fx: Effects | null = null): MotionFiles {
+  choice: Record<string, MoveEffect> = {}, plan: EffectPlan | null = null, stretches: Record<string, MoveReach> = {}, fx: Effects | null = null,
+  size = 1, idle: string[] = []): MotionFiles {
   const set = motionSetOf(base), stem = stemOf(set), name = internal.toLowerCase()
   const own = nmstool.parse(src.entry(`Motions/${set}`))
   const bundles = loadBundles(src, stem)
@@ -456,6 +520,19 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
   const [, models] = ngmtool.read(base.bundleFiles()[0])
   const mine = resolved(src, own, holds(bundles))
   const notes: string[] = []
+  const sized = new Set<string>()
+  const sizedRec = (rec: ngbtool.Record) => (size !== 1 ? scaleRecord(rec, size) : rec)
+  if (size !== 1) {
+    models[0] = scaleModel(models[0], size)
+    const victims = new Set([...mine].filter(([k]) => VICTIM.test(k)).map(([, m]) => m.anim.toLowerCase()))
+    for (const [slot, recs] of bundles) {
+      bundles.set(slot, recs.map((r) => {
+        if (victims.has(r.name.toLowerCase())) return r
+        sized.add(r.name.toLowerCase())
+        return sizedRec(r)
+      }))
+    }
+  }
   const displaced = new Set<string>()
   if (throwReach !== undefined) {
     const main = bundles.get('') ?? []
@@ -487,7 +564,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       if (old) displaced.add(old.anim.toLowerCase())
       const found = SLOTS.flatMap((slot): [string, ngbtool.Record, ngbtool.Record][] => {
         const rec = theirBundles.get(slot)?.find((r) => r.name.toLowerCase() === m.anim.toLowerCase())
-        return rec ? [[slot, rec, VICTIM.test(state) ? rec : effects(remapRecord(rec, map))]] : []
+        return rec ? [[slot, rec, VICTIM.test(state) ? rec : effects(sizedRec(remapRecord(rec, map)))]] : []
       })
       // One name in every slot: the set names one animation, and the game loads the slot for the opponent's body class, whose record can differ.
       const changed = found.find(([, rec, moved]) => !ngbtool.sameMotion(moved, rec))
@@ -509,6 +586,37 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     if (how === 'none') fx = '; no effects'
     else if (how === 'theirs' && fit?.total) fx = `; ${fit.fit} of ${other.label}'s effects${fit.total > fit.fit ? `, ${fit.total - fit.fit} more left as ${base.label}'s (no free effect slot)` : ''}`
     notes.push(`moves: ${move.label} from ${other.label} (${copied} animation${copied === 1 ? '' : 's'} copied${cross}${fx})`)
+  }
+  if (idle.length) {
+    const now = resolved(src, own, holds(bundles))
+    const stand = now.get('stand')
+    const standRec = stand && [...bundles.values()].flat().find((r) => r.name.toLowerCase() === stand.anim.toLowerCase())
+    if (!stand || !standRec) throw new LabError(`${base.label} has no idle animation`)
+    for (const id of idle) {
+      const move = MOVE_IDS.get(id)
+      if (!move) throw new LabError(`there is no move ${id}`)
+      for (const state of move.states) {
+        const m = now.get(state.toLowerCase())
+        if (!m || VICTIM.test(state) || m.anim.toLowerCase() === stand.anim.toLowerCase()) continue
+        displaced.add(m.anim.toLowerCase())
+        // A loop plays the idle itself, so it doesn't restart every cycle.
+        if (loops(m.opts)) {
+          own.set({ state: m.state, anim: stand.anim, opts: idleOpts(m.opts, stand.opts) })
+          continue
+        }
+        const found = SLOTS.flatMap((slot): [string, ngbtool.Record][] => {
+          const rec = bundles.get(slot)?.find((r) => r.name.toLowerCase() === m.anim.toLowerCase())
+          return rec ? [[slot, idleRecord(rec, standRec)]] : []
+        })
+        const named = ownName(found[0][1])
+        for (const [slot, rec] of found) {
+          const into = bundles.get(slot)!
+          if (!into.some((r) => r.name.toLowerCase() === named.toLowerCase())) into.push({ ...rec, name: named })
+        }
+        own.set({ state: m.state, anim: named, opts: m.opts })
+      }
+      notes.push(`moves: ${move.label} plays the idle animation`)
+    }
   }
   if (Object.keys(stretches).length) {
     const bones = reach.bonesOf(new Skeleton(models[0], base.body))
@@ -580,6 +688,20 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
   const used = new Set([...resolved(src, own, () => true).values()].map((m) => m.anim.toLowerCase()))
   for (const l of own.lines) if (l.motion) used.add(l.motion.anim.toLowerCase())
   for (const [slot, recs] of bundles) bundles.set(slot, recs.filter((r) => !displaced.has(r.name.toLowerCase()) || used.has(r.name.toLowerCase())))
+  if (size !== 1) {
+    // the base's records keep their names until here, and get their own now so a match against the base keeps both
+    const names = new Map<string, string>()
+    for (const recs of bundles.values()) for (const r of recs) if (sized.has(r.name.toLowerCase()) && !names.has(r.name.toLowerCase())) names.set(r.name.toLowerCase(), ownName(r))
+    for (const [slot, recs] of bundles) bundles.set(slot, recs.map((r) => ({ ...r, name: names.get(r.name.toLowerCase()) ?? r.name })))
+    const listed = own.motions()
+    const inherited = [...resolved(src, own, () => true)].filter(([k]) => !listed.has(k)).map(([, m]) => m)
+    for (const [old, next] of names) own.rename(old, next)
+    scaleMotionSet(own, size)
+    for (const m of inherited) {
+      const next = names.get(m.anim.toLowerCase())
+      if (next) own.set({ state: m.state, anim: next, opts: strides(m.opts, size) })
+    }
+  }
   const files = new Map<string, Uint8Array>([[`Motions/${motionSetName(internal)}`, own.build()]])
   let after = 0
   for (const [slot, recs] of bundles) {
@@ -587,6 +709,6 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     after += data.length
     files.set(`Bundles/${name}${slot}.ngb`, data)
   }
-  if (Object.keys(moves).length) notes.push(`moves: animations ${Math.round(after / 1024)} KB (${base.label}'s ${Math.round(before / 1024)} KB)`)
+  if (Object.keys(moves).length || idle.length || size !== 1) notes.push(`${size !== 1 ? 'size' : 'moves'}: animations ${Math.round(after / 1024)} KB (${base.label}'s ${Math.round(before / 1024)} KB)`)
   return { motionSet: motionSetName(internal), files, notes }
 }

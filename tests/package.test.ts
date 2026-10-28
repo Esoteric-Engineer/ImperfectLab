@@ -57,6 +57,22 @@ describe('round trip', () => {
     expect(imperfect.save(d)).toEqual(imperfect.save(c))
   })
 
+  it('writes model.size only when it is not 1', () => {
+    const c = character()
+    expect((imperfect.manifest(c).model as Json).size).toBeUndefined()
+    expect(imperfect.load(imperfect.save(c)).size).toBe(1)
+    c.size = 1.3
+    expect((imperfect.manifest(c).model as Json).size).toBe(1.3)
+    const d = imperfect.load(imperfect.save(c))
+    expect(d.size).toBe(1.3)
+    expect(imperfect.save(d)).toEqual(imperfect.save(c))
+    const m = imperfect.manifest(c) as Json
+    const bad = (size: unknown) => () => imperfect.fromManifest({ ...m, model: { ...(m.model as Json), size } }, new Map())
+    expect(bad(0.05)).toThrow(/from 0.1 to 3/)
+    expect(bad(4)).toThrow(/from 0.1 to 3/)
+    expect(bad('big')).toThrow(/must be a number/)
+  })
+
   it('finds problems', () => {
     const c = character()
     expect(imperfect.problems(c).filter((p) => p[0] === 'error')).toEqual([])
@@ -134,6 +150,15 @@ describe('round trip', () => {
     expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes("effects can't be changed"))).toBe(true)
   })
 
+  it('saves and loads attack damage', () => {
+    const c = character()
+    c.gameplay = { attack_damage_1: 18, attack_damage_5: 70.5 }
+    expect(imperfect.load(imperfect.save(c)).gameplay).toEqual(c.gameplay)
+    const m = imperfect.manifest(c) as Json
+    expect(() => imperfect.fromManifest({ ...m, stats: { gameplay: { attack_damage_2: 0 } } }, new Map())).toThrow(/from 1 to 1000/)
+    expect(() => imperfect.fromManifest({ ...m, stats: { gameplay: { attack_damage_6: 10 } } }, new Map())).toThrow(/unknown key/)
+  })
+
   it('saves and loads stretched moves', () => {
     const c = character()
     expect(imperfect.manifest(c).move_reach).toBeUndefined()
@@ -163,6 +188,45 @@ describe('round trip', () => {
     expect(bad({ Attack1: { distance: 0.5 } })).toThrow(/from 1 to 35/)
     expect(bad({ Attack1: { distance: 2, hold: true } })).toThrow(/jumps only/)
     expect(bad({ Jump: { distance: 1, hold: 'yes' } })).toThrow(/wrong type/)
+  })
+
+  it('saves and loads moves that play the idle', () => {
+    const c = character()
+    expect(imperfect.manifest(c).move_idle).toBeUndefined()
+    c.moveIdle = ['Run', 'Attack1']
+    expect(imperfect.load(imperfect.save(c)).moveIdle).toEqual(c.moveIdle)
+    const m = imperfect.manifest(c) as Json
+    const bad = (move_idle: Json, more: Json = {}) => () => imperfect.fromManifest({ ...m, ...more, move_idle }, new Map())
+    expect(bad(['Nothing'])).toThrow(/unknown move/)
+    expect(bad(['Stand'])).toThrow(/unknown move/)
+    expect(bad(['Run', 'Run'])).toThrow(/twice/)
+    expect(bad({ Run: true })).toThrow(/wrong type/)
+    expect(bad(['Run'], { moves: { Run: 'thing' } })).toThrow(/taken from another base/)
+    c.moveReach = { Attack1: { distance: 2 } }
+    expect(imperfect.problems(c).some(([l, msg]) => l === 'error' && msg.includes("can't stretch"))).toBe(true)
+  })
+
+  it('saves and loads the Z button action', () => {
+    const c = character()
+    expect(imperfect.manifest(c).z_button).toBeUndefined()
+    c.zButton = { action: 'stealth', stealth: { undetected: true, untouchable: false, visible: null }, requires: {} }
+    expect(JSON.parse(JSON.stringify(imperfect.manifest(c).z_button))).toEqual({ action: 'stealth', stealth: { undetected: true } })
+    expect(imperfect.load(imperfect.save(c)).zButton).toEqual(c.zButton)
+    c.zButton.stealth = { undetected: false, untouchable: true, visible: 0.35 }
+    c.zButton.requires.energy = { seconds: 12, regen: true }
+    expect(imperfect.load(imperfect.save(c)).zButton).toEqual(c.zButton)
+    const m = imperfect.manifest(c) as Json
+    const bad = (z: unknown) => expect(() => imperfect.fromManifest({ ...m, z_button: z } as Json, new Map())).toThrow(/z_button/)
+    bad('stealth')
+    bad({ action: 'fly' })
+    bad({ action: 'stealth' })
+    bad({ action: 'stealth', stealth: { undetected: false } })
+    bad({ action: 'stealth', stealth: { visible: 1 } })
+    bad({ action: 'stealth', stealth: { hidden: true } })
+    bad({ action: 'stealth', stealth: { untouchable: true }, requires: { health: {} } })
+    bad({ action: 'stealth', stealth: { untouchable: true }, requires: { energy: { seconds: 0 } } })
+    bad({ action: 'stealth', stealth: { untouchable: true }, requires: { energy: { seconds: 8, regen: 'yes' } } })
+    bad({ action: 'stealth', extra: 1 })
   })
 
   it('finds problems with moves', () => {
@@ -195,6 +259,37 @@ describe('round trip', () => {
     c.gameplay = { wall_climb: true }
     expect(errors().some((m) => m.includes('already climbs walls'))).toBe(true)
     expect(() => imperfect.fromManifest({ ...imperfect.manifest(c), stats: { gameplay: { wall_climb: 'yes' } } }, new Map())).toThrow(/wall_climb/)
+  })
+
+  it('turns off flight for a base that flies', () => {
+    const c = character()
+    c.base = 'storm'
+    c.gameplay = { flight: false }
+    expect(imperfect.problems(c).filter(([l]) => l === 'error')).toEqual([])
+    expect(imperfect.load(imperfect.save(c)).gameplay).toEqual({ flight: false })
+    c.base = 'thing'
+    expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes("can't fly"))).toBe(true)
+    expect(() => imperfect.fromManifest({ ...imperfect.manifest(c), stats: { gameplay: { flight: true } } }, new Map())).toThrow(/can only be false/)
+  })
+
+  it('turns the low-energy stun off for Megalith and on for other bases', () => {
+    const c = character()
+    const errors = () => imperfect.problems(c).filter(([l]) => l === 'error').map(([, m]) => m)
+    c.base = 'megalith'
+    c.gameplay = { low_energy_stun: false }
+    expect(errors()).toEqual([])
+    expect(imperfect.load(imperfect.save(c)).gameplay).toEqual({ low_energy_stun: false })
+    c.gameplay = { low_energy_stun: true }
+    expect(errors().some((m) => m.includes('already has low-energy stun'))).toBe(true)
+    c.base = 'wolverine'
+    expect(errors().some((m) => m.includes('needs'))).toBe(true)
+    c.moves = { LowEnergyStun: 'megalith' }
+    expect(errors()).toEqual([])
+    expect(imperfect.load(imperfect.save(c)).gameplay).toEqual({ low_energy_stun: true })
+    c.gameplay = {}
+    expect(imperfect.problems(c).some(([l, m]) => l === 'warning' && m.includes('never plays'))).toBe(true)
+    c.gameplay = { low_energy_stun: false }
+    expect(errors().some((m) => m.includes('has no low-energy stun'))).toBe(true)
   })
 
   it('finds problems with wall running, and keeps a base\'s own wall jumps apart', () => {
@@ -327,6 +422,10 @@ describe('hostile files', () => {
       (m) => (m.base = 'galactus'),
       (m) => (m.stats.display.normal = [9, 9, 9, 9, 9, 9]),
       (m) => (m.stats.gameplay.damage_taken = 'lots'),
+      (m) => (m.stats.gameplay.attack_damage_1 = 'lots'),
+      (m) => (m.stats.gameplay.flight = true),
+      (m) => (m.stats.gameplay.flight = 'no'),
+      (m) => (m.stats.gameplay.low_energy_stun = 'no'),
       (m) => (m.model.materials[0].size = [300, 300]),
       (m) => (m.model.materials[0].texture = '../../etc/passwd'),
       (m) => (m.aura.mode = 'rainbow'),

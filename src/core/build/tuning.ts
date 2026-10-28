@@ -8,7 +8,10 @@ import * as nvbtool from '../mnroi/nvbtool'
 
 export const SLOTS = nvbtool.SLOTS
 const RESISTANCE = [134, 135, 136, 137, 138]
-export const FIELDS: Record<string, number> = { run_speed: 104, sprint_speed: 157, rage_per_super: 189, rage_duration: 192, super_throw_range: 28 }
+export const FIELDS: Record<string, number> = {
+  run_speed: 104, sprint_speed: 157, rage_per_super: 189, rage_duration: 192, super_throw_range: 28,
+  attack_damage_1: 22, attack_damage_2: 23, attack_damage_3: 24, attack_damage_4: 25, attack_damage_5: 26,
+}
 export const POWER_EFFECTS = [98, 99]
 export const AIM_RANGE = 2
 export const PICKUP_RANGE = 240

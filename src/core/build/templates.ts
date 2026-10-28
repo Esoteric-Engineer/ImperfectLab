@@ -3,6 +3,7 @@ import { LabError } from '../errors'
 import * as R from '../game/roster'
 import { roundHalfEven } from '../mnroi/gxtex'
 import * as nottool from '../mnroi/nottool'
+import { scaleTemplates } from './size'
 
 const AURA_SWAP = [R.P_EFFECT1, R.P_CASTID, R.P_ACTOR_FLAGS]
 
@@ -58,7 +59,7 @@ export function retarget(T: R.Templates, name: string, effects: Map<string, stri
 
 export function build(data: Uint8Array, base: R.BaseCharacter, internal: string, aura = 'base', effect1: [string, string] | null = null,
   description: string | null = null, abilities: [number, number] | null = null, health: number | null = null, extra: nottool.Template[] = [],
-  motionSet: string | null = null, effect1Kept = true, effect2: [string, string] | null = null): Uint8Array {
+  motionSet: string | null = null, effect1Kept = true, effect2: [string, string] | null = null, size = 1): Uint8Array {
   const T = new R.Templates(data)
   const [actN, plrN, altN] = templateNames(internal)
   for (const n of [actN, plrN, altN, ...extra.map((t) => t.name)]) if (T.has(n)) throw new LabError(`Global.not already has a template ${n}`)
@@ -108,5 +109,6 @@ export function build(data: Uint8Array, base: R.BaseCharacter, internal: string,
     act.set(R.P_HEALTH, nottool.vInt(roundHalfEven(health)))
     act.set(R.P_MAXHEALTH, nottool.vInt(roundHalfEven(health)))
   }
+  if (size !== 1) scaleTemplates(T, [[act, base.act], [plr, base.plr], [alt, base.alt]], size)
   return nottool.build([...T.list, act, plr, alt, ...extra])
 }

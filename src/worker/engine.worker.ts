@@ -11,7 +11,7 @@ import { Service } from './service'
 declare const self: DedicatedWorkerGlobalScope
 
 const service = new Service()
-const FRESH = new Set(['preview', 'materialThumbs', 'compose', 'layout', 'bases', 'stripOutlines', 'cutscenePcm', 'encodeCutsceneAudio', 'decodeCutsceneAudio'])
+const FRESH = new Set(['preview', 'materialThumbs', 'compose', 'layout', 'bases', 'stripOutlines', 'cutscenePcm', 'encodeCutsceneAudio', 'decodeCutsceneAudio', 'soundPcm', 'encodeSound'])
 
 function fileReader(file: Blob): ReadAt {
   const reader = new FileReaderSync()
@@ -84,6 +84,9 @@ const handlers: Record<string, (progress: (stage: string, done?: number, total?:
   cutscenePcm: (_p, base: string, kind: CutsceneKind, key: string) => service.cutscenePcm(base, kind, key),
   encodeCutsceneAudio: (_p, channels: Int16Array[], samples: number) => service.encodeCutsceneAudio(channels, samples),
   decodeCutsceneAudio: (_p, data: Uint8Array) => service.decodeCutsceneAudio(data),
+  soundCatalog: () => service.soundCatalog(),
+  soundPcm: (_p, base: string, index: number) => service.soundPcm(base, index),
+  encodeSound: (_p, pcm: Int16Array, rate: number) => service.encodeSound(pcm, rate),
   importModel: (_p, raw: Uint8Array) => service.importModel(raw),
   setModel: (_p, glb: Uint8Array | null) => service.setModel(glb),
   autoMap: (_p, key: string) => service.autoMap(key),

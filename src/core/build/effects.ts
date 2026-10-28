@@ -1,11 +1,12 @@
 // Misc/game.nfx: recolored copies of the base's effects for the aura tint, and the blocks flames.ts adds.
 // A tree of effect blocks (a block and every block its effectname/effect0-3 keys name) is copied under new names with every color turned to the chosen hue/lightness.
 // The copies are appended; nothing of the base's changes. Memory limits: docs/LIMITATIONS.md.
+import { latin1 } from '../bytes'
 import { LabError } from '../errors'
 import { formatG } from '../format'
 import { type BaseCharacter, text } from '../game/roster'
 import type { GameSource } from '../game/source'
-import { roundHalfEven } from '../mnroi/gxtex'
+import { readTpl, roundHalfEven } from '../mnroi/gxtex'
 import * as nfxtool from '../mnroi/nfxtool'
 import * as nvbtool from '../mnroi/nvbtool'
 import { AURA_TINTS, type Flames } from '../package/imperfect'
@@ -18,6 +19,8 @@ const REFERENCES = ['effectname', 'effect0', 'effect1', 'effect2', 'effect3']
 const COLOR_KEYS = ['startcol', 'endcol', 'startcol2', 'endcol2']
 const HEX_KEYS = ['startcolor', 'endcolor', 'startcolor2', 'endcolor2']
 const PARTICLES = ['partsys', 'partsysdam', 'billboard', 'billboardomni', 'partcylinder', 'partsubfx']
+const ACTIONS = ['damage', 'ctrldamage', 'spawner']
+const CONTROLLER = nfxtool.TYPES.indexOf('controller')
 export const CACHE_MAX = 0x50000
 const CACHE_MARGIN = 0x800
 
@@ -56,29 +59,55 @@ export interface TintPlan {
   bytes: number
   extra: number
   used: number
+  grey: [number, number]
+}
+
+export type Hidden = [boolean, boolean]
+export const hidden = (color: string, altColor: string): Hidden => [hexAlpha(color) === 0, hexAlpha(altColor) === 0]
+const stand = (hide: boolean) => (hide ? '#80808000' : '#808080')
+
+// tintPlans' key for a level and the costumes it hides.
+export function planKey(level: string, hide: Hidden = [false, false]): string {
+  return hide[0] || hide[1] ? `${level} hide${hide.map(Number).join('')}` : level
+}
+
+const HIDES: Hidden[] = [[false, false], [true, false], [false, true], [true, true]]
+
+// The bytes of the grey fire sprite a costume borrows from Human Torch costume 2 (0 when its own bundle has it).
+export function greyBytes(source: GameSource, base: BaseCharacter, alt: boolean): number {
+  const at = (bundle: string) => latin1(source.entry(`Bundles/${bundle}.ngt`)).split(/\s+/).filter(Boolean)
+    .findIndex((n) => n.toLowerCase() === flames.GREY_SPRITE.toLowerCase())
+  if (at(alt ? base.altBundle : base.bundle) >= 0) return 0
+  const i = at(flames.GREY_BUNDLE)
+  return i < 0 ? 0 : readTpl(source.entry(`Bundles/${flames.GREY_BUNDLE}.tpl`))[0][i].data.length
 }
 
 // Measured by making the copies the patch would make.
 export function tintPlans(source: GameSource, base: BaseCharacter): Record<string, TintPlan> {
   const tun = new tuning.Tuning(source, base)
-  return Object.fromEntries(AURA_TINTS.map((level) => {
-    const fx = new Effects(source.entry('Misc/game.nfx'))
-    const [normal, alt] = roots(fx, tun, base, level)
-    const before = fx.used()
-    fx.tinted(normal, '#808080', copyPrefix('xx', false))
-    fx.tinted(alt, '#808080', copyPrefix('xx', true))
-    return [level, { roots: normal, alt, bytes: fx.used() - before, extra: cacheSize(fx.used()) - nfxtool.CACHE_SIZE, used: fx.used() }]
+  return Object.fromEntries(AURA_TINTS.flatMap((level) => {
+    const first = new Effects(source.entry('Misc/game.nfx'))
+    const [normal, alt] = roots(first, tun, base, level)
+    const fire = [first.drawsFire(normal) ? greyBytes(source, base, false) : 0, first.drawsFire(alt) ? greyBytes(source, base, true) : 0]
+    return HIDES.map((hide, h) => {
+      const fx = h ? new Effects(source.entry('Misc/game.nfx')) : first
+      const before = fx.used()
+      fx.tinted(normal, stand(hide[0]), copyPrefix('xx', false))
+      fx.tinted(alt, stand(hide[1]), copyPrefix('xx', true))
+      const grey: [number, number] = [hide[0] ? 0 : fire[0], hide[1] ? 0 : fire[1]]
+      return [planKey(level, hide), { roots: normal, alt, bytes: fx.used() - before, extra: cacheSize(fx.used()) - nfxtool.CACHE_SIZE, used: fx.used(), grey }]
+    })
   }))
 }
 
 // How much several characters' tints and flames grow the cache together.
-export function sharedExtra(source: GameSource, tints: [BaseCharacter, string | null][], fires: (Flames | null)[] = [], more: (fx: Effects) => void = () => {}): number {
+export function sharedExtra(source: GameSource, tints: [BaseCharacter, string | null, Hidden?][], fires: (Flames | null)[] = [], more: (fx: Effects) => void = () => {}): number {
   const fx = new Effects(source.entry('Misc/game.nfx'))
-  tints.forEach(([base, level], i) => {
+  tints.forEach(([base, level, hide = [false, false]], i) => {
     if (level === null) return
     const [normal, alt] = roots(fx, new tuning.Tuning(source, base), base, level)
-    fx.tinted(normal, '#808080', copyPrefix(`x${i}`, false))
-    fx.tinted(alt, '#808080', copyPrefix(`x${i}`, true))
+    fx.tinted(normal, stand(hide[0]), copyPrefix(`x${i}`, false))
+    fx.tinted(alt, stand(hide[1]), copyPrefix(`x${i}`, true))
   })
   fires.forEach((f, i) => {
     if (f) flames.effectNames(fx, f, `x${i}`)
@@ -91,8 +120,9 @@ export function planExtra(p: TintPlan, more = 0): number {
   return more ? cacheSize(p.used + more) - nfxtool.CACHE_SIZE : p.extra
 }
 
-export function tintLevel(plans: Record<string, TintPlan>, level: string, more = 0): string {
-  return level === 'all' && plans.all && planExtra(plans.all, more) > TINT_ALL_LIMIT ? 'power' : level
+export function tintLevel(plans: Record<string, TintPlan>, level: string, more = 0, hide: Hidden = [false, false]): string {
+  const all = plans[planKey('all', hide)]
+  return level === 'all' && all && planExtra(all, more) > TINT_ALL_LIMIT ? 'power' : level
 }
 
 export function copyPrefix(internal: string, alt: boolean): string {
@@ -118,9 +148,47 @@ export function tint(rgb: number[], target: number[]): [number, number, number] 
 
 export const num = (x: number) => formatG(x).replace(/\.0$/, '')
 
+// The game's orange fire sprite, and its mean color over the grey sprite's (82,48,19 over 50,50,50).
+export const FIRE_SPRITE = 'GE_PAR_FireSprite_04'
+const FIRE_COLOR = [82 / 50, 48 / 50, 19 / 50]
+
+const draws = (sprite: string) => (line: string): boolean => {
+  const t = nfxtool.tokens(line)
+  return t.length >= 2 && t[0].toLowerCase() === 'material' && t[1].toLowerCase() === sprite.toLowerCase()
+}
+const isFire = draws(FIRE_SPRITE)
+
+function onGrey(body: string[]): string[] {
+  const fold = (rgb: number[]) => rgb.map((c, i) => Math.min(255, roundHalfEven(c * FIRE_COLOR[i])))
+  const keys = new Set<string>()
+  const out = body.map((line) => {
+    const t = nfxtool.tokens(line)
+    const key = t.length ? t[0].toLowerCase() : ''
+    keys.add(key)
+    if (isFire(line)) return `material ${flames.GREY_SPRITE}`
+    if (COLOR_KEYS.includes(key) && t.length >= 2) {
+      const vals = nfxtool.scanFloats(t[1], 4)
+      if (vals.length === 4) return `${t[0]} (${num(vals[0])},${fold(vals.slice(1)).join(',')})`
+    } else if (HEX_KEYS.includes(key) && t.length >= 2) {
+      const v = nfxtool.scanHex(t[1])
+      if (v) {
+        const [r, g, b] = fold([(v >>> 16) & 255, (v >>> 8) & 255, v & 255])
+        return `${t[0]} 0x${((v >>> 24) * 0x1000000 + r * 0x10000 + g * 0x100 + b).toString(16).padStart(8, '0')}`
+      }
+    }
+    return line
+  })
+  for (const [col, hex] of [['startcol', 'startcolor'], ['endcol', 'endcolor']]) {
+    if (!keys.has(col) && !keys.has(hex)) out.push(`${col} (255,${fold([255, 255, 255]).join(',')})`)
+  }
+  return out
+}
+
 export function recolor(type: number, body: string[], color: string): string[] {
-  const target = hexRgb(color)
+  if (body.some(isFire)) body = onGrey(body)
   const alpha = hexAlpha(color), opacity = alpha / 255
+  const dim = body.some(draws(flames.GREY_SPRITE)) ? opacity : 1
+  const target = hexRgb(color)
   let colored = false
   const out = body.map((line) => {
     const t = nfxtool.tokens(line)
@@ -128,14 +196,14 @@ export function recolor(type: number, body: string[], color: string): string[] {
     if (COLOR_KEYS.includes(key) && t.length >= 2) {
       const vals = nfxtool.scanFloats(t[1], 4)
       if (vals.length === 4) {
-        const [r, g, bl] = tint(vals.slice(1), target)
+        const [r, g, bl] = tint(vals.slice(1), target).map((c) => c * dim)
         colored = true
         return `${t[0]} (${num(vals[0] * opacity)},${roundHalfEven(r)},${roundHalfEven(g)},${roundHalfEven(bl)})`
       }
     } else if (HEX_KEYS.includes(key) && t.length >= 2) {
       const v = nfxtool.scanHex(t[1])
       if (v) {
-        const [r, g, bl] = tint([(v >>> 16) & 255, (v >>> 8) & 255, v & 255], target)
+        const [r, g, bl] = tint([(v >>> 16) & 255, (v >>> 8) & 255, v & 255], target).map((c) => c * dim)
         const out = roundHalfEven((v >>> 24) * opacity) * 0x1000000 + roundHalfEven(r) * 0x10000 + roundHalfEven(g) * 0x100 + roundHalfEven(bl)
         colored = true
         return `${t[0]} 0x${out.toString(16).padStart(8, '0')}`
@@ -143,7 +211,7 @@ export function recolor(type: number, body: string[], color: string): string[] {
     }
     return line
   })
-  if (!colored && PARTICLES.includes(nfxtool.TYPES[type])) out.push(`endcol (${alpha},${target[0]},${target[1]},${target[2]})`)
+  if (!colored && PARTICLES.includes(nfxtool.TYPES[type])) out.push(`endcol (${alpha},${target.map((c) => roundHalfEven(c * dim)).join(',')})`)
   return out
 }
 
@@ -224,6 +292,10 @@ export class Effects {
     return blocks.filter((b) => out.has(low(b)))
   }
 
+  drawsFire(roots: (string | null)[]): boolean {
+    return this.changed(roots).some((b) => b.lines.some(isFire))
+  }
+
   // A grab line: a constraint drawn between the two fighters (ddNeckAtt, spidSupAttL).
   isLine(name: string): boolean {
     return this.tree([name]).some((b) => nfxtool.TYPES[b.type] === 'constraint')
@@ -280,9 +352,35 @@ export class Effects {
   }
 
   tinted(roots: (string | null)[], color: string, prefix: string, how = recolor): Map<string, string> {
+    if (how === recolor && hexAlpha(color) === 0) return this.hide(roots, prefix)
+    return this.copied(this.changed(roots), prefix, new Map(), (type, body) => how(type, body, color))
+  }
+
+  hide(roots: (string | null)[], prefix: string): Map<string, string> {
     const blocks = this.changed(roots)
-    const names = new Map<string, string>()
-    const taken = new Set<string>()
+    const low = (b: nfxtool.Block) => b.name.toLowerCase()
+    const refs = (b: nfxtool.Block) => b.lines.slice(1).map(nfxtool.tokens)
+      .filter((t) => t.length >= 2 && REFERENCES.includes(t[0].toLowerCase()) && this.has(t[1])).map((t) => t[1].toLowerCase())
+    const drawn = new Set(blocks.filter((b) => b.type !== CONTROLLER && !ACTIONS.includes(nfxtool.TYPES[b.type])).map(low))
+    for (let grew = true; grew;) {
+      grew = false
+      for (const b of blocks) {
+        if (b.type === CONTROLLER && !drawn.has(low(b)) && refs(b).every((r) => drawn.has(r))) {
+          drawn.add(low(b))
+          grew = true
+        }
+      }
+    }
+    if (!drawn.size) return this.copied(blocks, prefix, new Map(), (_type, body) => body)
+    const [none] = this.fresh(prefix)
+    this.append([new nfxtool.Block(CONTROLLER, none, [`controller ${none}`, 'end'], true)])
+    const names = new Map(blocks.filter((b) => drawn.has(low(b))).map((b) => [low(b), none]))
+    return this.copied(blocks.filter((b) => !drawn.has(low(b))), prefix, names, (_type, body) => body)
+  }
+
+  // Copies blocks under fresh names, their references following names.
+  private copied(blocks: nfxtool.Block[], prefix: string, names: Map<string, string>, how: (type: number, body: string[]) => string[]): Map<string, string> {
+    const taken = new Set([...names.values()].map((n) => n.toLowerCase()))
     let k = 0, next: string
     for (const b of blocks) {
       ;[next, k] = this.fresh(prefix, taken, k)
@@ -297,7 +395,7 @@ export class Effects {
         return REFERENCES.includes(key) && t.length >= 2 && names.has(t[1].toLowerCase()) ? `${t[0]} ${names.get(t[1].toLowerCase())}` : line
       })
       const name = names.get(b.name.toLowerCase())!
-      copies.push(new nfxtool.Block(b.type, name, [`${nfxtool.TYPES[b.type]} ${name}`, ...how(b.type, body, color), 'end'], true))
+      copies.push(new nfxtool.Block(b.type, name, [`${nfxtool.TYPES[b.type]} ${name}`, ...how(b.type, body), 'end'], true))
     }
     this.append(copies)
     return names

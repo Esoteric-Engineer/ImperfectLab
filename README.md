@@ -5,11 +5,11 @@ Make custom characters for *Marvel Nemesis: Rise of the Imperfects* (GameCube, U
 
 ImperfectLab runs entirely in the browser: files are never uploaded to a server, and the disc never leaves your computer.
 
-A character is a model of your own (`.glb`) on top of one of the game's 18 characters. Pick the base character, map a new model's skeleton onto theirs, set the names, stats, aura, flames and pictures, optionally swap some of its moves and cutscenes for other characters', stretch its limbs in some moves and give its cutscenes new audio, and save.
+A character is a model of your own (`.glb`) on top of one of the game's 18 characters. Pick the base character, map a new model's skeleton onto theirs, set the names, stats, aura, flames and pictures, optionally swap some of its moves and cutscenes for other characters', stretch its limbs in some moves, give its cutscenes new audio and replace its sound effects, and save.
 Anyone with their own copy of the game and this patcher can then open the file and patch the character in as the 19th character.
 Up to nine `.imperfect` characters can also be patched into a single ISO via the **Multi-Character Patch** page, which checks them against each other and the disc first.
 
-<b>No game files are included.</b> A `.imperfect` file holds only the author's model, pictures, cutscene audio and settings; everything taken from the game is read from your own disc when the character is patched in.
+<b>No game files are included.</b> A `.imperfect` file holds only the author's model, pictures, cutscene audio, sounds and settings; everything taken from the game is read from your own disc when the character is patched in.
 
 ## Requirements
 

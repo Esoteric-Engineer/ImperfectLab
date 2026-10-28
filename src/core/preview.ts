@@ -94,10 +94,10 @@ export function sourceMeshes(model: Model, c: Character, flip = false): MeshData
   })
 }
 
-export function fittedMeshes(trisByMat: Map<number, Tri[]>, images: Map<number, RgbaImage | null>): MeshData[] {
+export function fittedMeshes(trisByMat: Map<number, Tri[]>, images: Map<number, RgbaImage | null>, size = 1): MeshData[] {
   return [...trisByMat.keys()].sort((a, b) => a - b).map((slot) => {
     const b = new MeshBuilder()
-    for (const t of trisByMat.get(slot)!) for (const [p, n, u, w] of t) b.vertex(p, n, u, w)
+    for (const t of trisByMat.get(slot)!) for (const [p, n, u, w] of t) b.vertex([p[0] * size, p[1] * size, p[2] * size], n, u, w)
     return b.done(images.get(slot) ?? null)
   })
 }
@@ -158,8 +158,8 @@ export function baseMeshes(source: GameSource, base: BaseCharacter, alpha = 1.0)
   return out
 }
 
-export function gameBones(skeleton: Skeleton): BoneLine[] {
-  const J = skeleton.positions()
+export function gameBones(skeleton: Skeleton, size = 1): BoneLine[] {
+  const J = skeleton.positions().map((p): [number, number, number] => [p[0] * size, p[1] * size, p[2] * size])
   return skeleton.nodes.filter((n) => n.parent !== null && n.parent >= 0).map((n) => [J[n.parent], J[n.index], n.index])
 }
 

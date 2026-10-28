@@ -38,6 +38,25 @@ describe('mapping', () => {
     expect(mapping.check(m, sk, auto.mapping, auto.overrides)).toEqual([])
   })
 
+  it('maps a rig named after the game bones', () => {
+    const game: Record<string, string> = { Hips: 'Pelvis', Spine: 'Spine', Spine2: 'Chest', Neck: 'Neck', Head: 'Head' }
+    for (const [side, s] of [['Left', 'L'], ['Right', 'R']]) {
+      for (const [a, b] of [['Shoulder', 'Clavicle'], ['Arm', 'Upper arm'], ['ForeArm', 'Forearm'], ['Hand', 'Hand'], ['UpLeg', 'Thigh'], ['Leg', 'Calf'],
+        ['Foot', 'Foot'], ['ToeBase', 'Toe'], ['HandIndex1', 'Fingers (front) 1'], ['HandIndex2', 'Fingers (front) 2'], ['HandIndex3', 'Fingers (front) 3'],
+        ['HandRing1', 'Fingers (back) 1'], ['HandRing2', 'Fingers (back) 2'], ['HandRing3', 'Fingers (back) 3'], ['HandThumb1', 'Thumb 1'], ['HandThumb2', 'Thumb 2']]) {
+        // some exporters swap spaces for underscores
+        game[side + a] = s === 'L' ? `${s}_${b.replaceAll(' ', '_')}` : `${s} ${b}`
+      }
+    }
+    const nm = (j: string) => game[j] ?? j
+    const m = new Model(makeGlb(MIXAMO.map(([j, parent, p]) => [nm(j), parent && nm(parent), p]), ''))
+    const auto = mapping.autoMap(m, sk)
+    expect(auto.preset).toBe('game bone names')
+    expect(mapping.check(m, sk, auto.mapping, auto.overrides)).toEqual([])
+    expect(auto.mapping.get(sk.node('R.finger_b.2')!)).toBe('R Fingers (back) 3')
+    expect(auto.mapping.get(sk.node('L.upper_arm')!)).toBe('L_Upper_arm')
+  })
+
   it('reports a missing required bone', () => {
     const auto = mapping.autoMap(model, sk)
     auto.mapping.delete(sk.node('L.forearm')!)

@@ -167,13 +167,25 @@ function renamed(model: ngmtool.Model, name: string): ngmtool.Model {
   return m
 }
 
-export function buildNgm(baseNgm: Uint8Array, render: ngmtool.Model, renames: Map<string, string>): [Uint8Array, ngmtool.Model[]] {
+// The whole model s times its size about its origin: bones, vertices, attachments and bounds.
+export function scaleModel(model: ngmtool.Model, s: number): ngmtool.Model {
+  const xyz = <T extends number[]>(v: T): T => v.map((x, i) => (i < 3 ? x * s : x)) as T
+  const m = model.clone()
+  m.nodes = model.nodes.map(([a, b, parent, x]): ngmtool.Node => [xyz(a), xyz(b), parent, x])
+  m.attachments = model.attachments.map(([node, kind, index, mat]): ngmtool.Attachment => [node, kind, index, mat.map((v, i) => (i >= 12 && i < 15 ? v * s : v))])
+  m.streams = model.streams.map((st) => new ngmtool.Stream(st.kind, st.refs, st.vertices.map(xyz), st.extra))
+  m.bounds = model.bounds.map((v, i) => (i % 4 < 3 ? v * s : v))
+  return m
+}
+
+export function buildNgm(baseNgm: Uint8Array, render: ngmtool.Model, renames: Map<string, string>, size = 1): [Uint8Array, ngmtool.Model[]] {
   const [head, models] = ngmtool.read(baseNgm)
-  const out = [render]
+  let out = [render]
   for (const m of models.slice(1)) {
     const next = renames.get(m.name.toLowerCase())
     out.push(next ? renamed(m, next) : m)
   }
+  if (size !== 1) out = out.map((m) => scaleModel(m, size))
   const h = [...head]
   let meshes = 0
   for (const m of out) meshes += m.meshes.length

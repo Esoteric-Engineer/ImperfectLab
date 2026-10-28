@@ -64,9 +64,11 @@ function bodyFlame(size: number): string[] {
 
 export const GREY_SPRITE = 'GE_PAR_FireSprite_grey', GREY_BUNDLE = 'torch_alt'
 
+// The grey sprite is drawn additively, so a color's opacity darkens it
 function colored(body: string[], color: string, alpha: number): string[] {
-  const [r, g, b] = hexRgb(color), a = num(alpha * hexAlpha(color) / 255)
-  const light = (v: number) => roundHalfEven(v + (255 - v) * 0.6)
+  const opacity = hexAlpha(color) / 255
+  const [r, g, b] = hexRgb(color).map((v) => roundHalfEven(v * opacity)), a = num(alpha * opacity)
+  const light = (v: number) => roundHalfEven(v + (255 * opacity - v) * 0.6)
   const kept = body.filter((line) => !/^(startcol|endcol)\s/i.test(line)).map((line) => (/^material\s/i.test(line) ? `material ${GREY_SPRITE}` : line))
   return [...kept, `startcol (${a},${light(r)},${light(g)},${light(b)})`, `endcol (${a},${r},${g},${b})`]
 }

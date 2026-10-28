@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { zipSync } from 'fflate'
-import * as R from '../../core/game/roster'
 import { decodePng, encodePng } from '../../core/image/png'
 import type { RgbaImage } from '../../core/image/rgba'
 import { decodePicture, download, pickFile } from '../../io/files'
@@ -115,13 +114,6 @@ export function ArtPage() {
           {!s.game ? 'Select a disc image first to allow portrait placement' : 'Place the portrait...'}
         </button>
         <label className="check"><input type="checkbox" checked={c.ui.banner ?? true} onChange={(e) => { c.ui.banner = e.target.checked; store.touch('character') }} /> Use the name banner picture in matches (experimental)</label>
-      </div>
-      <div className="row">
-        <label>Sound effect when selected:</label>
-        <select value={c.ui.ready_voice ?? ''} onChange={(e) => { c.ui.ready_voice = e.target.value || null; store.touch('character') }}>
-          <option value="">none (no sound effect)</option>
-          {R.keys().map((k) => <option key={k} value={R.VOICES[k]}>{R.label(k)}'s</option>)}
-        </select>
       </div>
       <div className="row">
         <button disabled={!hasArt} onClick={downloadAll}>Download all art</button>

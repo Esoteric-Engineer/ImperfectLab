@@ -16,6 +16,7 @@ A ZIP archive (deflate). Only these members may appear, and nothing else is read
 | `textures/<name>.png` | textures that replace or complement the model's own (`<name>`: 1-48 of `A-Z a-z 0-9 _ -`) |
 | `ui/<slot>.png` | select-screen, loading-screen, tile and HUD pictures (slots below) |
 | `cutscenes/<name>.asf` | new cutscene audio ([`cutscenes`](#cutscenes); `<name>`: 1-48 of `A-Z a-z 0-9 _ -`) |
+| `sounds/<name>.dsp` | sounds that replace the base's (`<name>`: 1-48 of `A-Z a-z 0-9 _ -`; [`sounds`](#sounds)) |
 
 Readers must reject:
 - any other member name, an absolute path, `..`, a backslash, a directory entry, or a duplicate member;
@@ -24,7 +25,8 @@ Readers must reject:
 - a member whose SHA-256 differs from the manifest's `files` list, or a list that names a member the archive
   lacks or misses one it has;
 - a PNG without the PNG signature or larger than 4096 pixels a side, and a GLB without the `glTF` magic;
-- an `.asf` that is not EA-XA at 32000 Hz, mono or stereo, whose header disagrees with its data, or that is over 60 seconds.
+- an `.asf` that is not EA-XA at 32000 Hz, mono or stereo, whose header disagrees with its data, or that is over 60 seconds;
+- a `.dsp` whose header disagrees with its data, or that is not mono DSP ADPCM at 8000-32000 Hz and at most 30 seconds long.
 
 ImperfectLab writes the members with fixed timestamps, so the same character always gives the same bytes.
 
@@ -71,7 +73,10 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
   "move_effects": { "SuperThrow": "theirs" },
   "move_lines": { "color": "#C0C0C0", "alt_color": null },
   "move_reach": { "SuperAttackFar": { "distance": 15 }, "WireSwing": {} },
+  "move_idle": ["Run"],
   "cutscenes": { "finisher": "wolverine", "audio": { "finisher_1": "cutscenes/finisher_1.asf" } },
+  "sounds": { "3": {"file": "sounds/sound3.dsp"}, "10": {"game": "spiderman:4"} },
+  "z_button": { "action": "stealth", "stealth": { "undetected": true, "untouchable": true, "visible": 0.2 }, "requires": { "energy": { "seconds": 8, "regen": false } } },
   "files": {"model/model.glb": "<sha256>", "ui/select_ready.png": "<sha256>"}
 }
 ```
@@ -90,6 +95,7 @@ Game bone numbers in `model` belong to the base's body class (male, female or br
 - `mapping`: game bone number (a node of the base's skeleton, as ImperfectLab lists them) to the name of a joint of the GLB's skin. A GLB mesh with no skin is bound to its node, named `mesh:<node name>`.
 - `overrides`: joint name to game bone number, for joints that are not the primary choice of any game bone (for example a middle finger following the index finger's game bone). Every other joint follows its nearest mapped ancestor.
 - `fit.scale`: `null` (the legs are made the base's length) or a number. `fit.torso_squash`: fit the torso to the base's shoulder height. `fit.flip`: `null` (detected from the arms), or whether the model faces backwards. `fit.floor_from_mesh`: measure the ankles' height from the model's lowest point instead of its origin, for a model whose origin isn't at its feet. Absent means off, and a file only carries it when on.
+- `size`: 0.1-3.0, the character's size in the game as a multiple of the base's. The fitted model, the base's skeleton, its own animations (except how far the character travels off the ground), hit regions, attack volumes and collision body grow or shrink with it ([`LIMITATIONS.md`](LIMITATIONS.md)). Absent means 1, and a file only carries it when it isn't. Older ImperfectLab builds refuse a file with it.
 - `materials`: one entry per GLB material used.
   - `include`: draw it or not.
   - `suffix`: its game material is `<internal_name>[_alt]<suffix>`; empty or `_` plus 1-7 letters and digits,
@@ -104,7 +110,7 @@ Game bone numbers in `model` belong to the base's body class (male, female or br
 `mode`:
 - `base`: the base's aura and effects.
 - `swap`: the two costumes exchange the base's normal and alternate auras, effects and intro cutscenes.
-- `tint`: copies of the base's effects recolored to `color` (costume 1) and `alt_color` (costume 2), each `#RRGGBB` or `#RRGGBBAA`. The opacity (`AA`, default `FF`) scales the alpha of every recolored effect color, so `00` hides the aura.
+- `tint`: copies of the base's effects recolored to `color` (costume 1) and `alt_color` (costume 2), each `#RRGGBB` or `#RRGGBBAA`. The opacity (`AA`, default `FF`) scales the alpha of every recolored effect color. `00` hides the costume's effects: they are replaced with an empty effect rather than copied, which takes far less memory.
   The power-mode glow keeps the base's color.
 
 `tint` (optional, default `all`), what a `tint` copies:
@@ -117,7 +123,7 @@ A base whose full tint needs more memory than a match can spare is built as `pow
 Optional; left out when every key has its default. Fire that burns on the character all match, on top of the `aura`:
 - `parts` (default `[]`): any of `head chest r_hand l_hand r_foot l_foot`.
 - `body` (default `false`): Human Torch's body fire over the whole model instead.
-- `color`, `alt_color` (default `null`): the costume's flame color, `#RRGGBB` or `#RRGGBBAA`.
+- `color`, `alt_color` (default `null`): the costume's flame color, `#RRGGBB` or `#RRGGBBAA`. The flames are drawn additively, so the opacity (`AA`) darkens the color, and `00` hides them.
 - `size` (default `1`): 0.5-2.0, scales the flames.
 - `base_effect` (default `true`): `false` removes the base's own always-on effect, such as Human Torch's body fire.
 
@@ -130,9 +136,12 @@ Older ImperfectLab builds refuse a file with `flames`.
   - `damage_taken`: 0.1-3.0, the share of a hit's damage taken.
   - `lift`: `light`, `medium` or `heavy`.
   - `wire_swing`: a boolean.
+  - `flight`: `false` disallows flight on a base that flies. `true` is refused.
+  - `low_energy_stun`: `false` stops Megalith being stunned when his energy runs low. `true` gives the stun to another base (`moves` then names `LowEnergyStun`, taken from Megalith).
   - `wall_climb`: `true` lets a base that can't climb walls climb them (`moves` then names their animations). Not allowed on a base that already climbs.
   - `wall_run`: `true` lets a base that can't run on walls run on them, the same way. Not allowed on a base that already runs on walls.
   - `super_throw_range`: 1-20, how far away, in meters, the opponent can be for the super throw (R + X grab) to start.
+  - `attack_damage_1` to `attack_damage_5`: 1-1000, the character's five damage values. Every attack hits with one of them.
   - Experimental: `health` (integer 10-1000), `run_speed` (1-30), `sprint_speed` (1-40), `rage_per_super` (0-100)
     and `rage_duration` (integer 1000-120000).
 
@@ -188,6 +197,10 @@ Optional, left out when no move stretches. Move id (the base's own move or one i
 Keys: `distance` (1-35, needed for a hit or a line; 0.25-3 for a jump), `limbs` (optional): any of `right_arm left_arm right_leg left_leg`, by default every limb the move uses; one it doesn't use is refused, and `hold` (optional, jumps only): `true` to hold the stretch instead of easing it in and out.
 Not allowed on `SuperAttackFar` with `base_moves.throw_reach`. See [`LIMITATIONS.md`](LIMITATIONS.md).
 
+### `move_idle`
+Optional, left out when empty. A list of move ids (not `Stand`, and none in `moves`) that play the character's idle (`Stand`) animation instead of their own. A move that plays once keeps its length, events and root (its travel and turning), with the idle's pose on every other bone. A looping move (`Run`, `Walk`) plays the idle itself, at the idle's own rate instead of the move's stride. The victim's side of a throw is unchanged.
+Not allowed with `move_reach` on the same move, nor on `SuperAttackFar` with `base_moves.throw_reach`. Older ImperfectLab builds refuse the key. See [`LIMITATIONS.md`](LIMITATIONS.md).
+
 ### `cutscenes`
 Optional, and left out when the character keeps its base's cutscenes and audio.
 - `intro`, `victory`, `finisher`: the base (not the character's own) whose cutscenes of that kind the character uses. Each is optional.
@@ -195,6 +208,25 @@ Optional, and left out when the character keeps its base's cutscenes and audio.
 - `audio`: audio slot -> a `cutscenes/` member that replaces that audio. A slot is `<kind>_<n>`, numbered from 1 as the **Cutscenes** page lists them. A member is no longer than the stream it replaces and serves both costumes, and a shorter one is padded with silence when patching.
 
 A `cutscenes/` member is an EA `SCHl` audio stream like the game's own (`Sounds/ASF/english/*.asf`): a `PT` header, `SCCl`, `SCDl` blocks of EA-XA ADPCM and `SCEl`. ImperfectLab writes stereo at 32000 Hz, in blocks of 2,156 samples and then 2,128. See [`LIMITATIONS.md`](LIMITATIONS.md) for what the patch can and cannot do.
+
+### `sounds`
+Optional, and left out when no sound changes. The index of a sound in the base's SFX bank (`Sounds/SFX_<base>.abk`, from 0. Exactly one of:
+- `game`: `<base>:<index>`, a sound from any base's bank, read from the player's disc at patch time.
+- `file`: a `sounds/` member. Several sounds may name the same one.
+
+A `sounds/` member is a standard Nintendo `.dsp` file. ImperfectLab writes mono, unlooped files at the replaced sound's rate or lower.
+
+### `z_button`
+Optional, left out when Z does nothing (default).
+- `action`: what Z does while held. `stealth` is Stealth Mode.
+- `stealth`: Stealth Mode's effects, at least one of them:
+  - `undetected`: `true` when the CPU loses track of the character. Optional, `false` by default.
+  - `untouchable`: `true` when enemies can't hit or grab the character. Optional, `false` by default.
+  - `visible`: how visible the character is, from 0 (not drawn) to 0.95. Optional, left out when the character doesn't fade.
+- `requires`: optional, left out when empty. What the action needs.
+  - `energy`: the action drains energy and can't start with none. `seconds` (1 to 60) is how long a full bar lasts. `regen` (optional, `false` by default) keeps the game's energy regeneration running while active, so the bar lasts longer.
+
+Older ImperfectLab builds refuse the key. See [`LIMITATIONS.md`](LIMITATIONS.md).
 
 ## Licensing
 

@@ -40,8 +40,9 @@ export function ExportPage() {
       p.push(...mapped)
       if (fitProblem && !mapped.some(([level]) => level === 'error')) p.push(['error', fitProblem])
     }
-    const level = details ? effects.tintLevel(details.tint, c.aura.tint, flames.cost(c.flames)) : c.aura.tint
-    const plan = details?.tint[level]
+    const hide = effects.hidden(c.aura.color, c.aura.alt_color)
+    const level = details ? effects.tintLevel(details.tint, c.aura.tint, flames.cost(c.flames), hide) : c.aura.tint
+    const plan = details?.tint[effects.planKey(level, hide)]
     if (g && c.aura.mode === 'tint' && plan && !plan.roots.length && !plan.alt.length) {
       p.push(['error', `${s.base()?.label} has no effects to tint: choose another aura in the Aura step`])
     }

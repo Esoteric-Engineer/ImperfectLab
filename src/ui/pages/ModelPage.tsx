@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as mapping from '../../core/model/mapping'
-import { copyCharacter } from '../../core/package/imperfect'
+import { copyCharacter, SIZE } from '../../core/package/imperfect'
 import type { BoneLine, MeshData } from '../../core/preview'
 import { pickFile } from '../../io/files'
 import type { ImportedModel, PreviewResult } from '../../worker/protocol'
@@ -67,7 +67,7 @@ class Preview {
       if (r.base) this.base = { key: spec.base, meshes: r.base }
       if (Array.isArray(r.stats)) {
         const [parts, tris, size, baseSize] = r.stats
-        this.setReport(`Scale ${r.scale.toFixed(3)}${r.flip ? ', facing backwards (turned)' : ''}. In the game: ${tris} triangles in ${parts} parts; model bundle ${Math.floor(size / 1024)} KB (${store.base()?.label}'s is ${Math.floor(baseSize / 1024)} KB).`)
+        this.setReport(`Scale ${r.scale.toFixed(3)}${r.flip ? ', facing backwards (turned)' : ''}${spec.size !== 1 ? `, ${spec.size}x the base's size` : ''}. In the game: ${tris} triangles in ${parts} parts; model bundle ${Math.floor(size / 1024)} KB (${store.base()?.label}'s is ${Math.floor(baseSize / 1024)} KB).`)
       } else {
         this.setReport('✖ ' + r.stats)
       }
@@ -375,6 +375,14 @@ function FitOptions({ report }: { report: string }) {
             edited()
           }
         }} />
+      </div>
+      <label>Size</label>
+      <div>
+        <NumberInput step={0.05} min={SIZE[0]} max={SIZE[1]} value={s.character.size} onChange={(v) => {
+          s.character.size = v
+          edited()
+        }} />
+        <p className="hint">Times the base's size in the game.</p>
       </div>
       <label>Torso</label>
       <label className="check"><input type="checkbox" checked={f.torso_squash} onChange={(e) => { f.torso_squash = e.target.checked; edited() }} /> Fit the torso to the base's shoulder height</label>

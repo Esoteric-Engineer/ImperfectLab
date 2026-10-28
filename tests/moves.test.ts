@@ -80,15 +80,33 @@ describe('moves', () => {
     expect(name.length).toBeLessThanOrEqual(31)
   })
 
+  it('poses a move as the idle, keeping its root, events and length', () => {
+    const q = (a: number): ngbtool.Packed => [16384, a, 0, 0]
+    const idle: ngbtool.Record = { name: 'Stand.nad', length: 10, head: new Uint8Array(0x30), pointers: [7, 8], extra: [],
+      tracks: [[0, 1, [[0, [1, 0, 0, -32768]], [10, [1, 0, 0, -32768]]]], [5, 0, [[0, q(0)], [5, q(100)], [10, q(0)]]]], events: [[1, 2, 3, 4]] }
+    const rec: ngbtool.Record = { name: 'Run.nad', length: 25, head: new Uint8Array(0x30), pointers: [1, 2], extra: [new Uint8Array(0x50)],
+      tracks: [[0, 1, [[0, [0, 0, 0, -32768]], [25, [0, 9000, 0, -32768]]]], [5, 0, [[0, q(500)]]]], events: [[3, 0x48, 1, 0]] }
+    const out = moves.idleRecord(rec, idle)
+    expect(out.length).toBe(25)
+    expect(out.events).toEqual(rec.events)
+    expect(out.extra).toBe(rec.extra)
+    expect(out.tracks[0]).toEqual(rec.tracks[0])
+    expect(out.pointers).toEqual([1, 8])
+    expect(out.tracks[1][2]).toEqual([[0, q(0)], [5, q(100)], [10, q(0)], [15, q(100)], [20, q(0)], [25, q(100)]])
+    expect(moves.idleRecord({ ...rec, length: 7 }, idle).tracks[1][2]).toEqual([[0, q(0)], [5, q(100)], [7, q(60)]])
+    expect(moves.idleOpts(['noframereset', 'move', '5.00'], ['lowpriority', 'fps', '25.50'])).toEqual(['noframereset', 'fps', '25.50'])
+    expect(moves.idleOpts(['fps', '12.21', 'move', '1.80'], [])).toEqual([])
+  })
+
   it('offers the other bases\' versions that cover the base\'s states', () => {
     const grab = moves.MOVE_IDS.get('SuperThrow')!
     const all = (prefix: string) => Object.fromEntries(grab.states.map((s) => [s.toLowerCase(), `${prefix}_${s}.nad`]))
     const cat: moves.Catalog = {
-      daredevil: { body: 'male', motions: all('dd'), range: 3 },
-      thing: { body: 'brute', motions: all('thing'), range: 3 },
-      venom: { body: 'brute', motions: all('thing'), range: 3 },
-      wolverine: { body: 'male', motions: all('dd'), range: 3 },
-      storm: { body: 'female', motions: { superthrow: 'storm.nad' }, range: 3 },
+      daredevil: { body: 'male', motions: all('dd'), range: 3, damage: [] },
+      thing: { body: 'brute', motions: all('thing'), range: 3, damage: [] },
+      venom: { body: 'brute', motions: all('thing'), range: 3, damage: [] },
+      wolverine: { body: 'male', motions: all('dd'), range: 3, damage: [] },
+      storm: { body: 'female', motions: { superthrow: 'storm.nad' }, range: 3, damage: [] },
     }
     const opts = moves.options(cat, 'daredevil', grab)
     expect(opts.map((o) => o.from)).toEqual([['thing', 'venom']])
@@ -100,10 +118,10 @@ describe('moves', () => {
   it('offers other bases\' states the base lacks for adding', () => {
     const up = moves.MOVE_IDS.get('WallClimbUp')!
     const cat: moves.Catalog = {
-      thing: { body: 'brute', motions: {}, range: 3 },
-      spiderman: { body: 'male', motions: { wallclimbup: 'sp_up.nad' }, range: 3 },
-      venom: { body: 'brute', motions: { wallclimbup: 'vn_up.nad' }, range: 3 },
-      storm: { body: 'female', motions: {}, range: 3 },
+      thing: { body: 'brute', motions: {}, range: 3, damage: [] },
+      spiderman: { body: 'male', motions: { wallclimbup: 'sp_up.nad' }, range: 3, damage: [] },
+      venom: { body: 'brute', motions: { wallclimbup: 'vn_up.nad' }, range: 3, damage: [] },
+      storm: { body: 'female', motions: {}, range: 3, damage: [] },
     }
     expect(moves.options(cat, 'thing', up)).toEqual([])
     expect(moves.addOptions(cat, 'thing', up).map((o) => [o.from, o.anims])).toEqual([[['spiderman'], ['sp_up.nad']], [['venom'], ['vn_up.nad']]])

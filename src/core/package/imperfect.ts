@@ -1,12 +1,15 @@
 // .imperfect files (docs/FORMAT.md): a character as a recipe plus the author's own assets.
 import { sha256 } from '@noble/hashes/sha2.js'
+import { readDsp } from '../audio/dspadpcm'
 import { toHex, utf8 } from '../bytes'
 import { LabError } from '../errors'
 import { decodeImage } from '../image/decode'
 import { encodePng, pngSize } from '../image/png'
 import type { RgbaImage } from '../image/rgba'
-import { MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
+import type { DamageKey } from '../build/damage'
+import { LOW_ENERGY_STUN, MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
 import { DISTANCE, JUMP_DISTANCE, JUMPS, type Limb, LIMBS } from '../build/reach'
+import { type ZAction, Z_ACTIONS, Z_SECONDS, Z_VISIBLE } from '../game/dol'
 import { BASES } from '../game/roster'
 import * as asftool from '../mnroi/asftool'
 import { GLB, type Json } from '../mnroi/gltf'
@@ -23,7 +26,10 @@ const STAT_RANGE = [1, 7]
 
 export const UI_SLOTS = ['select_rest', 'select_ready', 'select_readyalt', 'load_wide', 'load_narrow', 'load_wide_alt',
   'load_narrow_alt', 'tile', 'tile_selected', 'hud', 'hud_rage', 'hud_alt', 'hud_alt_rage', 'banner']
-export const MEMBER = new RegExp(`^(manifest\\.json|model/model\\.glb|textures/[A-Za-z0-9_-]{1,48}\\.png|ui/(${UI_SLOTS.join('|')})\\.png|cutscenes/[A-Za-z0-9_-]{1,48}\\.asf)$`)
+export const MEMBER = new RegExp(`^(manifest\\.json|model/model\\.glb|textures/[A-Za-z0-9_-]{1,48}\\.png|ui/(${UI_SLOTS.join('|')})\\.png|cutscenes/[A-Za-z0-9_-]{1,48}\\.asf|sounds/[A-Za-z0-9_-]{1,48}\\.dsp)$`)
+const SOUND_FILE = /^sounds\/[A-Za-z0-9_-]{1,48}\.dsp$/
+const GAME_SOUND = /^[a-z]+:\d{1,3}$/
+export const MAX_SOUND_SECONDS = 30
 const INTERNAL = /^[A-Za-z][A-Za-z0-9]{0,9}$/
 const DISPLAY = /^[A-Z0-9 .'&!-]{1,16}$/
 const SUFFIX = /^(_[A-Za-z0-9]{1,7})?$/
@@ -32,11 +38,14 @@ export const AURA_MODES = ['base', 'swap', 'tint']
 export const AURA_TINTS = ['all', 'power']
 export const FLAME_PARTS = ['head', 'chest', 'r_hand', 'l_hand', 'r_foot', 'l_foot']
 export const FLAME_SIZE: [number, number] = [0.5, 2.0]
+export const SIZE: [number, number] = [0.1, 3.0]
 export const LIFT = ['light', 'medium', 'heavy']
 export const GAMEPLAY: Record<string, [number, number, boolean]> = {
   damage_taken: [0.1, 3.0, false], health: [10, 1000, true], run_speed: [1.0, 30.0, false],
   sprint_speed: [1.0, 40.0, false], rage_per_super: [0.0, 100.0, false], rage_duration: [1000, 120000, true],
   super_throw_range: [1.0, 20.0, false],
+  attack_damage_1: [1, 1000, false], attack_damage_2: [1, 1000, false], attack_damage_3: [1, 1000, false],
+  attack_damage_4: [1, 1000, false], attack_damage_5: [1, 1000, false],
 }
 export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable', 'range_grab'] }
 export type WallKey = 'wall_climb' | 'wall_run'
@@ -52,6 +61,8 @@ export const WALL: Wall[] = [
   { key: 'wall_climb', label: 'wall climbing', does: 'climbs walls', states: WALL_CLIMB, bases: ['spiderman', 'wolverine', 'elektra', 'aftershock', 'venom', 'defcon'] },
   { key: 'wall_run', label: 'wall running', does: 'runs on walls', states: WALL_RUN, bases: ['wolverine', 'elektra', 'aftershock', 'daredevil', 'biohazard'] },
 ]
+export const FLYERS = ['johnnyohm', 'storm', 'heatwave', 'humantorch', 'ironman', 'magneto', 'roekel']
+export const STUN_BASES = ['megalith']
 export const THROW_REACH: [number, number] = [8, 35]
 export const POSES = ['rest', 'ready', 'readyalt'] as const
 export const CUTSCENE_KINDS = ['intro', 'victory', 'finisher'] as const
@@ -86,9 +97,11 @@ export interface Credit {
   url: string
 }
 
-export type Gameplay = Partial<Record<'damage_taken' | 'health' | 'run_speed' | 'sprint_speed' | 'rage_per_super' | 'rage_duration' | 'super_throw_range', number>> & {
+export type Gameplay = Partial<Record<'damage_taken' | 'health' | 'run_speed' | 'sprint_speed' | 'rage_per_super' | 'rage_duration' | 'super_throw_range' | DamageKey, number>> & {
   lift?: string
   wire_swing?: boolean
+  flight?: boolean
+  low_energy_stun?: boolean
   wall_climb?: boolean
   wall_run?: boolean
 }
@@ -124,6 +137,14 @@ export const CUTSCENE_EFFECTS = ['theirs', 'none'] as const
 export type CutsceneEffects = (typeof CUTSCENE_EFFECTS)[number]
 export type Cutscenes = Partial<Record<CutsceneKind, string>> & { audio: Record<string, string>; effects: Partial<Record<CutsceneKind, CutsceneEffects>> }
 
+export type SoundSource = { game: string } | { file: string }
+
+export interface ZButton {
+  action: ZAction
+  stealth: { undetected: boolean; untouchable: boolean; visible: number | null }
+  requires: { energy?: { seconds: number; regen: boolean } }
+}
+
 export interface Character {
   internalName: string
   displayName: string
@@ -134,6 +155,7 @@ export interface Character {
   mapping: Map<number, string>
   overrides: Map<string, number>
   fit: { scale: number | null; torso_squash: boolean; flip: boolean | null; floor_from_mesh?: boolean }
+  size: number
   materials: Material[]
   aura: { mode: string; tint: string; color: string; alt_color: string }
   flames: Flames
@@ -144,7 +166,10 @@ export interface Character {
   moveEffects: Record<string, MoveEffect>
   moveLines: MoveLines
   moveReach: Record<string, MoveReach>
+  moveIdle: string[]
   cutscenes: Cutscenes
+  sounds: Record<string, SoundSource>
+  zButton: ZButton | null
   ui: { select: Partial<Record<Pose, Placement>>; fade: number; strip_scale: number | null; ready_voice: string | null; banner: boolean }
   files: Map<string, Uint8Array>
 }
@@ -180,6 +205,7 @@ export function newCharacter(): Character {
     mapping: new Map(),
     overrides: new Map(),
     fit: { scale: null, torso_squash: true, flip: null },
+    size: 1,
     materials: [],
     aura: { mode: 'base', tint: 'all', color: '#40A0FF', alt_color: '#50FF50' },
     flames: defaultFlames(),
@@ -190,7 +216,10 @@ export function newCharacter(): Character {
     moveEffects: {},
     moveLines: { color: null, alt_color: null },
     moveReach: {},
+    moveIdle: [],
     cutscenes: { audio: {}, effects: {} },
+    sounds: {},
+    zButton: null,
     ui: { select: {}, fade: 36, strip_scale: null, ready_voice: null, banner: true },
     files: new Map(),
   }
@@ -238,6 +267,7 @@ export function manifest(c: Character): Json {
       mapping: Object.fromEntries([...c.mapping].sort((a, b) => a[0] - b[0]).map(([k, v]) => [String(k), v])),
       overrides: Object.fromEntries([...c.overrides].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))),
       fit: fitJson(c.fit),
+      size: c.size !== 1 ? c.size : undefined,
       materials: c.materials.map(materialJson),
     },
     aura: c.aura,
@@ -249,7 +279,14 @@ export function manifest(c: Character): Json {
     move_effects: Object.keys(c.moveEffects).length ? c.moveEffects : undefined,
     move_lines: c.moveLines.color !== null || c.moveLines.alt_color !== null ? c.moveLines : undefined,
     move_reach: Object.keys(c.moveReach).length ? c.moveReach : undefined,
+    move_idle: c.moveIdle.length ? c.moveIdle : undefined,
     cutscenes: hasCutscenes(c.cutscenes) ? { ...c.cutscenes, effects: Object.keys(c.cutscenes.effects).length ? c.cutscenes.effects : undefined } : undefined,
+    sounds: Object.keys(c.sounds).length ? c.sounds : undefined,
+    z_button: c.zButton ? {
+      action: c.zButton.action,
+      stealth: { undetected: c.zButton.stealth.undetected || undefined, untouchable: c.zButton.stealth.untouchable || undefined, visible: c.zButton.stealth.visible ?? undefined },
+      requires: Object.keys(c.zButton.requires).length ? c.zButton.requires : undefined,
+    } : undefined,
     files: Object.fromEntries([...files].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, v]) => [k, sha(v)])),
   }
 }
@@ -283,6 +320,12 @@ export function problems(c: Character): Problem[] {
         for (const id of w.states) if (!c.moves[id]) out.push(['error', `${w.label} needs ${MOVE_IDS.get(id)!.label.toLowerCase()}: pick it on the Moves page`])
       } else if (!has && w.states.some((id) => c.moves[id])) out.push(['warning', `${w.label} animations are picked but ${w.label} is off, so they never play`])
     }
+    if (c.gameplay.flight === false && !FLYERS.includes(c.base)) out.push(['error', `${BASES[c.base][0]} can't fly: untick flight on the Stats page`])
+    const stuns = STUN_BASES.includes(c.base), stun = c.gameplay.low_energy_stun
+    if (stun === stuns) out.push(['error', `${BASES[c.base][0]} ${stuns ? 'already has' : 'has no'} low-energy stun: set it back on the Moves page`])
+    else if (stun) {
+      for (const id of LOW_ENERGY_STUN) if (!c.moves[id]) out.push(['error', `the low-energy stun needs ${MOVE_IDS.get(id)!.label.toLowerCase()}: pick it on the Moves page`])
+    } else if (LOW_ENERGY_STUN.some((id) => c.moves[id])) out.push(['warning', 'the low-energy stun animation is picked but the stun is off, so it never plays'])
     if (!WALL.some((w) => c.gameplay[w.key] || w.bases.includes(c.base)) && WALL_JUMPS.some((id) => c.moves[id])) {
       out.push(['warning', 'wall jump animations are picked but neither wall climbing nor wall running is on, so they never play'])
     }
@@ -294,6 +337,13 @@ export function problems(c: Character): Problem[] {
   if (c.moveReach.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach and a stretch both change super attack far: untick one of them on the Moves page'])
   else if (c.moveReach.SuperRiseAttack && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach and a stretched super rise attack both need the baton\'s long hit segment: untick one of them on the Moves page'])
   for (const id of Object.keys(c.moveReach)) if (!MOVE_IDS.has(id)) out.push(['error', `there is no move ${id} to stretch`])
+  for (const id of c.moveIdle) {
+    const label = MOVE_IDS.get(id)?.label ?? id
+    if (!MOVE_IDS.has(id) || id === 'Stand') out.push(['error', `there is no move ${id} to play the idle`])
+    else if (c.moves[id]) out.push(['error', `${label} is both taken from another character and set to the idle: pick one on the Moves page`])
+    else if (c.moveReach[id]) out.push(['error', `${label} plays the idle, so it can't stretch: untick it on the Moves page`])
+    else if (id === 'SuperAttackFar' && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach changes the base\'s own super attack far: set that move back to the base\'s, or untick the reach'])
+  }
   if (c.flames.body && c.flames.parts.length) out.push(['error', 'flames are on the whole body or on chosen parts, not both: pick one on the Aura page'])
   for (const kind of CUTSCENE_KINDS) {
     const from = c.cutscenes[kind]
@@ -305,6 +355,10 @@ export function problems(c: Character): Problem[] {
   for (const [slot, member] of Object.entries(c.cutscenes.audio)) {
     if (!AUDIO_SLOT.test(slot)) out.push(['error', `there is no cutscene audio ${slot}`])
     else if (!c.files.has(member)) out.push(['error', `the new cutscene audio for ${slot.replace('_', ' ')} is missing`])
+  }
+  for (const [slot, from] of Object.entries(c.sounds)) {
+    if ('file' in from && !c.files.has(from.file)) out.push(['error', `the new sound for sound ${Number(slot) + 1} is missing`])
+    if ('game' in from && !(GAME_SOUND.test(from.game) && Object.hasOwn(BASES, from.game.split(':')[0]))) out.push(['error', `sound ${Number(slot) + 1} is taken from an unknown character`])
   }
   if (!c.files.get('ui/select_ready.png')) out.push(['warning', "no select-screen portrait: the base's portraits are used"])
   return out
@@ -353,7 +407,7 @@ function upgrade(m: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Character {
-  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'cutscenes', 'files'], 'the manifest')
+  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'cutscenes', 'sounds', 'z_button', 'files'], 'the manifest')
   if (m.format !== FORMAT) throw new LabError('not a .imperfect file')
   upgrade(m)
   if (m.game !== GAME) throw new LabError(`this file is for ${m.game}, not ${GAME}`)
@@ -375,7 +429,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
         license: str(o.license ?? '', 'credits.assets', 500)!, url: str(o.url ?? '', 'credits.assets', 500)! }
     }),
   }
-  const mo = keys(m.model ?? {}, ['mapping', 'overrides', 'fit', 'materials'], 'model')
+  const mo = keys(m.model ?? {}, ['mapping', 'overrides', 'fit', 'size', 'materials'], 'model')
   const mapping = typed<Record<string, unknown>>(mo.mapping ?? {}, 'object', 'model.mapping')
   if (Object.keys(mapping).length > 256) throw new LabError('manifest: the mapping is too long')
   for (const [k, v] of Object.entries(mapping)) {
@@ -392,6 +446,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     flip: typeof fit.flip === 'boolean' ? fit.flip : null,
     floor_from_mesh: typed<boolean>(fit.floor_from_mesh ?? false, 'boolean', 'fit.floor_from_mesh'),
   }
+  c.size = num(mo.size, 'model.size', SIZE[0], SIZE[1]) ?? 1
   const mats = typed<unknown[]>(mo.materials ?? [], 'array', 'model.materials')
   if (mats.length > 16) throw new LabError('manifest: at most 16 materials')
   for (const d0 of mats) {
@@ -439,7 +494,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     if (v.length !== 6) throw new LabError('manifest: six display stats per costume')
     c.stats[k] = v.map((x) => num(x, 'a display stat', STAT_RANGE[0], STAT_RANGE[1], false, true)!)
   }
-  const gp = keys(st.gameplay ?? {}, [...Object.keys(GAMEPLAY), 'lift', 'wire_swing', ...WALL.map((w) => w.key)], 'stats.gameplay')
+  const gp = keys(st.gameplay ?? {}, [...Object.keys(GAMEPLAY), 'lift', 'wire_swing', 'flight', 'low_energy_stun', ...WALL.map((w) => w.key)], 'stats.gameplay')
   c.gameplay = {}
   for (const [k, [lo, hi, integer]] of Object.entries(GAMEPLAY)) {
     if (gp[k] !== null && gp[k] !== undefined) (c.gameplay as Record<string, number>)[k] = num(gp[k], k, lo, hi, true, integer)!
@@ -449,6 +504,11 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     c.gameplay.lift = gp.lift as string
   }
   if (gp.wire_swing !== null && gp.wire_swing !== undefined) c.gameplay.wire_swing = typed<boolean>(gp.wire_swing, 'boolean', 'wire_swing')
+  if (gp.flight !== null && gp.flight !== undefined) {
+    if (typed<boolean>(gp.flight, 'boolean', 'flight')) throw new LabError('manifest: flight can only be false, to turn off a base\'s flight')
+    c.gameplay.flight = false
+  }
+  if (gp.low_energy_stun !== null && gp.low_energy_stun !== undefined) c.gameplay.low_energy_stun = typed<boolean>(gp.low_energy_stun, 'boolean', 'low_energy_stun')
   for (const { key } of WALL) if (gp[key] !== null && gp[key] !== undefined && typed<boolean>(gp[key], 'boolean', key)) c.gameplay[key] = true
   const ui = keys(m.ui ?? {}, ['select', 'fade', 'strip_scale', 'ready_voice', 'banner'], 'ui')
   const sel = keys(ui.select ?? {}, [...POSES], 'ui.select')
@@ -520,6 +580,13 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     }
     c.moveReach[id] = out
   }
+  c.moveIdle = []
+  for (const id of typed<unknown[]>(m.move_idle ?? [], 'array', 'move_idle')) {
+    if (typeof id !== 'string' || !MOVE_IDS.has(id) || id === 'Stand') throw new LabError(`manifest: unknown move ${JSON.stringify(String(id).slice(0, 40))} in move_idle`)
+    if (c.moveIdle.includes(id)) throw new LabError(`manifest: move_idle names ${id} twice`)
+    if (c.moves[id]) throw new LabError(`manifest: move_idle names ${id}, which is taken from another base`)
+    c.moveIdle.push(id)
+  }
   const cs = keys(m.cutscenes ?? {}, [...CUTSCENE_KINDS, 'audio', 'effects'], 'cutscenes')
   c.cutscenes = { audio: {}, effects: {} }
   for (const kind of CUTSCENE_KINDS) {
@@ -542,6 +609,40 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     if (!CUTSCENE_EFFECTS.includes(how as CutsceneEffects)) throw new LabError(`manifest: cutscenes.effects.${kind} is theirs or none`)
     if (c.cutscenes[kind as CutsceneKind] === undefined) throw new LabError(`manifest: cutscenes.effects names ${kind}, which is the base's own`)
     c.cutscenes.effects[kind as CutsceneKind] = how as CutsceneEffects
+  }
+  const sounds = typed<Record<string, unknown>>(m.sounds ?? {}, 'object', 'sounds')
+  c.sounds = {}
+  for (const [slot, from] of Object.entries(sounds)) {
+    if (!/^\d{1,3}$/.test(slot)) throw new LabError(`manifest: sounds has a bad sound index ${JSON.stringify(slot.slice(0, 10))}`)
+    const d = keys(from, ['game', 'file'], `sounds.${slot}`)
+    if ((d.game === undefined) === (d.file === undefined)) throw new LabError(`manifest: sounds.${slot} needs one of game and file`)
+    if (d.game !== undefined) {
+      const ref = str(d.game, `sounds.${slot}.game`, 20, GAME_SOUND)!
+      if (!Object.hasOwn(BASES, ref.split(':')[0])) throw new LabError(`manifest: sounds.${slot} names an unknown base character`)
+      c.sounds[slot] = { game: ref }
+    } else {
+      const file = str(d.file, `sounds.${slot}.file`, 80, SOUND_FILE)!
+      if (!files.has(file)) throw new LabError(`manifest: sounds.${slot} names ${file}, which the file lacks`)
+      c.sounds[slot] = { file }
+    }
+  }
+  c.zButton = null
+  if (m.z_button !== undefined && m.z_button !== null) {
+    const z = keys(m.z_button, ['action', 'stealth', 'requires'], 'z_button')
+    if (!Z_ACTIONS.includes(z.action as ZAction)) throw new LabError(`manifest: z_button.action is one of ${Z_ACTIONS.join(', ')}`)
+    const s = keys(z.stealth ?? {}, ['undetected', 'untouchable', 'visible'], 'z_button.stealth')
+    const stealth = {
+      undetected: typed<boolean>(s.undetected ?? false, 'boolean', 'z_button.stealth.undetected'),
+      untouchable: typed<boolean>(s.untouchable ?? false, 'boolean', 'z_button.stealth.untouchable'),
+      visible: num(s.visible, 'z_button.stealth.visible', ...Z_VISIBLE),
+    }
+    if (!stealth.undetected && !stealth.untouchable && stealth.visible === null) throw new LabError('manifest: z_button.stealth needs at least one of undetected, untouchable and visible')
+    const requires = keys(z.requires ?? {}, ['energy'], 'z_button.requires')
+    c.zButton = { action: z.action as ZAction, stealth, requires: {} }
+    if (requires.energy !== undefined) {
+      const e = keys(requires.energy, ['seconds', 'regen'], 'z_button.requires.energy')
+      c.zButton.requires.energy = { seconds: num(e.seconds, 'z_button.requires.energy.seconds', ...Z_SECONDS, false)!, regen: typed<boolean>(e.regen ?? false, 'boolean', 'z_button.requires.energy.regen') }
+    }
   }
   c.glb = files.get('model/model.glb') ?? null
   files.delete('model/model.glb')
@@ -594,6 +695,12 @@ export function checkMember(name: string, body: Uint8Array) {
   } else if (name.endsWith('.asf')) {
     try {
       asftool.check(body, MAX_AUDIO_SECONDS)
+    } catch (e) {
+      throw new LabError(`${name}: ${(e as Error).message}`)
+    }
+  } else if (name.endsWith('.dsp')) {
+    try {
+      readDsp(body, MAX_SOUND_SECONDS)
     } catch (e) {
       throw new LabError(`${name}: ${(e as Error).message}`)
     }

@@ -1,8 +1,8 @@
-import { addOptions, animations, CATEGORIES, type Catalog, type Move, MOVE_IDS, MOVES, options, RANGE_GRAB, WALL_JUMPS } from '../../core/build/moves'
+import { addOptions, animations, CATEGORIES, type Catalog, LOW_ENERGY_STUN, type Move, MOVE_IDS, MOVES, options, RANGE_GRAB, WALL_JUMPS } from '../../core/build/moves'
 import * as reach from '../../core/build/reach'
 import { formatG } from '../../core/format'
 import { keys, label } from '../../core/game/roster'
-import { BASE_MOVES, GAMEPLAY, type MoveEffect, THROW_REACH, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
+import { BASE_MOVES, GAMEPLAY, type MoveEffect, STUN_BASES, THROW_REACH, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
 import { ColorButton, Note, NumberInput, Warning } from '../components/common'
 import { store, useStore } from '../store'
 
@@ -12,6 +12,7 @@ const OPEN = new Set(['Attacks', 'Super attacks', 'Air and wall attacks', 'Range
 const stem = (anim: string | null) => (anim ?? '').replace(/\.nad$/i, '')
 const RANGE = GAMEPLAY.super_throw_range
 const effectCount = (n: number) => `${n} effect${n === 1 ? '' : 's'}`
+const IDLE = '@idle'
 
 // Picking a super throw brings its range along, unless the range was set by hand.
 function pickSuperThrow(cat: Catalog, from: string | undefined) {
@@ -39,15 +40,15 @@ export function MovesPage() {
   }
   const mine = cat?.[c.base]
   const cross = mine ? Object.entries(c.moves).filter(([, from]) => cat![from] && cat![from].body !== mine.body).map(([id]) => id) : []
-  const added = new Set(cat && mine ? [...wallRows(cat).map((r) => r.id), ...(c.baseMoves.range_grab ? RANGE_GRAB : [])] : [])
-  const swapped = Object.keys(c.moves).filter((id) => !added.has(id)).length
+  const added = new Set(cat && mine ? [...wallRows(cat).map((r) => r.id), ...(c.baseMoves.range_grab ? RANGE_GRAB : []), ...(c.gameplay.low_energy_stun ? LOW_ENERGY_STUN : [])] : [])
+  const swapped = Object.keys(c.moves).filter((id) => !added.has(id)).length + c.moveIdle.length
 
   return (
     <div className="page">
       <h3>Moves</h3>
       <Note>
         Swap any of {label(c.base)}'s moves for another character's version of the move. The move's animations are copied into this character, along with the victim's side of a throw.<br />
-        What the move does stays {label(c.base)}'s: its damage, cost and reach, its sounds, and whether the AI uses it. Its effects play from {label(c.base)}'s own unless you pick the other character's under Effects.<br />
+        What the move does stays {label(c.base)}'s: its cost and reach, its sounds, and whether the AI uses it. Its damage is one of the character's damage values (Stats page), though the swapped animation may pick a different one of them. Its effects play from {label(c.base)}'s own unless you pick the other character's under Effects.<br />
         A match loads both fighters' animations, so every swapped move uses a little more of the memory a match has.
       </Note>
       {cross.length > 0 && (
@@ -60,18 +61,19 @@ export function MovesPage() {
       )}
       {swapped > 0 && <div className="row"><span>{swapped} move{swapped === 1 ? '' : 's'} swapped</span><button onClick={() => {
         for (const id of Object.keys(c.moves)) if (!added.has(id)) delete c.moves[id]
+        c.moveIdle = []
         edited()
       }}>Set all back to {label(c.base)}'s</button></div>}
       {!cat ? <p className="muted">Reading every character's moves...</p> : !mine ? <p className="muted">{label(c.base)}'s moves could not be read from this disc.</p> : (
         CATEGORIES.map((category) => {
           const rows = MOVES.filter((m) => m.category === category && animations(cat, c.base, m))
           if (!rows.length) return null
-          const changed = rows.filter((m) => c.moves[m.id]).length
+          const changed = rows.filter((m) => c.moves[m.id] || c.moveIdle.includes(m.id)).length
           return (
             <details key={category} open={OPEN.has(category) || changed > 0}>
               <summary><b>{category}</b> <span className="muted">({rows.length}{changed ? `, ${changed} swapped` : ''})</span></summary>
-              <table className="gameplay">
-                <thead><tr><th>Move</th><th>{label(c.base)}'s animation</th><th>Taken from</th><th>Effects</th></tr></thead>
+              <table className="gameplay grid fixed">
+                <thead><tr><th className="c-move">Move</th><th className="c-anim">{label(c.base)}'s animation</th><th>Taken from</th><th className="c-fx">Effects</th></tr></thead>
                 <tbody>{rows.map((m) => <MoveRow key={m.id} cat={cat} move={m} />)}</tbody>
               </table>
             </details>
@@ -80,6 +82,7 @@ export function MovesPage() {
       )}
       {mine && WALL.some((w) => !w.bases.includes(c.base)) && <WallMoves cat={cat!} />}
       {mine && <GrabRange cat={cat!} />}
+      {mine && <LowEnergyStun cat={cat!} />}
       {mine && <Stretching cat={cat!} />}
       <LineColors cat={cat} />
       {(BASE_MOVES[c.base] ?? []).length > 0 && <BaseMoves cat={cat} />}
@@ -94,25 +97,33 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
   const picked = c.moves[move.id]
   const at = picked ? opts.findIndex((o) => o.from.includes(picked)) : -1
   const locked = move.id === 'SuperAttackFar' && c.baseMoves.throw_reach !== undefined
+  const idle = c.moveIdle.includes(move.id), offer = move.id !== 'Stand'
   const first = own.find((a) => a !== null) ?? null
   const more = own.filter((a) => a !== null).length - 1
   return (
     <tr>
       <td title={move.states.join(', ')}>{move.label}</td>
-      <td className="muted">{stem(first)}{more > 0 ? ` (+${more})` : ''}</td>
+      <td className="anim">{stem(first)}{more > 0 ? ` (+${more})` : ''}</td>
       <td>
-        <select value={at >= 0 ? opts[at].from[0] : (picked ?? '')} disabled={locked || (!opts.length && !picked)}
+        <select value={idle ? IDLE : at >= 0 ? opts[at].from[0] : (picked ?? '')} disabled={locked || (!opts.length && !offer && !picked)}
           title={locked ? 'The baton throw reach changes this move: untick it below to swap the move' : undefined}
           onChange={(e) => {
-            if (move.id === 'SuperThrow') pickSuperThrow(cat, e.target.value || undefined)
-            if (e.target.value) c.moves[move.id] = e.target.value
+            const v = e.target.value
+            if (move.id === 'SuperThrow') pickSuperThrow(cat, v && v !== IDLE ? v : undefined)
+            c.moveIdle = c.moveIdle.filter((id) => id !== move.id)
+            if (v && v !== IDLE) c.moves[move.id] = v
             else {
               delete c.moves[move.id]
               delete c.moveEffects[move.id]
             }
+            if (v === IDLE) {
+              delete c.moveReach[move.id]
+              c.moveIdle = [...c.moveIdle, move.id]
+            }
             store.touch('character')
           }}>
           <option value="">{label(c.base)} (base)</option>
+          {offer && <option value={IDLE}>Idle: {stem(cat[c.moves.Stand ?? c.base]?.motions.stand ?? null)}</option>}
           {opts.map((o) => (
             <option key={o.from[0]} value={o.from[0]}>
               {o.from.map(label).join(', ')}: {stem(o.anims.find((a) => a !== null) ?? null)}{o.body !== cat[c.base].body ? ` (${o.body}, approximate)` : ''}
@@ -120,9 +131,9 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
           ))}
           {picked && at < 0 && <option value={picked}>{label(picked)} (not available for {label(c.base)})</option>}
         </select>
-        {!opts.length && !picked && <span className="muted"> no other version</span>}
+        {!opts.length && !offer && !picked && <span className="muted"> no other version</span>}
       </td>
-      <td>{picked && <MoveEffects id={move.id} from={picked} />}</td>
+      <td className="fx">{picked && <MoveEffects id={move.id} from={picked} />}</td>
     </tr>
   )
 }
@@ -231,8 +242,8 @@ function WallMoves({ cat }: { cat: Catalog }) {
         )}
       </div>
       {rows.length > 0 && (
-        <table className="gameplay">
-          <thead><tr><th>Action</th><th>Taken from</th><th>Effects</th></tr></thead>
+        <table className="gameplay grid fixed">
+          <thead><tr><th className="c-move">Action</th><th>Taken from</th><th className="c-fx">Effects</th></tr></thead>
           <tbody>{rows.map((r) => <WallRow key={r.id} cat={cat} move={MOVE_IDS.get(r.id)!} required={r.required} />)}</tbody>
         </table>
       )}
@@ -266,7 +277,7 @@ function WallRow({ cat, move, required }: { cat: Catalog; move: Move; required: 
           {picked && at < 0 && <option value={picked}>{label(picked)} (has no {move.label.toLowerCase()})</option>}
         </select>
       </td>
-      <td>{picked && <MoveEffects id={move.id} from={picked} />}</td>
+      <td className="fx">{picked && <MoveEffects id={move.id} from={picked} />}</td>
     </tr>
   )
 }
@@ -286,8 +297,8 @@ function GrabRange({ cat }: { cat: Catalog }) {
         How far away the opponent can be for the super throw (R + X grab) to start.
         A long-range grab (Daredevil's cable, Spider-Man's web) starts where the character stands; a close one first moves the character to the opponent, so a long range makes it slide over.
       </Note>
-      <table className="gameplay">
-        <thead><tr><th>Value</th><th>Base</th><th>New</th></tr></thead>
+      <table className="gameplay grid">
+        <thead><tr><th>Value</th><th className="num">Base</th><th>New</th></tr></thead>
         <tbody>
           <tr>
             <td><label className="check"><input type="checkbox" checked={have} onChange={(e) => {
@@ -295,7 +306,7 @@ function GrabRange({ cat }: { cat: Catalog }) {
               else delete gp.super_throw_range
               edited()
             }} /> Super throw grab range</label></td>
-            <td>{formatG(base)} m{from && cat[from] && cat[from].range !== base ? ` (${label(from)}'s ${formatG(cat[from].range)} m)` : ''}</td>
+            <td className="num">{formatG(base)} m{from && cat[from] && cat[from].range !== base ? ` (${label(from)}'s ${formatG(cat[from].range)} m)` : ''}</td>
             <td><span><NumberInput disabled={!have} min={RANGE[0]} max={RANGE[1]} step={0.5} value={gp.super_throw_range ?? base} onChange={(v) => {
               gp.super_throw_range = Math.round(v * 10) / 10
               edited()
@@ -356,6 +367,7 @@ const VICTIM = /victim/i
 // What the move's animation, the base's or the one taken, can stretch.
 function stretchOf(cat: Catalog, move: Move): reach.Summary | null {
   const c = store.character
+  if (c.moveIdle.includes(move.id)) return null
   const owner = c.moves[move.id] ?? c.base
   const anims = animations(cat, owner, move)
   if (reach.JUMPS.includes(move.id)) return anims?.some(Boolean) ? reach.jumpSummary : null
@@ -400,8 +412,8 @@ function Stretching({ cat }: { cat: Catalog }) {
         return (
           <details key={category} open={on > 0}>
             <summary><b>{category}</b> <span className="muted">({mine.length}{on ? `, ${on} stretched` : ''})</span></summary>
-            <table className="gameplay">
-              <thead><tr><th>Move</th><th>Limb</th><th>How far</th></tr></thead>
+            <table className="gameplay grid fixed">
+              <thead><tr><th className="c-move">Move</th><th className="c-limb">Limb</th><th>How far</th></tr></thead>
               <tbody>{mine.map(([m, p]) => <StretchRow key={m.id} move={m} plan={p} />)}</tbody>
             </table>
           </details>
@@ -474,8 +486,8 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
         {farSwapped && <><br />Super attack far is swapped above, so the reach can't be changed.</>}
         {farStretched && <><br />Super attack far is stretched above, so the reach can't be changed.</>}
       </Note>
-      <table className="gameplay">
-        <thead><tr><th>Value</th><th>Base</th><th>New</th></tr></thead>
+      <table className="gameplay grid">
+        <thead><tr><th>Value</th><th className="num">Base</th><th>New</th></tr></thead>
         <tbody>
           <tr>
             <td><label className="check"><input type="checkbox" checked={reach} disabled={(farSwapped || farStretched) && !reach} onChange={(e) => {
@@ -483,7 +495,7 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
               else delete mv.throw_reach
               edited()
             }} /> Baton throw reach</label></td>
-            <td>{bv ? `${formatG(bv.gameplay.throw_reach)} m` : '-'}</td>
+            <td className="num">{bv ? `${formatG(bv.gameplay.throw_reach)} m` : '-'}</td>
             <td><span><NumberInput disabled={!reach} min={THROW_REACH[0]} max={THROW_REACH[1]} step={1} value={mv.throw_reach ?? null} onChange={(v) => {
               mv.throw_reach = Math.round(v * 10) / 10
               edited()
@@ -495,7 +507,7 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
               else delete mv.throw_cable
               edited()
             }} /> Baton cable</label></td>
-            <td>on</td>
+            <td className="num">on</td>
             <td><select disabled={!cable} value={mv.throw_cable === false ? 'off' : 'on'} onChange={(e) => { mv.throw_cable = e.target.value === 'on'; edited() }}>
               <option>off</option><option>on</option></select></td>
           </tr>
@@ -541,9 +553,53 @@ function RangeGrab({ cat }: { cat: Catalog }) {
         Lift strength on the Stats page affects which objects can be picked up. Reach defaults to 10m, but can also be adjusted by setting a stretch for the move.
       </Note>
       {on && (
-        <table className="gameplay">
-          <thead><tr><th>Action</th><th>Taken from</th><th>Effects</th></tr></thead>
+        <table className="gameplay grid fixed">
+          <thead><tr><th className="c-move">Action</th><th>Taken from</th><th className="c-fx">Effects</th></tr></thead>
           <tbody>{RANGE_GRAB.map((id) => <WallRow key={id} cat={cat} move={MOVE_IDS.get(id)!} required />)}</tbody>
+        </table>
+      )}
+    </>
+  )
+}
+
+function setStun(cat: Catalog, on: boolean) {
+  const c = store.character
+  const own = STUN_BASES.includes(c.base)
+  if (on === own) delete c.gameplay.low_energy_stun
+  else c.gameplay.low_energy_stun = on
+  if (own) return
+  const from = STUN_BASES.find((k) => cat[k])
+  if (on && from) takeAll(cat, from, LOW_ENERGY_STUN)
+  else if (!on) {
+    for (const id of LOW_ENERGY_STUN) {
+      delete c.moves[id]
+      delete c.moveEffects[id]
+    }
+  }
+}
+
+function LowEnergyStun({ cat }: { cat: Catalog }) {
+  const c = store.character
+  const own = STUN_BASES.includes(c.base)
+  const on = c.gameplay.low_energy_stun ?? own
+  return (
+    <>
+      <h3>Low-energy stun</h3>
+      <Note>
+        {own && "When Megalith's energy is low, he's stunned in place for a moment."}
+        {!own && "Megalith's low-energy stun effect. The stun animation is copied into this character like a swapped move."}
+        
+      </Note>
+      <div className="row">
+        <label className="check"><input type="checkbox" checked={on} onChange={(e) => {
+          setStun(cat, e.target.checked)
+          store.touch('character')
+        }} /> Low-energy stun</label>
+      </div>
+      {on && !own && (
+        <table className="gameplay grid fixed">
+          <thead><tr><th className="c-move">Action</th><th>Taken from</th><th className="c-fx">Effects</th></tr></thead>
+          <tbody>{LOW_ENERGY_STUN.map((id) => <WallRow key={id} cat={cat} move={MOVE_IDS.get(id)!} required />)}</tbody>
         </table>
       )}
     </>

@@ -549,6 +549,112 @@ table th, table td {
   text-align: left;
 }
 
+table.grid {
+  width: 100%;
+  margin-top: 8px;
+}
+
+table.grid th, table.grid td {
+  padding: 8px 10px;
+  vertical-align: middle;
+}
+
+table.grid thead th {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--line);
+}
+
+table.grid tbody tr + tr td {
+  border-top: 1px solid var(--line);
+}
+
+table.grid tbody tr:hover {
+  background: color-mix(in srgb, var(--panel2) 60%, transparent);
+}
+
+table.grid .check {
+  white-space: nowrap;
+}
+
+table.grid .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+table.grid input.short {
+  width: 80px;
+}
+
+table.grid select {
+  width: 100%;
+  min-width: 0;
+}
+
+table.damage .check {
+  font-weight: 600;
+}
+
+table.damage td:nth-child(2) {
+  width: 100%;
+}
+
+table.fixed {
+  table-layout: fixed;
+}
+
+table.fixed td {
+  overflow-wrap: anywhere;
+}
+
+table.fixed th.c-move {
+  width: 190px;
+}
+
+table.fixed th.c-anim {
+  width: 270px;
+}
+
+table.fixed th.c-limb {
+  width: 150px;
+}
+
+table.fixed th.c-fx {
+  width: 240px;
+}
+
+table.fixed td.anim {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+table.fixed td.fx {
+  font-size: 13px;
+}
+
+table.fixed td.fx select {
+  margin-bottom: 2px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel2);
+  font-size: 12px;
+  line-height: 18px;
+}
+
 table.credits input {
   width: 100%;
 }

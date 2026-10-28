@@ -11,7 +11,7 @@ import { Builder, report } from '../src/core/build/patch'
 import * as templates from '../src/core/build/templates'
 import * as tuning from '../src/core/build/tuning'
 import * as ui from '../src/core/build/ui'
-import { latin1 } from '../src/core/bytes'
+import { equal, latin1, u32be } from '../src/core/bytes'
 import { LabError } from '../src/core/errors'
 import * as D from '../src/core/game/dol'
 import * as R from '../src/core/game/roster'
@@ -72,6 +72,39 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(changed.length).toBeGreaterThan(0)
     expect(changed.every((i) => i >= at && i < at + 0x70)).toBe(true)
     expect(() => D.mirrorSkip(out)).toThrow(LabError)
+  })
+
+  it('binds Z to Stealth Mode', () => {
+    const dol = gameSource().dol
+    const out = D.zActions(dol, [{ internal: 'Synth', seconds: 8, regen: true, undetected: false, untouchable: true, visible: 0.25 }, { internal: 'Other', seconds: 0, regen: false, undetected: true, untouchable: false, visible: 1 }])
+    const at = (va: number) => D.fileOffset(dol, va)
+    const block = at(0x804cc810), z = at(0x804cc810 + 18 * 0x50)
+    expect(u32be(out, at(0x804cc80c))).toBe(19)
+    expect(u32be(out, z + 0x10)).toBe(5)
+    expect(u32be(out, z + 0x48)).toBe(19)
+    expect(u32be(out, z + 0xc)).toBe(3)
+    expect([...out.subarray(z + 0x14, z + 0x48)]).toEqual([...out.subarray(block + 0x14, block + 0x48)])
+    const bl = (from: number) => (from + ((((u32be(out, at(from)) << 6) >> 6) & ~3))) >>> 0
+    expect(bl(0x800fba50)).toBe(0x80137494)
+    expect(bl(0x80150240)).toBe(bl(0x804619b0))
+    for (const site of [0x800e09cc, 0x80150240, 0x8014fa14]) expect(bl(site) > 0x80137494 && bl(site) < 0x80137494 + 0x3a8).toBe(true)
+    expect(u32be(out, at(0x80085f4c))).toBe(0x80030304)
+    const t = at(0x80137494) + 0x3a8
+    expect(latin1(out, t, at(0x80137494) + 0x858)).toContain('plr_synth\0plr_altSynth\0')
+    expect([u32be(out, t), u32be(out, t + 4), u32be(out, t + 8)]).toEqual([0x41000000, 5, 0x3e800000])
+    const other = t + 12 + 24
+    expect(latin1(out, other + 12, other + 36)).toBe('plr_other\0plr_altOther\0\0')
+    expect([u32be(out, other), u32be(out, other + 4), u32be(out, other + 8)]).toEqual([0, 2, 0x3f800000])
+    const sites = [[0x804cc80c, 4], [0x804cc810 + 18 * 0x50, 0x50], [0x80137494, 0x858], [0x80085f4c, 0x30],
+      [0x800fba50, 4], [0x800e09cc, 4], [0x80150240, 4], [0x804619b0, 4], [0x8014fa14, 4]].map(([va, n]) => [at(va), at(va) + n])
+    const changed = [...out].flatMap((b, i) => (b !== dol[i] ? [i] : []))
+    expect(changed.every((i) => sites.some(([lo, hi]) => i >= lo && i < hi))).toBe(true)
+    expect(() => D.zActions(out, [])).toThrow(LabError)
+    const one = { internal: 'Synth', seconds: 8, regen: false, undetected: true, untouchable: true, visible: 0.2 }
+    expect(() => D.zActions(dol, [{ ...one, seconds: 61 }])).toThrow(LabError)
+    expect(() => D.zActions(dol, [{ ...one, visible: 0.99 }])).toThrow(LabError)
+    const many = Array.from({ length: 40 }, (_, i) => ({ ...one, internal: `Character${i}` }))
+    expect(() => D.zActions(dol, many)).toThrow(/no room/)
   })
 
   it('refuses a patched main.dol', () => {
@@ -212,6 +245,53 @@ describe.skipIf(!ISO)('game', () => {
     expect(cols.every((c) => ((c >>> 16) & 255) > (c & 255))).toBe(true)
   })
 
+  it('tints the game\'s orange fire on the grey sprite', () => {
+    const fx = new effects.Effects(src().entry('Misc/game.nfx'))
+    const names = fx.tinted(['htFlightFX', 'htFireBallHandR', 'altHtFlightFX'], '#2040FF', 'testfx')
+    const by = new Map(nfxtool.blocks(nfxtool.readNfx(fx.build())).map((b) => [b.name, b]))
+    const values = (name: string, key: string) => by.get(names.get(name.toLowerCase())!)!.records()[0].filter((r) => nfxtool.KEYS[r.key] === key).map((r) => r.value)
+    // the orange sprite would turn any color orange
+    for (const name of ['htFlightFX', 'htFireBallHandR']) {
+      expect(values(name, 'material'), name).toEqual([flames.GREY_SPRITE])
+      for (const col of ['startcol', 'endcol']) {
+        const [c] = values(name, col) as number[]
+        expect(c & 255, `${name} ${col}`).toBeGreaterThan((c >>> 16) & 255)
+      }
+    }
+    expect(values('altHtFlightFX', 'material')).toEqual([flames.GREY_SPRITE])
+    expect(fx.drawsFire(['htFlightFX'])).toBe(true)
+    expect(fx.drawsFire(['altHtFlightFX'])).toBe(false)
+  })
+
+  it('makes the grey fire sprite transparent by darkening it', () => {
+    // it is additive: only black adds nothing
+    const rgbs = (fx: effects.Effects, names: string[]) => nfxtool.blocks(nfxtool.readNfx(fx.build())).filter((b) => names.includes(b.name))
+      .flatMap((b) => b.records()[0].filter((r) => ['startcol', 'endcol'].includes(nfxtool.KEYS[r.key])).map((r) => (r.value as number) & 0xffffff))
+    const tinted = (color: string) => {
+      const fx = new effects.Effects(src().entry('Misc/game.nfx'))
+      return rgbs(fx, [...fx.tinted(['htFlightFX', 'altHtFlightFX'], color, 'testfx').values()])
+    }
+    const lit = (fx: effects.Effects, f: imperfect.Flames) => rgbs(fx, flames.effectNames(fx, f, 'Synth')!.flatMap((n) => [n, ...fx.tree([n]).map((b) => b.name)]))
+    const fire = (color: string) => {
+      const fx = new effects.Effects(src().entry('Misc/game.nfx'))
+      return [...lit(fx, { ...imperfect.defaultFlames(), parts: ['r_hand'], color, alt_color: color }), ...lit(fx, { ...imperfect.defaultFlames(), body: true, color, alt_color: color, size: 1.5 })]
+    }
+    for (const colors of [tinted, fire]) {
+      expect(colors('#2040FF').length).toBeGreaterThan(0)
+      expect(colors('#2040FF').every((c) => c > 0)).toBe(true)
+      expect(colors('#2040FF00').every((c) => c === 0)).toBe(true)
+      expect(colors('#2040FF80').every((c, i) => c > 0 && (c & 255) < (colors('#2040FF')[i] & 255))).toBe(true)
+    }
+  })
+
+  it('puts the grey fire sprite in a tinted costume\'s bundle once', () => {
+    for (const base of ['humantorch', 'heatwave']) {
+      const r = new Builder(src(), tinted(base)).build()
+      const greys = (costume: string) => latin1(r.adds.get(`Bundles/synth${costume}.ngt`)!).split(/\s+/).filter((n) => n.toLowerCase() === flames.GREY_SPRITE.toLowerCase()).length
+      expect([greys(''), greys('_alt')], base).toEqual([1, 1])
+    }
+  })
+
   it('scales the alpha of a tint by its color\'s opacity', () => {
     const alphas = (color: string) => {
       const fx = new effects.Effects(src().entry('Misc/game.nfx'))
@@ -221,11 +301,57 @@ describe.skipIf(!ISO)('game', () => {
         .flatMap((b) => b.lines.slice(1).map(nfxtool.tokens).filter((t) => t.length >= 2 && ['startcol', 'endcol'].includes(t[0].toLowerCase())))
         .map((t) => nfxtool.scanFloats(t[1], 4)[0])
     }
-    const full = alphas('#FF2020'), half = alphas('#FF202080'), none = alphas('#FF202000')
+    const full = alphas('#FF2020'), half = alphas('#FF202080'), faint = alphas('#FF202001')
     expect(full.length).toBeGreaterThan(0)
     expect(alphas('#FF2020FF')).toEqual(full)
-    expect(none.every((a) => a === 0)).toBe(true)
     expect(half.every((a, i) => Math.abs(a - full[i] * 128 / 255) < 0.01)).toBe(true)
+    expect(faint.every((a, i) => Math.abs(a - full[i] / 255) < 0.01)).toBe(true)
+  })
+
+  it('hides effects with a fully transparent tint instead of copying them', () => {
+    const fx = new effects.Effects(src().entry('Misc/game.nfx'))
+    const names = fx.tinted(['htFlightFX', 'htFireballExp', 'htPowerOn'], '#40A0FF00', 'testfx')
+    const by = new Map(nfxtool.blocks(nfxtool.readNfx(fx.build())).map((b) => [b.name.toLowerCase(), b]))
+    const block = (name: string) => by.get(names.get(name.toLowerCase())!.toLowerCase())!
+    const refs = (b: nfxtool.Block) => b.lines.slice(1).map(nfxtool.tokens).filter((t) => t.length >= 2 && ['effectname', 'effect0'].includes(t[0].toLowerCase())).map((t) => t[1])
+    // what only draws is one empty controller
+    const none = names.get('htflightfx')!
+    expect(block('htFlightFX').lines).toEqual([`controller ${none}`, 'end'])
+    for (const n of ['htPowerOn', 'htPowerOn0', 'htFirebExp0', 'victimBurnStd0']) expect(names.get(n.toLowerCase()), n).toBe(none)
+    // a controller also naming what a tint leaves alone is copied
+    expect(refs(block('victimBurnStd'))).toEqual([none, 'victimBurnStd1'])
+    // the explosion's damage stays
+    const exp = block('htFireballExp')
+    expect(nfxtool.TYPES[exp.type]).toBe('controller')
+    const dam = names.get('htfballdam')!
+    expect(refs(exp)).toEqual([dam, none, none])
+    expect(nfxtool.TYPES[block('htFballDam').type]).toBe('damage')
+    expect(refs(block('htFballDam'))).toEqual([names.get('victimburnstd')])
+    expect(fx.drawsFire(['htFlightFX'])).toBe(true)
+    // Human Torch's costume 2 tinted and costume 1 hidden fits the game's cache
+    const plans = effects.tintPlans(src(), new R.BaseCharacter(src(), 'humantorch'))
+    expect(plans.all.extra).toBe(8224)
+    expect(plans[effects.planKey('all', [true, false])].extra).toBe(0)
+    expect(plans[effects.planKey('all', [true, true])].bytes).toBeLessThan(plans.all.bytes / 10)
+    expect(plans.all.grey).toEqual([8192, 0])
+    expect(plans[effects.planKey('all', [true, false])].grey).toEqual([0, 0])
+    expect(effects.tintLevel(plans, 'all', flames.cost({ ...imperfect.defaultFlames(), parts: ['r_hand'] }), [true, false])).toBe('all')
+  })
+
+  it('builds a hidden costume without growing the cache or borrowing the grey sprite', () => {
+    const c = { ...tinted('humantorch'), aura: { mode: 'tint', tint: 'all', color: '#40A0FF00', alt_color: '#50FF50' } }
+    const r = new Builder(src(), c).build()
+    expect(r.cache).toBeNull()
+    expect(D.readEffectCache(r.dol!)).toBe(nfxtool.CACHE_SIZE)
+    const greys = (costume: string) => latin1(r.adds.get(`Bundles/synth${costume}.ngt`)!).split(/\s+/).filter((n) => n.toLowerCase() === flames.GREY_SPRITE.toLowerCase()).length
+    expect([greys(''), greys('_alt')]).toEqual([0, 1])
+    const nvb = nvbtool.parseNvb(r.adds.get('Misc/PLAYER_Synth.nvb')!)
+    const fields = nvbtool.parseNdb(src().entry('Misc/defaults.ndb')).fields('PLAYER')
+    const flight = nvb.slots(101, fields[101][1])!.map((v) => latin1(v).split('\0')[0])
+    const by = new Map(nfxtool.blocks(nfxtool.readNfx(r.sets.get('Misc/game.nfx')!)).map((b) => [b.name, b]))
+    expect(by.get(flight[0])!.lines).toEqual([`controller ${flight[0]}`, 'end'])
+    expect(by.get(flight[5])!.lines.length).toBeGreaterThan(2)
+    expect(r.notes.some((n) => n.includes("costume 1's effects hidden"))).toBe(true)
   })
 
   it('builds a synthetic character', () => {
@@ -240,8 +366,11 @@ describe.skipIf(!ISO)('game', () => {
     c.mapping = auto.mapping
     c.overrides = auto.overrides
     c.gameplay = { lift: 'heavy' }
+    c.zButton = { action: 'stealth', stealth: { undetected: true, untouchable: false, visible: 0.5 }, requires: { energy: { seconds: 5, regen: false } } }
     const r = new Builder(src(), c).build()
     expect(r.adds.has('Bundles/synth.ngm')).toBe(true)
+    expect(equal(r.dol!, D.zActions(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt), [{ internal: 'Synth', seconds: 5, regen: false, undetected: true, untouchable: false, visible: 0.5 }]))).toBe(true)
+    expect(report(c, r)).toContain('Stealth Mode')
     expect(r.adds.has('Bundles/synth_alt.tpl')).toBe(true)
     const t = new R.Templates(r.sets.get('Misc/Global.not')!)
     expect(R.u32(t.prop('plr_Synth', R.P_ABILITIES))! & 0x30).toBe(0x20)
@@ -384,13 +513,14 @@ describe.skipIf(!ISO)('game', () => {
 
   it('builds two characters, the second on the first', () => {
     const a = tinted('johnnyohm')
-    const b = { ...tinted('humantorch'), internalName: 'Other', displayName: 'OTHER' }
+    const b = { ...tinted('humantorch'), internalName: 'Other', displayName: 'OTHER', zButton: { action: 'stealth' as const, stealth: { undetected: true, untouchable: true, visible: null }, requires: {} } }
     b.ui = { ...b.ui, ready_voice: 'FE_SFX_TORCH' }
     b.files = new Map([...b.files, ['ui/select_ready.png', pngBytes(200, 400)], ['ui/tile.png', pngBytes(64, 32)]])
     const r = buildBatch(src(), [a, b])
     const [normal, alt] = D.tables(r.dol!)
     expect(D.readRecord(r.dol!, normal, 19).name).toBe('plr_synth')
     expect(D.readRecord(r.dol!, alt, 20)).toMatchObject({ name: 'plr_altOther', key: 'OTHER' })
+    expect(u32be(r.dol!, D.fileOffset(r.dol!, 0x804cc80c))).toBe(19)
     for (const name of ['Bundles/synth.ngm', 'Bundles/other_alt.tpl', 'Misc/PLAYER_Synth.nvb', 'Misc/PLAYER_Other.nvb']) expect(r.adds.has(name), name).toBe(true)
     // the base's portraits under both ids: 18 had placeholders to replace, 19 is new
     expect(r.sets.has(ui.P + 'portraits/c18_p0.big')).toBe(true)
@@ -687,6 +817,34 @@ describe.skipIf(!ISO)('moves', () => {
     }
   })
 
+  it('plays Wolverine\'s idle in place of his run and first attack', () => {
+    const t = new R.Templates(src().entry('Misc/Global.not'))
+    const wv = new R.BaseCharacter(src(), 'wolverine', t)
+    const mf = moves.motionFiles(src(), wv, 'Synth', {}, undefined, {}, null, {}, null, 1, ['Run', 'Attack1'])
+    const set = nmstool.parse(mf.files.get('Motions/Synth.nms')!).motions()
+    const base = catalog().wolverine.motions
+    const built = records(mf.files.get('Bundles/synth.ngb')!)
+    const theirs = records(src().entry('Bundles/wolverine.ngb'))
+    const stand = set.get('stand')!.anim
+    expect(stand.toLowerCase()).toBe(base.stand.toLowerCase())
+    for (const state of ['run', 'attack1']) {
+      const m = set.get(state)!
+      if (moves.loops(m.opts)) {
+        expect(m.anim).toBe(stand)
+        expect(m.opts).toEqual(moves.idleOpts(m.opts, set.get('stand')!.opts))
+        expect(m.opts.map((o) => o.toLowerCase())).not.toContain('move')
+        continue
+      }
+      const own = built.get(m.anim.toLowerCase())!, was = theirs.get(base[state].toLowerCase())!
+      expect(own.length).toBe(was.length)
+      expect(own.events).toEqual(was.events)
+      expect(own.tracks.filter(([b]) => (b & 0xffff) === 0)).toEqual(was.tracks.filter(([b]) => (b & 0xffff) === 0))
+      expect(own.tracks.every(([, , keys]) => keys[keys.length - 1][0] <= was.length)).toBe(true)
+      expect(built.has(base[state].toLowerCase())).toBe(false)
+    }
+    expect(mf.notes.some((n) => n.includes('Run plays the idle'))).toBe(true)
+  })
+
   it('takes moves along with a long throw', () => {
     const c = daredevil()
     c.moves = { SuperThrow: 'thing', Attack1: 'spiderman' }
@@ -737,6 +895,36 @@ describe.skipIf(!ISO)('moves', () => {
     })
   }
 
+  it('knows which bases are stunned at low energy', () => {
+    const t = new R.Templates(src().entry('Misc/Global.not'))
+    expect(R.keys().filter((k) => new R.BaseCharacter(src(), k, t).abilities & 0x8000)).toEqual(imperfect.STUN_BASES)
+  })
+
+  it('turns off Megalith\'s low-energy stun', () => {
+    const c = tinted('megalith')
+    c.aura = { ...c.aura, mode: 'base' }
+    const abilities = (n: string) => R.u32(new R.Templates(new Builder(src(), c).build().sets.get('Misc/Global.not')!).prop(n, R.P_ABILITIES))!
+    const megalith = abilities('plr_Megalith')
+    expect(megalith & 0x8000).toBe(0x8000)
+    expect(abilities('plr_Synth')).toBe(megalith)
+    c.gameplay = { low_energy_stun: false }
+    expect(imperfect.problems(c).filter(([l]) => l === 'error')).toEqual([])
+    for (const n of ['plr_Synth', 'plr_altSynth']) expect(abilities(n)).toBe((megalith & ~0x8000) >>> 0)
+  })
+
+  it('gives Wolverine Megalith\'s low-energy stun', () => {
+    const c = tinted('wolverine')
+    c.aura = { ...c.aura, mode: 'base' }
+    c.gameplay = { low_energy_stun: true }
+    c.moves = { LowEnergyStun: 'megalith' }
+    expect(imperfect.problems(c).filter(([l, m]) => l === 'error' || m.includes('never play'))).toEqual([])
+    const r = new Builder(src(), c).build()
+    const anim = nmstool.parse(r.adds.get('Motions/Synth.nms')!).motions().get('lowenergystun')!.anim.toLowerCase()
+    expect(moves.SLOTS.some((slot) => records(r.adds.get(`Bundles/synth${slot}.ngb`)!).has(anim))).toBe(true)
+    const t = new R.Templates(r.sets.get('Misc/Global.not')!)
+    for (const n of ['plr_Synth', 'plr_altSynth']) expect(R.u32(t.prop(n, R.P_ABILITIES))! & 0x8000).toBe(0x8000)
+  })
+
   it('builds two characters with moves in one patch', () => {
     const a = daredevil()
     a.moves = { SuperThrow: 'thing' }
@@ -776,6 +964,29 @@ describe.skipIf(!ISO)('moves', () => {
     expect(tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, 28)).toEqual(new Array(tuning.SLOTS).fill(10))
     expect(catalog().daredevil.range).toBe(10)
     expect(catalog().thing.range).toBe(3)
+  })
+
+  it('reads which damage value each move hits with', () => {
+    const cat = catalog()
+    expect(cat.thing.damage).toEqual([9, 15, 20, 25, 35])
+    expect(cat.wolverine.damage).toEqual([5, 7, 10, 12, 15])
+    const labels = (base: string, picked: Record<string, string> = {}) => moves.damageMoves(cat, base, picked).map((ms) => ms.map((m) => m.id))
+    const thing = labels('thing')
+    expect(thing[0]).toEqual(expect.arrayContaining(['Attack1', 'Attack2', 'LowAttack']))
+    expect(thing[1]).not.toContain('Attack1')
+    expect(thing[2]).toContain('SuperAttack1')
+    expect(thing.flat()).not.toContain('Walk')
+    expect(labels('wolverine')[0]).not.toContain('Attack1')
+    expect(labels('wolverine', { Attack1: 'thing' })[0]).toContain('Attack1')
+  })
+
+  it('doubles Thing\'s first damage value in every tuning slot', () => {
+    const c = tinted('thing')
+    c.aura = { ...c.aura, mode: 'base' }
+    c.gameplay = { attack_damage_1: 18 }
+    const r = new Builder(src(), c).build()
+    expect(tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, 22)).toEqual([18, 12, 18, 24, 18, 18])
+    expect(tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, 23)).toEqual([15, 11, 15, 20, 15, 15])
   })
 
   it('plays Daredevil\'s cable when Wolverine takes his super throw', () => {
@@ -964,6 +1175,18 @@ describe.skipIf(!ISO)('stretching limbs', () => {
     expect(R.u32(t.prop('plr_Synth', R.P_ABILITIES))! & 0x2000).toBe(0)
   })
 
+  it('turns off a flyer\'s flight and keeps it by default', () => {
+    const c = tinted('storm')
+    c.aura = { ...c.aura, mode: 'base' }
+    const abilities = (c: imperfect.Character, n: string) => R.u32(new R.Templates(new Builder(src(), c).build().sets.get('Misc/Global.not')!).prop(n, R.P_ABILITIES))!
+    const storm = abilities(c, 'plr_Storm')
+    expect(storm & 0x100001).toBe(0x100001)
+    expect(abilities(c, 'plr_Synth')).toBe(storm)
+    c.gameplay = { flight: false }
+    for (const n of ['plr_Synth', 'plr_altSynth']) expect(abilities(c, n)).toBe((storm & ~0x100001) >>> 0)
+    expect(abilities(c, 'plr_Storm')).toBe(storm)
+  })
+
   it('moves Daredevil\'s long hit segment from the club to a stretched arm', () => {
     const c = tinted('daredevil')
     c.aura = { ...c.aura, mode: 'base' }
@@ -1031,5 +1254,56 @@ describe.skipIf(!ISO)('stretching limbs', () => {
     expect(grown(was.length / 2)).toBeCloseTo(1, 1)
     expect(grown(0)).toBeLessThan(0.01)
     expect(r.notes.some((n) => n.includes('Jump stretches the right leg and left leg 1 m longer'))).toBe(true)
+  })
+})
+
+describe.skipIf(!ISO)('size', () => {
+  const src = () => gameSource()
+  const records = (data: Uint8Array) => new Map(ngbtool.parse(data).map((r) => [r.name.toLowerCase(), r]))
+  const thing = (size: number) => {
+    const c = tinted('thing')
+    c.aura = { ...c.aura, mode: 'base' }
+    c.size = size
+    return c
+  }
+
+  it('grows the skeleton, animations, strides and collision body', () => {
+    const r = new Builder(src(), thing(1.3)).build()
+    const t = new R.Templates(r.sets.get('Misc/Global.not')!)
+    expect(R.f32(t.prop('act_Synth', R.P_RADIUS))).toBeCloseTo(0.715, 5)
+    expect(R.f32(t.prop('plr_altSynth', R.P_HEIGHT))).toBeCloseTo(2.834, 5)
+    expect(R.f32(t.prop('act_Thing', R.P_HEIGHT))).toBeCloseTo(2.18, 5)
+
+    const base = new R.BaseCharacter(src(), 'thing')
+    const [, theirs] = ngmtool.read(base.bundleFiles()[0])
+    const [, mine] = ngmtool.read(r.adds.get('Bundles/synth.ngm')!)
+    for (const i of [0, 1]) mine[i].nodes.forEach(([, b], n) => b.slice(0, 3).forEach((x, k) => expect(x).toBeCloseTo(theirs[i].nodes[n][1][k] * 1.3, 4)))
+
+    const set = nmstool.parse(r.adds.get('Motions/Synth.nms')!).motions()
+    const was = nmstool.parse(src().entry('Motions/Thing.nms')).motions()
+    const walk = set.get('walk')!
+    expect(walk.opts).toContain('2.522')
+    const old = records(src().entry('Bundles/thing.ngb')), now = records(r.adds.get('Bundles/synth.ngb')!)
+    expect(old.has(walk.anim.toLowerCase())).toBe(false)
+    const a = old.get(was.get('walk')!.anim.toLowerCase())!, b = now.get(walk.anim.toLowerCase())!
+    const posed = ngbtool.pose(theirs[0], a, 10), grown = ngbtool.pose(mine[0], b, 10)
+    grown.forEach(([, p], n) => p.forEach((x, k) => expect(x).toBeCloseTo(posed[n][1][k] * 1.3, 2)))
+    const dive = now.get(set.get('jumpattackpeak')!.anim.toLowerCase())!, base0 = old.get(was.get('jumpattackpeak')!.anim.toLowerCase())!
+    const root = (rec: ngbtool.Record) => rec.tracks.find(([b, ch]) => (b & 0xffff) === 0 && ch === 1)
+    expect(root(dive)).toEqual(root(base0))
+    expect(dive.tracks).not.toEqual(base0.tracks)
+
+    const brute = nmstool.parse(src().entry('Motions/Brute.nms')).motions()
+    for (const [state, m] of set) {
+      if (/victim/i.test(state)) expect(m.anim.toLowerCase()).toBe((was.get(state) ?? brute.get(state))!.anim.toLowerCase())
+      else expect(old.has(m.anim.toLowerCase()), state).toBe(false)
+    }
+    for (const state of brute.keys()) expect(set.has(state) || !old.has(brute.get(state)!.anim.toLowerCase()), state).toBe(true)
+  })
+
+  it('leaves a character of the base\'s size on the base\'s animations', () => {
+    const r = new Builder(src(), thing(1)).build()
+    expect(r.adds.has('Motions/Synth.nms')).toBe(false)
+    expect(R.f32(new R.Templates(r.sets.get('Misc/Global.not')!).prop('act_Synth', R.P_RADIUS))).toBeCloseTo(0.55, 5)
   })
 })

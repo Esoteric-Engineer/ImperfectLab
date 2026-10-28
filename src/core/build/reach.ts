@@ -25,6 +25,7 @@ export const PULLS = ['WirePull', 'WirePullFly']
 const VOLUMES: [number, number, Limb][] = [[0x18, 0x19, 'left_arm'], [0x39, 0x3a, 'right_arm'], [0x3c, 0x3d, 'left_leg'], [0x3e, 0x3f, 'right_leg']]
 // Volume 6 (attachments 43 and 44) is the baton's long hit; a far reach's arm gets it too.
 const FAR_ON = 0x56, FAR_OFF = 0x57
+export const HIT_ON = [...VOLUMES.map(([on]) => on), FAR_ON]
 const FAR_KINDS = [43, 44]
 export const WIRE_ON = 0x23
 const WIRE_OFF = 0x24

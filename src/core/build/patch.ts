@@ -2,6 +2,7 @@
 // The builder works out every changed and added file as bytes, then patch() streams the new disc image.
 import { latin1 } from '../bytes'
 import { LabError } from '../errors'
+import { formatG } from '../format'
 import { GC_DISC_SIZE, type Sink, writeIso } from '../game/disc'
 import { planRepack, writeBig } from '../game/bigrepack'
 import * as D from '../game/dol'
@@ -29,6 +30,7 @@ import * as moves from './moves'
 import * as portraits from './portraits'
 import * as reach from './reach'
 import * as shaders from './shaders'
+import * as sounds from './sounds'
 import * as templates from './templates'
 import * as tuning from './tuning'
 import * as ui from './ui'
@@ -37,6 +39,8 @@ const LIFT_BITS: Record<string, [number, number]> = { light: [0, 0x30], medium: 
 export const WIRE = 0x80
 const WALL_BITS: Record<WallKey, number> = { wall_climb: 0x2, wall_run: 0x4000000 }
 const RANGE_GRAB_BIT = 0x2000
+const FLIGHT = 0x100001
+const LOW_ENERGY_STUN = 0x8000
 
 export type Progress = (stage: string, done?: number, total?: number) => void
 
@@ -71,6 +75,7 @@ export class Builder {
   model: Model | null
   selectId = ui.NEW_ID
   tint: string | null = null
+  greyTint: [boolean, boolean] = [false, false] // whether tinted effects draw the grey fire sprite
   moveFx: moves.EffectPlan | null = null
 
   constructor(source: GameSource, character: Character, progress?: Progress, model?: Model) {
@@ -102,6 +107,9 @@ export class Builder {
         if (this.src.has(name)) throw new LabError(`the game already has ${name}: pick another internal name`)
       }
     }
+    if (ownSounds(c) && this.src.has(sounds.bankPath(D.soundBankName(c.internalName)))) {
+      throw new LabError(`the game already has a sound bank ${D.soundBankName(c.internalName)}: pick another internal name`)
+    }
     const hud = gshtool.readGsh(this.src.entry('HUD/hudENG.1.gsh'))
     if (hud.records.has('plr_' + n) || hud.records.has('plr_alt' + n)) throw new LabError(`the game already has HUD portraits named plr_${n}: pick another internal name`)
   }
@@ -114,18 +122,22 @@ export class Builder {
     this.buildFiles()
     if (this.r.cache !== null) this.r.dol = D.growEffectCache(this.r.dol, this.r.cache)
     if (mirrors(c)) this.r.dol = D.mirrorSkip(this.r.dol)
+    if (ownSounds(c)) this.r.dol = D.soundBanks(this.r.dol, [c.internalName])
+    if (c.zButton) this.r.dol = D.zActions(this.r.dol, zCharacters([c]))
     return this.r
   }
 
   // Every file but main.dol.
   buildFiles(): Result {
+    this.progress('Effects')
+    const [effect1, power, projectiles, effect2] = this.effects()
     this.progress('Model')
     const materials = this.buildModel()
     this.progress('Templates, materials and tuning')
-    const [effect1, power, projectiles, effect2] = this.effects()
     const description = this.tuning(power)
     const motionSet = this.motions()
     this.templates(effect1, description, projectiles, motionSet, effect2)
+    this.sounds()
     this.r.sets.set('Materials/Shaders/shaders.nsa', shaders.build(this.src.entry('Materials/Shaders/shaders.nsa'), materials, this.texture2))
     this.progress('Select screen, portraits and HUD')
     this.ui()
@@ -205,8 +217,7 @@ export class Builder {
       const keep = names.filter((n) => !replaced.has(n.toLowerCase()) || keptByOthers.has(n.toLowerCase()) || n.toLowerCase() === this.texture2.toLowerCase())
       const extra: [string, gxtex.TplImage][] = []
       if (!names.some((n) => n.toLowerCase() === this.texture2.toLowerCase())) extra.push(this.borrowTexture('johnnyohm', "Johnny Ohm's", this.texture2))
-      // a recolored flame draws the grey fire sprite, which only some characters' bundles have
-      if ((alt ? c.flames.alt_color : c.flames.color) !== null && flames.hasAny(c.flames)) {
+      if (((alt ? c.flames.alt_color : c.flames.color) !== null && flames.hasAny(c.flames)) || this.greyTint[alt ? 1 : 0]) {
         extra.push(this.borrowTexture(flames.GREY_BUNDLE, "Human Torch's costume 2", flames.GREY_SPRITE))
       }
       const mats = included.map((m) => c.internalName + costume + m.suffix)
@@ -229,7 +240,7 @@ export class Builder {
         const empty = flames.markers(render, sk, copy, c.flames.parts)
         if (!alt && empty.length) this.note(`flames: no part of the model follows the ${empty.join(', ')} bone, so its flame sits on the bone itself`)
       }
-      const [data] = bundle.buildNgm(ngm, render, renames)
+      const [data] = bundle.buildNgm(ngm, render, renames, c.size)
       const otherNames = new Set(models.slice(1).map((m) => m.name.toLowerCase()))
       const missing = [...renames.keys()].filter((old) => !otherNames.has(old))
       if (missing.length) this.note(`the base bundle has no model named ${missing.join(', ')}`)
@@ -244,7 +255,7 @@ export class Builder {
       this.bundleAdds.set(`Bundles/${b}.tpl`, tplOut)
       if (!alt) {
         const st = render.streams[0]
-        this.note(`model: ${render.meshes.length} parts, ${st.vertices.length} positions, ${st.refs.length} vertices, ${render.indices.length / 3} triangles; scale ${f.S.toFixed(3)}; .ngm ${data.length} bytes, .tpl ${tplOut.length} bytes`)
+        this.note(`model: ${render.meshes.length} parts, ${st.vertices.length} positions, ${st.refs.length} vertices, ${render.indices.length / 3} triangles; scale ${f.S.toFixed(3)}${c.size !== 1 ? `; size ${formatG(c.size)}x the base's` : ''}; .ngm ${data.length} bytes, .tpl ${tplOut.length} bytes`)
       }
     }
     if (stats.clampedUvs) this.note(`warning: ${stats.clampedUvs} UVs were outside the range the game stores and were clamped`)
@@ -296,13 +307,16 @@ export class Builder {
   private tinted(fx: effects.Effects): [[string, string] | null, Map<number, string[]>, nottool.Template[]] {
     const c = this.c, base = this.base
     const tun = new tuning.Tuning(this.src, base)
-    const level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, base), 'all', flames.cost(c.flames)) : c.aura.tint)
+    const hide = effects.hidden(c.aura.color, c.aura.alt_color)
+    const level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, base), 'all', flames.cost(c.flames), hide) : c.aura.tint)
     if (this.tint === null && level !== c.aura.tint) this.note(`aura tint: ${base.label}'s full tint needs more memory than a match can spare; its idle and power-up effects are tinted`)
     const [rootsN, rootsA] = effects.roots(fx, tun, base, level)
     if (!rootsN.length && !rootsA.length) throw new LabError(`${base.label} has no effects to tint; use the Base or Swap aura`)
+    this.greyTint = [!hide[0] && fx.drawsFire(rootsN), !hide[1] && fx.drawsFire(rootsA)]
     const mn = fx.tinted(rootsN, c.aura.color, effects.copyPrefix(c.internalName, false))
     const ma = fx.tinted(rootsA, c.aura.alt_color, effects.copyPrefix(c.internalName, true))
-    this.note(`aura tint: ${mn.size + ma.size} effect blocks copied`)
+    const hiddenIn = ['1', '2'].filter((_, i) => hide[i])
+    this.note(`aura tint: ${new Set([...mn.values(), ...ma.values()]).size} effect blocks added${hiddenIn.length ? `; costume ${hiddenIn.join(' and ')}'s effects hidden` : ''}`)
     const pick = (m: Map<string, string>, name: string | null) => m.get((name ?? '').toLowerCase()) ?? name!
     const effect1: [string, string] | null = base.effect1 ? [pick(mn, base.effect1), pick(ma, base.altEffect1)] : null
     // Every effect field naming a tinted block follows it.
@@ -367,11 +381,19 @@ export class Builder {
     if (!ownMotions(c)) return null
     const thrown = c.baseMoves.throw_reach
     const fx = Object.keys(c.moveReach).length ? new effects.Effects(this.src.entry('Misc/game.nfx')) : null
-    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx)
+    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle)
     for (const [k, v] of m.files) this.r.adds.set(k, v)
     if (thrown !== undefined) this.note(`baton throw: reaches ${thrown} m (${this.base.label}'s about 8)`)
     for (const n of m.notes) this.note(n)
     return m.motionSet
+  }
+
+  sounds() {
+    const c = this.c
+    const bank = sounds.build(this.src, c)
+    if (!bank) return
+    this.r.adds.set(sounds.bankPath(D.soundBankName(c.internalName)), bank)
+    this.note(`sounds: ${Object.keys(c.sounds).length} of ${this.base.label}'s replaced; ${D.soundBankName(c.internalName)} is ${bank.length} of ${sounds.MAX_BANK} bytes`)
   }
 
   templates(effect1: [string, string] | null, description: string | null, extra: nottool.Template[], motionSet: string | null = null,
@@ -387,12 +409,15 @@ export class Builder {
       if (gp.wire_swing) on |= WIRE
       else off |= WIRE
     }
+    if (gp.flight === false) off |= FLIGHT
+    if (gp.low_energy_stun) on |= LOW_ENERGY_STUN
+    else if (gp.low_energy_stun === false) off |= LOW_ENERGY_STUN
     for (const w of WALL) if (gp[w.key]) on |= WALL_BITS[w.key]
     if (c.baseMoves.range_grab) on |= RANGE_GRAB_BIT
     if (stretchReturns(c)) on |= reach.RETURN_ABILITY
     const mode = c.aura.mode === 'swap' ? 'swap' : 'base'
     this.r.sets.set('Misc/Global.not', templates.build(this.src.entry('Misc/Global.not'), this.base, c.internalName, mode, effect1, description,
-      on || off ? [on, off] : null, gp.health ?? null, extra, motionSet, (c.baseMoves.throw_cable ?? true) && c.flames.base_effect, effect2))
+      on || off ? [on, off] : null, gp.health ?? null, extra, motionSet, (c.baseMoves.throw_cable ?? true) && c.flames.base_effect, effect2, c.size))
   }
 
   picture(slot: string): RgbaImage | null {
@@ -499,7 +524,7 @@ export class Builder {
 
 // Whether the character gets its own motion set and animation bundles (Builder.motions).
 export function ownMotions(c: Character): boolean {
-  return c.baseMoves.throw_reach !== undefined || Object.keys(c.moves).length > 0 || Object.keys(c.moveReach).length > 0
+  return c.baseMoves.throw_reach !== undefined || Object.keys(c.moves).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1
 }
 
 // A stretched hit that comes back from where it lands needs RETURN_ABILITY and main.dol's mirrored skip.
@@ -508,6 +533,18 @@ export const mirrors = (c: Character) => c.baseMoves.throw_reach !== undefined |
 
 // Whether stretched moves' own lines are recolored, which takes the character's tuning file.
 export const paintsReach = (c: Character) => Object.keys(c.moveReach).some((id) => !reach.JUMPS.includes(id)) && (c.moveLines.color !== null || c.moveLines.alt_color !== null)
+
+export function ownSounds(c: Character): boolean {
+  return Object.keys(c.sounds).length > 0
+}
+
+export function zCharacters(chars: Character[]): D.ZCharacter[] {
+  return chars.flatMap((c) => {
+    const z = c.zButton
+    if (!z) return []
+    return [{ internal: c.internalName, seconds: z.requires.energy?.seconds ?? 0, regen: z.requires.energy?.regen ?? false, ...z.stealth, visible: z.stealth.visible ?? 1 }]
+  })
+}
 
 // The gameplay fields that go in the character's own tuning file.
 export function tuningFields(c: Character): Record<string, unknown> {
@@ -571,6 +608,8 @@ export function report(characters: Character | Character[], result: Result): str
   if (chars.length === 1) lines.push('main.dol: roster record 19, select-screen limits 18 -> 19')
   else lines.push(`main.dol: roster records 19 to ${18 + chars.length} in a new data section, select-screen limits 18 -> ${18 + chars.length}`, `main.dol: arena starts at 0x${D.arenaLo(result.dol!).toString(16).toUpperCase()}`)
   if (chars.some(mirrors)) lines.push('main.dol: fn_8019DB24 mirrors a long throw\'s or stretch\'s return on a hit')
+  if (chars.some(ownSounds)) lines.push('main.dol: fn_80114420 loads a new character\'s own sound bank, and one bank per type ID')
+  if (chars.some((c) => c.zButton)) lines.push('main.dol: Z is bound for every human player; fn_80137494 is rewritten to run Stealth Mode, hooked from fn_800FB944, fn_80085F4C, fn_800E07A4, fn_80150200, fn_80461948 and fn_8014F8BC')
   const cache = result.dol ? D.readEffectCache(result.dol) : null
   if (cache && cache !== nfxtool.CACHE_SIZE) lines.push(`main.dol: effect cache ${nfxtool.CACHE_SIZE} -> ${cache} bytes`)
   const sorted = (m: Map<string, Uint8Array>) => [...m].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))

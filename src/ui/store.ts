@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import type { Catalog as CutsceneCatalog, EffectFit } from '../core/build/cutscenes'
 import type { Catalog, MoveEffectFit } from '../core/build/moves'
+import type { Catalog as SoundCatalog } from '../core/build/sounds'
 import type { Joint, JointModel } from '../core/model/glb'
 import { Skeleton } from '../core/model/skeleton'
 import { type Character, copyCharacter, newCharacter, snapshotCharacter } from '../core/package/imperfect'
@@ -91,6 +92,7 @@ class Store {
   private cutscenes: CutsceneCatalog | Promise<CutsceneCatalog> | null = null
   private effectFits = new Map<string, EffectFit | 'loading'>()
   private moveFits = new Map<string, Record<string, MoveEffectFit> | 'loading'>()
+  private sounds: SoundCatalog | 'loading' | null = null
   private statusTimer = 0
   private fit: { key: string; problem: string | null } | null = null
   private fitAsked: string | null = null
@@ -254,6 +256,7 @@ class Store {
     this.cutscenes = null
     this.effectFits.clear()
     this.moveFits.clear()
+    this.sounds = null
     this.touch('game', false)
   }
 
@@ -382,6 +385,21 @@ class Store {
       this.emit()
     }, () => {})
     return read
+  }
+
+  soundCatalog(): SoundCatalog | null {
+    if (!this.game) return null
+    if (this.sounds === null) {
+      this.sounds = 'loading'
+      const game = this.game
+      engine.call<SoundCatalog>('soundCatalog', []).then((v) => {
+        if (this.game !== game) return
+        this.sounds = v
+        this.emit()
+      }, (e) => this.fail(e))
+      return null
+    }
+    return this.sounds === 'loading' ? null : this.sounds
   }
 
   title(): string {
