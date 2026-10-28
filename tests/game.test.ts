@@ -999,6 +999,10 @@ describe.skipIf(!ISO)('moves', () => {
     expect(thing.energy_super_throw).toEqual(['SuperThrow'])
     expect(thing.energy_wire_extend).toEqual([])
     expect(ids('spiderman').energy_wire_extend).toEqual(['WireExtend'])
+    expect(ids('ironman').energy_super_ranged).toEqual(['SuperRangedAttack'])
+    expect(ids('spiderman').energy_super_attack).toContain('WallClimbRangedAttack')
+    expect(ids('daredevil').energy_super_ranged).toEqual([])
+    expect(new tuning.Tuning(src(), new R.BaseCharacter(src(), 'ironman')).gameplay().energy_super_ranged).toBe(18)
     expect(ids('thing', { WireExtend: 'spiderman' }).energy_wire_extend).toEqual(['WireExtend'])
   })
 

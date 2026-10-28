@@ -93,7 +93,8 @@ The character's five damage values (`attack_damage_1` to `_5`, [`FORMAT.md`](FOR
 The character's energy costs (`energy_*`, [`FORMAT.md`](FORMAT.md)):
 
 - **Costs, not moves.** `fn_800DA884` gives a super move its cost from a tuning field, so moves that share one can't be set apart.
-- **0 is the super attack cost.** A super move that caches its cost (all but the super attack and super throw) takes the super attack cost when its own is 0, so those go down to 0.1.
+- **0 is the super attack cost.** A super move that caches its cost (all but the super attack, super throw and super ranged attack) takes the super attack cost when its own is 0, so those go down to 0.1.
+- **The wall-climb ranged attack is a super attack.** Spider-Man's and Venom's shot from a wall (Super + attack, `WallClimb`, `fn_800D05BC`) has no case in `fn_800DA884`, so it costs the super attack cost, not the ranged one. Flyers' shots while hovering (`fn_800D875C`) set no cost of their own.
 - **The super attack cost has another reader**, `fn_8009D818`, not yet identified.
 - **Memory and space.** Changed costs need the character's own tuning file, so they take a line in the tuning list (above).
 

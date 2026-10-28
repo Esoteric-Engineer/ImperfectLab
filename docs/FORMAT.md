@@ -144,8 +144,8 @@ Older ImperfectLab builds refuse a file with `flames`.
   - `attack_damage_1` to `attack_damage_5`: 1-1000, the character's five damage values. Every attack hits with one of them.
   - Energy costs, 0-100 out of a full bar of 100. Super moves: `energy_super_attack` (super attacks 1-4, far and air), `energy_super_low`,
     `energy_super_stomp`, `energy_super_rise`, `energy_super_jump_attack`, `energy_super_jump_desc`, `energy_super_wall`,
-    `energy_super_swing` (super swing and wire attacks), `energy_dodge_super`, `energy_super_throw` and `energy_super_air_throw`;
-    all but `energy_super_attack` and `energy_super_throw` start at 0.1. Other use: `energy_super_run` (per second, and the wire swing),
+    `energy_super_swing` (super swing and wire attacks), `energy_dodge_super`, `energy_super_throw`, `energy_super_air_throw` and
+    `energy_super_ranged`; all but `energy_super_attack`, `energy_super_throw` and `energy_super_ranged` start at 0.1. Other use: `energy_super_run` (per second, and the wire swing),
     `energy_super_jump`, `energy_flight` (per second flying up), `energy_flight_min` (needed to take off) and `energy_wire_extend`.
   - Experimental: `health` (integer 10-1000), `run_speed` (1-30), `sprint_speed` (1-40), `rage_per_super` (0-100)
     and `rage_duration` (integer 1000-120000).

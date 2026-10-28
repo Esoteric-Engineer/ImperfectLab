@@ -1,7 +1,7 @@
 // Energy costs (manifest `stats.gameplay.energy_*`): tuning fields the game both checks the bar against and takes from it (fn_80084B68, fn_80084A60).
 export type EnergyKey =
   | 'energy_super_attack' | 'energy_super_low' | 'energy_super_stomp' | 'energy_super_rise' | 'energy_super_jump_attack' | 'energy_super_jump_desc'
-  | 'energy_super_wall' | 'energy_super_swing' | 'energy_dodge_super' | 'energy_super_throw' | 'energy_super_air_throw'
+  | 'energy_super_wall' | 'energy_super_swing' | 'energy_dodge_super' | 'energy_super_throw' | 'energy_super_air_throw' | 'energy_super_ranged'
   | 'energy_super_run' | 'energy_super_jump' | 'energy_flight' | 'energy_flight_min' | 'energy_wire_extend'
 
 export interface Cost {
@@ -13,7 +13,7 @@ export interface Cost {
 }
 
 export const SUPER: Cost[] = [
-  { key: 'energy_super_attack', field: 31, label: 'Super attack', moves: ['SuperAttack1', 'SuperAttack2', 'SuperAttack3', 'SuperAttack4', 'SuperAttackFar', 'SuperAirAttack'] },
+  { key: 'energy_super_attack', field: 31, label: 'Super attack', moves: ['SuperAttack1', 'SuperAttack2', 'SuperAttack3', 'SuperAttack4', 'SuperAttackFar', 'SuperAirAttack', 'WallClimbRangedAttack'] },
   { key: 'energy_super_low', field: 36, label: 'Super low attack', moves: ['SuperLowAttack'] },
   { key: 'energy_super_stomp', field: 187, label: 'Super stomp', moves: ['SuperAttackStomp'] },
   { key: 'energy_super_rise', field: 227, label: 'Super rise attack', moves: ['SuperRiseAttack'] },
@@ -24,6 +24,7 @@ export const SUPER: Cost[] = [
   { key: 'energy_dodge_super', field: 228, label: 'Dodge exit super attack', moves: ['DodgeExitSuperAttack'] },
   { key: 'energy_super_throw', field: 37, label: 'Super throw', moves: ['SuperThrow'] },
   { key: 'energy_super_air_throw', field: 229, label: 'Super air throw', moves: ['SuperAirThrow'] },
+  { key: 'energy_super_ranged', field: 32, label: 'Super ranged attack', moves: ['SuperRangedAttack'] },
 ]
 
 export const OTHER: Cost[] = [
