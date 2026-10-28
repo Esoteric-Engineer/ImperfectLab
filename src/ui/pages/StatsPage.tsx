@@ -140,6 +140,7 @@ export function StatsPage() {
         </tbody>
       </table>
       {store.game && <Damage />}
+      {store.game && <Recharge />}
       {store.game && <Energy />}
     </div>
   )
@@ -192,7 +193,7 @@ function Damage() {
 }
 
 
-function setEnergy(key: energy.EnergyKey, v: number | null) {
+function setEnergy(key: energy.EnergyKey | energy.RechargeKey, v: number | null) {
   const gp = store.character.gameplay
   if (v === null) delete gp[key]
   else gp[key] = Math.round(v * 10) / 10
@@ -226,6 +227,39 @@ function EnergyTable({ costs, users }: { costs: energy.Cost[]; users: Record<str
         })}
       </tbody>
     </table>
+  )
+}
+
+const fullBar = (rate: number | undefined) => rate === undefined ? '-' : rate > 0 ? `${formatG(Math.round(1000 / rate) / 10)} s` : 'never'
+
+function Recharge() {
+  const gp = store.character.gameplay
+  const bv = store.baseDetails()
+  return (
+    <>
+      <h3>Energy recharge</h3>
+      <Note>
+        Energy refills on its own until the bar is full. Holding R refills it at the second rate instead.
+      </Note>
+      <table className="gameplay grid damage">
+        <thead><tr><th>Rate</th><th className="num">Base</th><th>New</th><th className="num">Full bar</th></tr></thead>
+        <tbody>
+          {energy.RECHARGE.map(({ key, label }) => {
+            const base = bv?.gameplay[key]
+            const have = gp[key] !== undefined
+            const [lo, hi] = RANGES[key]
+            return (
+              <tr key={key}>
+                <td><label className="check"><input type="checkbox" checked={have} disabled={base === undefined} onChange={(e) => setEnergy(key, e.target.checked ? base! : null)} /> {label}</label></td>
+                <td className="num">{base === undefined ? '-' : formatG(base)}</td>
+                <td><NumberInput className="short" disabled={!have} min={lo} max={hi} step={0.1} value={gp[key] ?? base ?? null} onChange={(v) => setEnergy(key, v)} /></td>
+                <td className="num muted">{fullBar(gp[key] ?? base)}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </>
   )
 }
 

@@ -169,6 +169,15 @@ describe('round trip', () => {
     expect(() => imperfect.fromManifest({ ...m, stats: { gameplay: { energy_super_dance: 10 } } }, new Map())).toThrow(/unknown key/)
   })
 
+  it('saves and loads energy recharge rates', () => {
+    const c = character()
+    c.gameplay = { energy_regen: 0, energy_charge: 12.5 }
+    expect(imperfect.load(imperfect.save(c)).gameplay).toEqual(c.gameplay)
+    const m = imperfect.manifest(c) as Json
+    expect(() => imperfect.fromManifest({ ...m, stats: { gameplay: { energy_charge: -1 } } }, new Map())).toThrow(/from 0 to 100/)
+    expect(() => imperfect.fromManifest({ ...m, stats: { gameplay: { energy_regen: 101 } } }, new Map())).toThrow(/from 0 to 100/)
+  })
+
   it('warns about flight energy on a character that can\'t fly', () => {
     const c = character()
     c.gameplay = { energy_flight: 5 }

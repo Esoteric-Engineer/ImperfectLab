@@ -74,6 +74,16 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(() => D.mirrorSkip(out)).toThrow(LabError)
   })
 
+  it('rewrites only the energy rate cache for a split recharge', () => {
+    const dol = gameSource().dol
+    const out = D.chargeRate(dol)
+    const at = D.fileOffset(dol, 0x8009d71c)
+    const changed = [...out].flatMap((b, i) => (b !== dol[i] ? [i] : []))
+    expect(changed.length).toBeGreaterThan(0)
+    expect(changed.every((i) => i >= at && i < at + 0x8c)).toBe(true)
+    expect(() => D.chargeRate(out)).toThrow(LabError)
+  })
+
   it('binds Z to Stealth Mode', () => {
     const dol = gameSource().dol
     const out = D.zActions(dol, [{ internal: 'Synth', seconds: 8, regen: true, undetected: false, untouchable: true, visible: 0.25 }, { internal: 'Other', seconds: 0, regen: false, undetected: true, untouchable: false, visible: 1 }])
@@ -1014,6 +1024,36 @@ describe.skipIf(!ISO)('moves', () => {
     const base = new tuning.Tuning(src(), new R.BaseCharacter(src(), 'thing'))
     expect(tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, 31)).toEqual(Array.from({ length: tuning.SLOTS }, (_, s) => base.num(31, s) * 2))
     expect(tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, 36)).toEqual(Array.from({ length: tuning.SLOTS }, (_, s) => base.num(36, s)))
+  })
+
+  it('reads the energy recharge rates', () => {
+    const g = new tuning.Tuning(src(), new R.BaseCharacter(src(), 'wolverine')).gameplay()
+    expect(g.energy_regen).toBe(1.5)
+    expect(g.energy_charge).toBe(6)
+  })
+
+  it('sets the passive and held-R energy recharge apart', () => {
+    const base = new tuning.Tuning(src(), new R.BaseCharacter(src(), 'wolverine'))
+    const regen = Array.from({ length: tuning.SLOTS }, (_, s) => base.num(45, s))
+    const build = (gameplay: imperfect.Gameplay) => {
+      const c = tinted('wolverine')
+      c.aura = { ...c.aura, mode: 'base' }
+      c.gameplay = gameplay
+      return new Builder(src(), c).build()
+    }
+    const rates = (r: { adds: Map<string, Uint8Array> }) => {
+      const nvb = r.adds.get('Misc/PLAYER_Synth.nvb')!
+      const passive = tunedValues(nvb, 45) as number[], extra = tunedValues(nvb, 245) as number[]
+      return [passive, passive.map((p, s) => Math.fround(Math.fround(4 * p) + extra[s]))]
+    }
+
+    const off = build({ energy_regen: 0 })
+    expect(rates(off)).toEqual([new Array(tuning.SLOTS).fill(0), regen.map((v) => v * 4)])
+    expect(equal(off.dol!, D.chargeRate(build({}).dol!))).toBe(true)
+    expect(rates(build({ energy_charge: 0 }))).toEqual([regen, new Array(tuning.SLOTS).fill(0)])
+    const [passive, held] = rates(build({ energy_regen: 3, energy_charge: 20 }))
+    passive.forEach((v, s) => expect(v).toBeCloseTo(regen[s] * 2, 5))
+    held.forEach((v, s) => expect(v).toBeCloseTo((regen[s] * 20) / 1.5, 4))
   })
 
   it('plays Daredevil\'s cable when Wolverine takes his super throw', () => {

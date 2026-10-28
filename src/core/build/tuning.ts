@@ -12,7 +12,7 @@ const RESISTANCE = [134, 135, 136, 137, 138]
 export const FIELDS: Record<string, number> = {
   run_speed: 104, sprint_speed: 157, rage_per_super: 189, rage_duration: 192, super_throw_range: 28,
   attack_damage_1: 22, attack_damage_2: 23, attack_damage_3: 24, attack_damage_4: 25, attack_damage_5: 26,
-  ...energy.FIELDS,
+  energy_regen: energy.REGEN, ...energy.FIELDS,
 }
 export const POWER_EFFECTS = [98, 99]
 export const AIM_RANGE = 2
@@ -23,13 +23,17 @@ type Value = number | string
 
 export class Tuning {
   base: BaseCharacter
+  source: GameSource
+  schema: nvbtool.Schema
   fields: nvbtool.Field[]
   nvb: nvbtool.Nvb
   list: Uint8Array
 
   constructor(source: GameSource, base: BaseCharacter) {
     this.base = base
-    this.fields = nvbtool.parseNdb(source.entry('Misc/defaults.ndb')).fields('PLAYER')
+    this.source = source
+    this.schema = nvbtool.parseNdb(source.entry('Misc/defaults.ndb'))
+    this.fields = this.schema.fields('PLAYER')
     this.nvb = nvbtool.parseNvb(source.entry(base.nvbName()))
     this.list = source.entry('Misc/nvblist.txt')
   }
@@ -55,6 +59,14 @@ export class Tuning {
     return this.fields.flatMap(([typ], fid) => (typ === type ? [fid] : []))
   }
 
+  // GLOBALS 57, the multiplier on field 45 while holding R.
+  chargeScale(): number {
+    const [, def] = this.schema.fields('GLOBALS')[energy.CHARGE_SCALE]
+    const name = this.source.names('Misc/', '.nvb').find((n) => n.toLowerCase() === 'misc/globals_globals.nvb')
+    const v = name ? nvbtool.parseNvb(this.source.entry(name)).slots(energy.CHARGE_SCALE, def)?.[0] : null
+    return f32le(v ?? def, 0)
+  }
+
   damageTaken(): number {
     return 1.0 - this.num(RESISTANCE[0])
   }
@@ -62,6 +74,7 @@ export class Tuning {
   gameplay(): Record<string, number> {
     const out: Record<string, number> = {}
     for (const [k, fid] of Object.entries(FIELDS)) out[k] = this.num(fid)
+    out.energy_charge = out.energy_regen * this.chargeScale()
     out.damage_taken = this.damageTaken()
     out.throw_reach = this.num(AIM_RANGE)
     return out
@@ -106,6 +119,14 @@ export class Tuning {
     for (const [key, fid] of Object.entries(FIELDS)) {
       const v = gameplay[key]
       if (v !== null && v !== undefined) this.set(nvb, fid, this.scaled(fid, v as number))
+    }
+    const regen = (gameplay.energy_regen ?? null) as number | null, charge = (gameplay.energy_charge ?? null) as number | null
+    if (regen !== null || charge !== null) {
+      const g = this.chargeScale()
+      const base = Array.from({ length: SLOTS }, (_, s) => this.num(energy.REGEN, s))
+      const passive = regen !== null ? this.scaled(energy.REGEN, regen) : base
+      const held = charge !== null ? this.scaled(energy.REGEN, charge) : base.map((v) => v * g)
+      this.set(nvb, energy.CHARGE, held.map((r, s) => r - Math.fround(g * Math.fround(passive[s]))))
     }
     const t = gameplay.damage_taken as number | undefined
     if (t !== null && t !== undefined) {

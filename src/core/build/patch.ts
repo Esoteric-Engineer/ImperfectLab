@@ -122,6 +122,7 @@ export class Builder {
     this.buildFiles()
     if (this.r.cache !== null) this.r.dol = D.growEffectCache(this.r.dol, this.r.cache)
     if (mirrors(c)) this.r.dol = D.mirrorSkip(this.r.dol)
+    if (splitsCharge(c)) this.r.dol = D.chargeRate(this.r.dol)
     if (ownSounds(c)) this.r.dol = D.soundBanks(this.r.dol, [c.internalName])
     if (c.zButton) this.r.dol = D.zActions(this.r.dol, zCharacters([c]))
     return this.r
@@ -530,6 +531,7 @@ export function ownMotions(c: Character): boolean {
 // A stretched hit that comes back from where it lands needs RETURN_ABILITY and main.dol's mirrored skip.
 export const stretchReturns = (c: Character) => reach.RETURNS.some((id) => c.moveReach[id])
 export const mirrors = (c: Character) => c.baseMoves.throw_reach !== undefined || stretchReturns(c)
+export const splitsCharge = (c: Character) => c.gameplay.energy_regen !== undefined || c.gameplay.energy_charge !== undefined
 
 // Whether stretched moves' own lines are recolored, which takes the character's tuning file.
 export const paintsReach = (c: Character) => Object.keys(c.moveReach).some((id) => !reach.JUMPS.includes(id)) && (c.moveLines.color !== null || c.moveLines.alt_color !== null)
@@ -548,7 +550,7 @@ export function zCharacters(chars: Character[]): D.ZCharacter[] {
 
 // The gameplay fields that go in the character's own tuning file.
 export function tuningFields(c: Character): Record<string, unknown> {
-  const out: Record<string, unknown> = Object.fromEntries(Object.entries(c.gameplay).filter(([k]) => k in tuning.FIELDS || k === 'damage_taken'))
+  const out: Record<string, unknown> = Object.fromEntries(Object.entries(c.gameplay).filter(([k]) => k in tuning.FIELDS || k === 'damage_taken' || k === 'energy_charge'))
   if (c.baseMoves.throw_reach !== undefined) out.throw_reach = c.baseMoves.throw_reach
   const far = c.moveReach.SuperAttackFar?.distance
   if (far !== undefined) out.throw_reach = far
@@ -608,6 +610,7 @@ export function report(characters: Character | Character[], result: Result): str
   if (chars.length === 1) lines.push('main.dol: roster record 19, select-screen limits 18 -> 19')
   else lines.push(`main.dol: roster records 19 to ${18 + chars.length} in a new data section, select-screen limits 18 -> ${18 + chars.length}`, `main.dol: arena starts at 0x${D.arenaLo(result.dol!).toString(16).toUpperCase()}`)
   if (chars.some(mirrors)) lines.push('main.dol: fn_8019DB24 mirrors a long throw\'s or stretch\'s return on a hit')
+  if (chars.some(splitsCharge)) lines.push('main.dol: fn_8009D71C adds tuning field 245 to the energy recharge rate while holding R')
   if (chars.some(ownSounds)) lines.push('main.dol: fn_80114420 loads a new character\'s own sound bank, and one bank per type ID')
   if (chars.some((c) => c.zButton)) lines.push('main.dol: Z is bound for every human player; fn_80137494 is rewritten to run Stealth Mode, hooked from fn_800FB944, fn_80085F4C, fn_800E07A4, fn_80150200, fn_80461948 and fn_8014F8BC')
   const cache = result.dol ? D.readEffectCache(result.dol) : null

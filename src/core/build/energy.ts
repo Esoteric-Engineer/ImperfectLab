@@ -43,3 +43,13 @@ export const FALLBACK: EnergyKey[] = [
   'energy_super_low', 'energy_super_stomp', 'energy_super_rise', 'energy_super_jump_attack', 'energy_super_jump_desc',
   'energy_super_wall', 'energy_super_swing', 'energy_dodge_super', 'energy_super_air_throw',
 ]
+
+// Recharge per second: field 45 refills the bar, and holding R (the Power state) swaps in field 45 × GLOBALS 57 + field 245 (fn_8009D71C, dol.ts chargeRate).
+export type RechargeKey = 'energy_regen' | 'energy_charge'
+export const REGEN = 45
+export const CHARGE = 245
+export const CHARGE_SCALE = 57
+export const RECHARGE: { key: RechargeKey; label: string }[] = [
+  { key: 'energy_regen', label: 'Passive (per second)' },
+  { key: 'energy_charge', label: 'Holding R (per second)' },
+]

@@ -7,7 +7,7 @@ import { decodeImage } from '../image/decode'
 import { encodePng, pngSize } from '../image/png'
 import type { RgbaImage } from '../image/rgba'
 import type { DamageKey } from '../build/damage'
-import { COSTS, type EnergyKey, FALLBACK } from '../build/energy'
+import { COSTS, type EnergyKey, FALLBACK, RECHARGE, type RechargeKey } from '../build/energy'
 import { LOW_ENERGY_STUN, MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
 import { DISTANCE, JUMP_DISTANCE, JUMPS, type Limb, LIMBS } from '../build/reach'
 import { type ZAction, Z_ACTIONS, Z_SECONDS, Z_VISIBLE } from '../game/dol'
@@ -48,6 +48,7 @@ export const GAMEPLAY: Record<string, [number, number, boolean]> = {
   attack_damage_1: [1, 1000, false], attack_damage_2: [1, 1000, false], attack_damage_3: [1, 1000, false],
   attack_damage_4: [1, 1000, false], attack_damage_5: [1, 1000, false],
   ...Object.fromEntries(COSTS.map((c): [string, [number, number, boolean]] => [c.key, [FALLBACK.includes(c.key) ? 0.1 : 0, 100, false]])),
+  ...Object.fromEntries(RECHARGE.map((r): [string, [number, number, boolean]] => [r.key, [0, 100, false]])),
 }
 export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable', 'range_grab'] }
 export type WallKey = 'wall_climb' | 'wall_run'
@@ -99,7 +100,7 @@ export interface Credit {
   url: string
 }
 
-export type Gameplay = Partial<Record<'damage_taken' | 'health' | 'run_speed' | 'sprint_speed' | 'rage_per_super' | 'rage_duration' | 'super_throw_range' | DamageKey | EnergyKey, number>> & {
+export type Gameplay = Partial<Record<'damage_taken' | 'health' | 'run_speed' | 'sprint_speed' | 'rage_per_super' | 'rage_duration' | 'super_throw_range' | DamageKey | EnergyKey | RechargeKey, number>> & {
   lift?: string
   wire_swing?: boolean
   flight?: boolean
