@@ -16,6 +16,7 @@ import * as gxtex from '../mnroi/gxtex'
 import * as nfxtool from '../mnroi/nfxtool'
 import * as nottool from '../mnroi/nottool'
 import * as nvbtool from '../mnroi/nvbtool'
+import type * as ngbtool from '../mnroi/ngbtool'
 import * as ngmtool from '../mnroi/ngmtool'
 import * as bundle from '../model/bundle'
 import { Fit, type MaterialSlots } from '../model/fit'
@@ -366,8 +367,15 @@ export class Builder {
     const fields = tuningFields(c)
     const strings = new Map(power)
     if (fields.pickup_range !== undefined) this.note(`pickup: props can be grabbed from ${fields.pickup_range} m away`)
-    if (hasCutscenes(c.cutscenes)) {
-      const cuts = this.moveFx ? cutscenes.plan(this.src, this.base, c, this.moveFx.slots) : cutscenes.plan(this.src, this.base, c)
+    const onBack = this.onBack()
+    if (hasCutscenes(c.cutscenes) || onBack) {
+      let stow: ((rec: ngbtool.Record) => ngbtool.Record) | null = null
+      if (onBack) {
+        const own = ngmtool.read(this.base.bundleFiles()[0])[1][0]
+        const model = c.size !== 1 ? bundle.scaleModel(own, c.size) : own, plan = holster.sized(onBack, c.size)
+        stow = (rec) => holster.stow(rec, model, plan)
+      }
+      const cuts = cutscenes.plan(this.src, this.base, c, this.moveFx?.slots ?? cutscenes.moveSlots(this.src, this.base, c), stow)
       for (const [fid, names] of cuts.fields) strings.set(fid, names)
       for (const [k, v] of cuts.files) this.r.adds.set(k, v)
       for (const n of cuts.notes) this.note(n)
@@ -381,15 +389,19 @@ export class Builder {
     return c.internalName
   }
 
+  // The holster's plan, once the model has given the prop's middle.
+  onBack(): holster.Plan | null {
+    const h = this.c.baseMoves.holster
+    return h && this.propCenter ? { ...h, center: this.propCenter } : null
+  }
+
   // The character's own motion set, when a move changes an animation.
   motions(): string | null {
     const c = this.c
     if (!ownMotions(c)) return null
     const thrown = c.baseMoves.throw_reach
     const fx = Object.keys(c.moveReach).length ? new effects.Effects(this.src.entry('Misc/game.nfx')) : null
-    const h = c.baseMoves.holster
-    const onBack = h && this.propCenter ? { ...h, center: this.propCenter } : null
-    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, onBack, throwsDamage(c))
+    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, this.onBack(), throwsDamage(c))
     for (const [k, v] of m.files) this.r.adds.set(k, v)
     if (thrown !== undefined) this.note(`baton throw: reaches ${thrown} m (${this.base.label}'s about 8)`)
     if (throwsDamage(c)) this.note(`baton throw: hits for ${c.gameplay.attack_damage_throw}`)

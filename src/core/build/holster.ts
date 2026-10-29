@@ -29,6 +29,11 @@ export interface Plan {
   drawn?: Record<string, boolean>
 }
 
+export function sized(plan: Plan, size: number): Plan {
+  const k = (v: Vec3) => v.map((x) => x * size) as Vec3
+  return { ...plan, position: k(plan.position), center: k(plan.center) }
+}
+
 export interface Arm {
   upper: number
   fore: number

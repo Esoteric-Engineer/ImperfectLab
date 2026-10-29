@@ -6,6 +6,7 @@ import * as R from '../game/roster'
 import type { GameSource } from '../game/source'
 import * as asftool from '../mnroi/asftool'
 import * as cuttool from '../mnroi/cuttool'
+import type * as ngbtool from '../mnroi/ngbtool'
 import * as ngmtool from '../mnroi/ngmtool'
 import { type Character, CUTSCENE_KINDS, type CutsceneKind, type Cutscenes } from '../package/imperfect'
 import * as fxs from './effects'
@@ -252,7 +253,9 @@ export function effectFit(src: GameSource, baseKey: string, c: EffectChoices): E
   return out
 }
 
-export function plan(src: GameSource, base: R.BaseCharacter, c: Character, given = moveSlots(src, base, c)): Plan {
+// `stow` reworks the character's animation in the intros (the holster's club on the back).
+export function plan(src: GameSource, base: R.BaseCharacter, c: Character, given = moveSlots(src, base, c),
+  stow: ((rec: ngbtool.Record) => ngbtool.Record) | null = null): Plan {
   const out: Plan = { fields: new Map(), files: new Map(), notes: [] }
   const r = new Reader(src)
   const prefix = c.internalName.toLowerCase()
@@ -263,7 +266,8 @@ export function plan(src: GameSource, base: R.BaseCharacter, c: Character, given
   for (const { kind, from, names } of kinds) {
     const clips = Object.entries(c.cutscenes.audio).filter(([k]) => k.startsWith(kind + '_'))
     const effects = retargets.get(kind) ?? new Map<number, number>()
-    if (from === base && !clips.length) continue
+    const stowed = kind === 'intro' ? stow : null
+    if (from === base && !clips.length && !stowed) continue
     const avail = slots(r, kind, names)
     const clipFor = new Map<string, string>()
     for (const [key, member] of clips) {
@@ -291,7 +295,7 @@ export function plan(src: GameSource, base: R.BaseCharacter, c: Character, given
         const changes = own.flatMap((s, j): [number, string][] => (clipFor.has(s.toLowerCase()) && theirs[j] ? [[j, clipFor.get(s.toLowerCase())!]] : []))
         const effectCopy = effects.size > 0 && usesAny(r.cut(v), effects)
         const stripCopy = c.cutscenes.effects[kind] === 'none' && performers(r.cut(v)).some((a) => !effectEvents(a).next().done)
-        if (!cross && !changes.length && !effectCopy && !stripCopy) {
+        if (!cross && !changes.length && !effectCopy && !stripCopy && !stowed) {
           renamed.set(key, v)
           continue
         }
@@ -299,6 +303,7 @@ export function plan(src: GameSource, base: R.BaseCharacter, c: Character, given
         if (cross) remap(cut, boneMap(from.body, base.body, nodes!))
         if (effectCopy) retarget(cut, effects)
         if (stripCopy) strip(cut)
+        if (stowed) for (const a of performers(cut)) cuttool.setRecord(a, stowed(cuttool.record(a)))
         for (const [j, n] of changes) cuttool.setStream(cut, j, n)
         const name = `${prefix}_${kind}${++copies}`
         if (src.has(cutPath(name))) throw new LabError(`the game already has ${cutPath(name)}: pick another internal name`)
@@ -307,7 +312,7 @@ export function plan(src: GameSource, base: R.BaseCharacter, c: Character, given
       }
     }
     for (const [f, fid] of FIELDS[kind].entries()) out.fields.set(fid, names[f].map((v) => renamed.get(v.trim().toLowerCase())!))
-    const what = [from !== base ? `${from.label}'s` : '', clips.length ? `${clips.length} new audio` : ''].filter(Boolean).join(', ')
+    const what = [from !== base ? `${from.label}'s` : '', clips.length ? `${clips.length} new audio` : '', stowed ? 'club on the back' : ''].filter(Boolean).join(', ')
     let note = `cutscenes: ${LABELS[kind].toLowerCase()} ${what}`
     if (c.cutscenes.effects[kind] === 'theirs' && from !== base) {
       const lost = missed.get(kind) ?? 0

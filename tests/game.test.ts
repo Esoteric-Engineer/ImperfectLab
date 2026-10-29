@@ -18,6 +18,7 @@ import { LabError } from '../src/core/errors'
 import * as D from '../src/core/game/dol'
 import * as R from '../src/core/game/roster'
 import { Apt } from '../src/core/mnroi/apt'
+import * as cuttool from '../src/core/mnroi/cuttool'
 import * as nfxtool from '../src/core/mnroi/nfxtool'
 import * as ngbtool from '../src/core/mnroi/ngbtool'
 import * as ngmtool from '../src/core/mnroi/ngmtool'
@@ -865,6 +866,36 @@ describe.skipIf(!ISO)('holster', () => {
     expect(mf.notes.some((n) => n.startsWith('holster:'))).toBe(true)
   })
 
+  it('reads and writes a cutscene actor\'s animation unchanged', () => {
+    const body = src().entry('Cutscenes/mp_dd_int_1.cut')
+    const cut = cuttool.read(body)
+    for (const ch of cut.chunks) for (const a of ch.actors) cuttool.setRecord(a, cuttool.record(a))
+    expect(equal(cuttool.build(cut), body)).toBe(true)
+  })
+
+  it('keeps the club on the back in the intros', () => {
+    const p = plan(), c = tinted('daredevil')
+    const out = cutscenes.plan(src(), dd(), c, undefined, (rec) => holster.stow(rec, model(), p))
+    const stock = cuttool.read(src().entry('Cutscenes/mp_dd_int_2.cut'))
+    for (const fid of cutscenes.FIELDS.intro) {
+      for (const name of out.fields.get(fid)!) {
+        expect(name).toMatch(/^synth_intro\d$/)
+        const cut = cuttool.read(out.files.get(cutscenes.cutPath(name))!)
+        for (const ch of cut.chunks) {
+          const rec = cuttool.record(ch.actors.find((a) => cuttool.recordName(a.record).toLowerCase() === 'daredevil')!)
+          for (const t of [0, rec.length / 2, rec.length]) expect(onBack(model(), p, rec, t)).toBeLessThan(0.01)
+        }
+      }
+    }
+    const cut = cuttool.read(out.files.get(cutscenes.cutPath(out.fields.get(171)![0]))!)
+    cut.chunks.forEach((ch, i) => ch.actors.forEach((a, j) => {
+      const was = stock.chunks[i].actors[j]
+      if (cuttool.recordName(a.record).toLowerCase() !== 'daredevil') expect(a.tracks).toEqual(was.tracks)
+      else expect(a.tracks.filter((t) => cuttool.bone(t) !== basemoves.CLUB)).toEqual(was.tracks.filter((t) => cuttool.bone(t) !== basemoves.CLUB))
+    }))
+    expect(out.notes).toEqual(['cutscenes: intro club on the back'])
+  })
+
   it('builds a character with a holster', () => {
     const c = tinted('daredevil')
     c.aura = { ...c.aura, mode: 'base' }
@@ -872,7 +903,9 @@ describe.skipIf(!ISO)('holster', () => {
     c.baseMoves = { throw_cable: false, holster: imperfect.defaultHolster() }
     const r = new Builder(src(), c).build()
     expect(r.adds.has('Motions/Synth.nms')).toBe(true)
+    expect(r.adds.has('Cutscenes/synth_intro1.cut')).toBe(true)
     expect(r.notes.some((n) => n.startsWith('holster:'))).toBe(true)
+    expect(r.notes.some((n) => n.includes('intro club on the back'))).toBe(true)
   })
 })
 

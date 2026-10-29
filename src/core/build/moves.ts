@@ -706,8 +706,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     }
   }
   if (onBack) {
-    const k3 = (v: ngbtool.Vec3) => v.map((x) => x * size) as ngbtool.Vec3
-    const plan = { ...onBack, position: k3(onBack.position), center: k3(onBack.center) }
+    const plan = holster.sized(onBack, size)
     const groups = new Map<string, [Exclude<holster.Role, 'drawn'>, string, nmstool.Motion[]]>()
     for (const m of resolved(src, own, holds(bundles)).values()) {
       const own = holster.role(m.state)
