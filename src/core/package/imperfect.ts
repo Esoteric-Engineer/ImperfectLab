@@ -6,6 +6,8 @@ import { LabError } from '../errors'
 import { decodeImage } from '../image/decode'
 import { encodePng, pngSize } from '../image/png'
 import type { RgbaImage } from '../image/rgba'
+import { CLUB } from '../build/basemoves'
+import { CLUB_MOVES, defaultDrawn } from '../build/holster'
 import type { DamageKey } from '../build/damage'
 import { COSTS, type EnergyKey, FALLBACK, RECHARGE, type RechargeKey } from '../build/energy'
 import { LOW_ENERGY_STUN, MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
@@ -46,11 +48,11 @@ export const GAMEPLAY: Record<string, [number, number, boolean]> = {
   sprint_speed: [1.0, 40.0, false], rage_per_super: [0.0, 100.0, false], rage_duration: [1000, 120000, true],
   super_throw_range: [1.0, 20.0, false],
   attack_damage_1: [1, 1000, false], attack_damage_2: [1, 1000, false], attack_damage_3: [1, 1000, false],
-  attack_damage_4: [1, 1000, false], attack_damage_5: [1, 1000, false],
+  attack_damage_4: [1, 1000, false], attack_damage_5: [1, 1000, false], attack_damage_throw: [1, 1000, false],
   ...Object.fromEntries(COSTS.map((c): [string, [number, number, boolean]] => [c.key, [FALLBACK.includes(c.key) ? 0.1 : 0, 100, false]])),
   ...Object.fromEntries(RECHARGE.map((r): [string, [number, number, boolean]] => [r.key, [0, 100, false]])),
 }
-export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable', 'range_grab'] }
+export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable', 'range_grab', 'holster'] }
 export type WallKey = 'wall_climb' | 'wall_run'
 export interface Wall {
   key: WallKey
@@ -67,6 +69,9 @@ export const WALL: Wall[] = [
 export const FLYERS = ['johnnyohm', 'storm', 'heatwave', 'humantorch', 'ironman', 'magneto', 'roekel']
 export const STUN_BASES = ['megalith']
 export const THROW_REACH: [number, number] = [8, 35]
+export const HOLSTER_POSITION: [number, number] = [-0.6, 0.6]
+export const HOLSTER_ROTATION: [number, number] = [-180, 180]
+export const defaultHolster = (): Holster => ({ position: [0, -0.17, 0.05], rotation: [90, 0, 0] })
 export const POSES = ['rest', 'ready', 'readyalt'] as const
 export const CUTSCENE_KINDS = ['intro', 'victory', 'finisher'] as const
 export type CutsceneKind = (typeof CUTSCENE_KINDS)[number]
@@ -100,7 +105,7 @@ export interface Credit {
   url: string
 }
 
-export type Gameplay = Partial<Record<'damage_taken' | 'health' | 'run_speed' | 'sprint_speed' | 'rage_per_super' | 'rage_duration' | 'super_throw_range' | DamageKey | EnergyKey | RechargeKey, number>> & {
+export type Gameplay = Partial<Record<'damage_taken' | 'health' | 'run_speed' | 'sprint_speed' | 'rage_per_super' | 'rage_duration' | 'super_throw_range' | DamageKey | 'attack_damage_throw' | EnergyKey | RechargeKey, number>> & {
   lift?: string
   wire_swing?: boolean
   flight?: boolean
@@ -109,10 +114,17 @@ export type Gameplay = Partial<Record<'damage_taken' | 'health' | 'run_speed' | 
   wall_run?: boolean
 }
 
+export interface Holster {
+  position: [number, number, number]
+  rotation: [number, number, number]
+  drawn?: Record<string, boolean>
+}
+
 export interface BaseMoves {
   throw_reach?: number
   throw_cable?: boolean
   range_grab?: boolean
+  holster?: Holster
 }
 
 export interface Flames {
@@ -308,6 +320,7 @@ export function problems(c: Character): Problem[] {
   for (const m of c.materials) if (m.texture && !c.files.has(m.texture)) out.push(['error', `the texture of ${m.name} is missing`])
   const unsupported = Object.keys(c.baseMoves).filter((k) => !(BASE_MOVES[c.base] ?? []).includes(k as keyof BaseMoves))
   if (unsupported.length) out.push(['error', `${unsupported.join(', ')} only apply to a ${movesBases(unsupported[0])} base: untick them on the Moves page`])
+  if (c.gameplay.attack_damage_throw !== undefined && c.base !== 'daredevil') out.push(['error', 'the baton throw damage only applies to a Daredevil base: untick it on the Stats page'])
   for (const [id, from] of Object.entries(c.moves)) {
     const move = MOVE_IDS.get(id)
     if (!move) out.push(['error', `there is no move ${id}`])
@@ -339,6 +352,15 @@ export function problems(c: Character): Problem[] {
   if (c.baseMoves.range_grab) {
     if (!c.moves.WirePull) out.push(['error', 'the range grab needs the ranged pickup: pick it on the Moves page'])
   } else if ((BASE_MOVES[c.base] ?? []).includes('range_grab') && RANGE_GRAB.some((id) => c.moves[id])) out.push(['warning', 'ranged pickup animations are picked but the range grab is off, so they never play'])
+  if (c.baseMoves.holster) {
+    if (c.baseMoves.throw_cable !== false) out.push(['error', 'the baton cable runs from the forearm to the club, which the holster puts on the back: set the baton cable to off on the Moves page'])
+    for (const [id, inHand] of Object.entries(c.baseMoves.holster.drawn ?? {})) {
+      const move = MOVE_IDS.get(id)
+      if (!move || defaultDrawn(move.states) === null) out.push(['error', `the holster decides where ${move?.label.toLowerCase() ?? id} holds the club: set it back on the Moves page`])
+      else if (!inHand && CLUB_MOVES.includes(id)) out.push(['error', `${move.label} throws or hits with the club, so it can't be on the back: tick it on the Moves page`])
+    }
+    if (!c.mapping.has(CLUB) && !c.materials.some((m) => m.include && m.bind === CLUB)) out.push(['error', `the holster carries what is fixed to game bone ${CLUB}, and nothing is: fix a prop to it on the Materials page`])
+  }
   if (c.moves.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach changes the base\'s own super attack far: set that move back to the base\'s, or untick the reach'])
   if (c.moveReach.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach and a stretch both change super attack far: untick one of them on the Moves page'])
   else if (c.moveReach.SuperRiseAttack && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach and a stretched super rise attack both need the baton\'s long hit segment: untick one of them on the Moves page'])
@@ -535,12 +557,29 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
       glow: p.glow ? color(p.glow, 'glow') : null,
     }
   }
-  const mv = keys(m.base_moves ?? {}, ['throw_reach', 'throw_cable', 'range_grab'], 'base_moves')
+  const mv = keys(m.base_moves ?? {}, ['throw_reach', 'throw_cable', 'range_grab', 'holster'], 'base_moves')
   c.baseMoves = {}
   const reach = num(mv.throw_reach, 'base_moves.throw_reach', THROW_REACH[0], THROW_REACH[1])
   if (reach !== null) c.baseMoves.throw_reach = reach
   if (mv.throw_cable !== null && mv.throw_cable !== undefined) c.baseMoves.throw_cable = typed<boolean>(mv.throw_cable, 'boolean', 'base_moves.throw_cable')
   if (mv.range_grab !== null && mv.range_grab !== undefined) c.baseMoves.range_grab = typed<boolean>(mv.range_grab, 'boolean', 'base_moves.range_grab')
+  if (mv.holster !== null && mv.holster !== undefined) {
+    const h = keys(mv.holster, ['position', 'rotation', 'drawn'], 'base_moves.holster')
+    const three = (v: unknown, what: string, [lo, hi]: [number, number]) => {
+      const a = typed<unknown[]>(v, 'array', `base_moves.holster.${what}`)
+      if (a.length !== 3) throw new LabError(`manifest: base_moves.holster.${what} is three numbers`)
+      return a.map((x) => num(x, `base_moves.holster.${what}`, lo, hi, false)!) as [number, number, number]
+    }
+    c.baseMoves.holster = { position: three(h.position, 'position', HOLSTER_POSITION), rotation: three(h.rotation, 'rotation', HOLSTER_ROTATION) }
+    if (h.drawn !== null && h.drawn !== undefined) {
+      const drawn: Record<string, boolean> = {}
+      for (const [id, v] of Object.entries(typed<Record<string, unknown>>(h.drawn, 'object', 'base_moves.holster.drawn'))) {
+        if (!MOVE_IDS.has(id)) throw new LabError(`manifest: unknown move ${JSON.stringify(id.slice(0, 40))} in base_moves.holster.drawn`)
+        drawn[id] = typed<boolean>(v, 'boolean', `base_moves.holster.drawn.${id}`)
+      }
+      if (Object.keys(drawn).length) c.baseMoves.holster.drawn = drawn
+    }
+  }
   for (const k of Object.keys(c.baseMoves)) {
     if (!(BASE_MOVES[c.base] ?? []).includes(k as keyof BaseMoves)) throw new LabError(`manifest: base_moves.${k} only applies to a ${movesBases(k)} base`)
   }

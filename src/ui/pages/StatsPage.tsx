@@ -146,7 +146,7 @@ export function StatsPage() {
   )
 }
 
-function setDamage(key: damage.DamageKey, v: number | null) {
+function setDamage(key: damage.DamageKey | typeof damage.THROW_KEY, v: number | null) {
   const gp = store.character.gameplay
   if (v === null) delete gp[key]
   else gp[key] = Math.round(v * 10) / 10
@@ -159,30 +159,34 @@ function Damage() {
   const cat = store.moveCatalog()
   const bv = store.baseDetails()
   const base = damage.KEYS.map((k, i) => cat?.[c.base]?.damage[i] ?? bv?.gameplay[k])
-  const users = cat?.[c.base] ? damageMoves(cat, c.base, c.moves) : null
+  const ownThrow = gp[damage.THROW_KEY] !== undefined
+  const users = cat?.[c.base] ? damageMoves(cat, c.base, c.moves, ownThrow) : null
+  const rows: [damage.DamageKey | typeof damage.THROW_KEY, string, number | undefined, Move[] | undefined][] = damage.KEYS.map((k, i) => [k, `Damage ${i + 1}`, base[i], users?.[i]])
+  if (c.base === 'daredevil') rows.push([damage.THROW_KEY, 'Baton throw', base[damage.THROW_TIER], cat?.[c.base] ? damageMoves(cat, c.base, c.moves, true)[damage.KEYS.length] : undefined])
   return (
     <>
       <h3>Attack damage</h3>
       <Note>
         Each character has five damage values, and every attack hits with one of them. Changing a value changes each associated move's damage. Projectiles are not affected.<br />
         CPUs hit softer (on Easy) or harder (on Hard) than these values, but keep the same proportion.
+        {c.base === 'daredevil' && <><br />The baton throw can have its own value, taken out of Damage {damage.THROW_TIER + 1}. This needs the character's own copy of Daredevil's animations.</>}
       </Note>
       <table className="gameplay grid damage">
         <thead><tr><th>Value</th><th>Moves</th><th className="num">Base</th><th>New</th><th className="num">Change</th></tr></thead>
         <tbody>
-          {damage.KEYS.map((key, i) => {
+          {rows.map(([key, name, b, moves]) => {
             const have = gp[key] !== undefined
             const [lo, hi] = RANGES[key]
-            const scaled = have && base[i]! > 0 && gp[key] !== base[i]
+            const scaled = have && b! > 0 && gp[key] !== b
             return (
               <tr key={key}>
-                <td><label className="check"><input type="checkbox" checked={have} disabled={base[i] === undefined} onChange={(e) => setDamage(key, e.target.checked ? base[i]! : null)} /> Damage {i + 1}</label></td>
+                <td><label className="check"><input type="checkbox" checked={have} disabled={b === undefined} onChange={(e) => setDamage(key, e.target.checked ? b! : null)} /> {name}</label></td>
                 <td>
-                  {!users ? <span className="muted">reading moves...</span> : users[i].length ? <div className="chips">{users[i].map((m) => <span key={m.id} className="chip">{m.label}</span>)}</div> : <span className="muted">none</span>}
+                  {!moves ? <span className="muted">reading moves...</span> : moves.length ? <div className="chips">{moves.map((m) => <span key={m.id} className="chip">{m.label}</span>)}</div> : <span className="muted">none</span>}
                 </td>
-                <td className="num">{base[i] === undefined ? '-' : formatG(base[i]!)}</td>
-                <td><NumberInput className="short" disabled={!have} min={lo} max={hi} step={1} value={gp[key] ?? base[i] ?? null} onChange={(v) => setDamage(key, v)} /></td>
-                <td className="num muted">{scaled ? `×${formatG(Math.round((gp[key]! / base[i]!) * 100) / 100)}` : ''}</td>
+                <td className="num">{b === undefined ? '-' : formatG(b)}</td>
+                <td><NumberInput className="short" disabled={!have} min={lo} max={hi} step={1} value={gp[key] ?? b ?? null} onChange={(v) => setDamage(key, v)} /></td>
+                <td className="num muted">{scaled ? `×${formatG(Math.round((gp[key]! / b!) * 100) / 100)}` : ''}</td>
               </tr>
             )
           })}

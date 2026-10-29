@@ -4,6 +4,10 @@ import { HIT_ON } from './reach'
 
 export type DamageKey = 'attack_damage_1' | 'attack_damage_2' | 'attack_damage_3' | 'attack_damage_4' | 'attack_damage_5'
 export const KEYS: DamageKey[] = ['attack_damage_1', 'attack_damage_2', 'attack_damage_3', 'attack_damage_4', 'attack_damage_5']
+export const THROW_KEY = 'attack_damage_throw'
+export const THROW_PARAM = 5
+export const THROW_FIELD = 217
+export const THROW_TIER = 2
 
 const TIERS: Record<string, number> = {
   LowAttack: 0,
@@ -24,7 +28,7 @@ export function strikes(events: ngbtool.Event[]): number[] {
   let tier = OWN, hit = false
   const out = new Set<number>()
   for (const [, type, param] of [...events].sort((a, b) => a[0] - b[0])) {
-    if (type === TIER_EVENT) tier = param > 4 ? 1 : param
+    if (type === TIER_EVENT) tier = param === THROW_PARAM ? THROW_PARAM : param > 4 ? 1 : param
     else if (HIT_ON.includes(type)) {
       out.add(tier)
       hit = true
@@ -38,4 +42,10 @@ export function tiers(state: string, hits: number[] | undefined): number[] {
   const own = TIERS[state]
   const list = hits?.length ? hits : own !== undefined ? [OWN] : []
   return [...new Set(list.map((t) => (t === OWN ? own ?? 1 : t)))]
+}
+
+export function throwRecord(rec: ngbtool.Record): ngbtool.Record {
+  const events = rec.events.map(([f, t, p, v]): ngbtool.Event => [f, t, t === TIER_EVENT ? THROW_PARAM : p, v])
+  if (!events.some(([f, t]) => t === TIER_EVENT && f <= 0)) events.unshift([0, TIER_EVENT, THROW_PARAM, 0])
+  return { ...rec, events }
 }

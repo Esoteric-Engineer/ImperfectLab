@@ -12,7 +12,7 @@ import { type Character, hasCutscenes, problems as characterProblems, type Probl
 import * as effects from './effects'
 import * as moves from './moves'
 import { motionSetName, SLOTS } from './moves'
-import { Builder, mirrors, ownMotions, ownSounds, paintsReach, type PatchOutput, type Progress, Result, splitsCharge, tuningFields, write, zCharacters } from './patch'
+import { Builder, mirrors, ownMotions, ownSounds, paintsReach, type PatchOutput, type Progress, Result, splitsCharge, throwsDamage, tuningFields, write, zCharacters } from './patch'
 import { templateNames } from './templates'
 import * as tuning from './tuning'
 import * as ui from './ui'
@@ -126,6 +126,7 @@ export function buildBatch(source: GameSource, chars: Batch, progress: Progress 
   }
   if (batch.some(mirrors)) r.dol = D.mirrorSkip(r.dol)
   if (batch.some(splitsCharge)) r.dol = D.chargeRate(r.dol)
+  if (batch.some(throwsDamage)) r.dol = D.throwDamage(r.dol)
   if (batch.some(ownSounds)) r.dol = D.soundBanks(r.dol, batch.filter(ownSounds).map((c) => c.internalName))
   if (batch.some((c) => c.zButton)) r.dol = D.zActions(r.dol, zCharacters(batch))
   r.notes = [...notes, ...results.flatMap((x, i) => x.notes.map((n) => `${batch[i].displayName}: ${n}`))]

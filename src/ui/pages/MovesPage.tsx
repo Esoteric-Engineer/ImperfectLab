@@ -1,9 +1,14 @@
+import { useEffect, useRef, useState } from 'react'
 import { addOptions, animations, CATEGORIES, type Catalog, LOW_ENERGY_STUN, type Move, MOVE_IDS, MOVES, options, RANGE_GRAB, WALL_JUMPS } from '../../core/build/moves'
+import * as holster from '../../core/build/holster'
 import * as reach from '../../core/build/reach'
 import { formatG } from '../../core/format'
 import { keys, label } from '../../core/game/roster'
-import { BASE_MOVES, GAMEPLAY, type MoveEffect, STUN_BASES, THROW_REACH, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
+import { BASE_MOVES, copyCharacter, defaultHolster, GAMEPLAY, HOLSTER_POSITION, HOLSTER_ROTATION, type MoveEffect, STUN_BASES, THROW_REACH, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
+import type { BoneLine, MeshData } from '../../core/preview'
 import { ColorButton, Note, NumberInput, Warning } from '../components/common'
+import { Viewport } from '../components/viewport'
+import { engine, errorText } from '../engine'
 import { store, useStore } from '../store'
 
 // Categories shown open; the rest start folded.
@@ -42,6 +47,7 @@ export function MovesPage() {
   const cross = mine ? Object.entries(c.moves).filter(([, from]) => cat![from] && cat![from].body !== mine.body).map(([id]) => id) : []
   const added = new Set(cat && mine ? [...wallRows(cat).map((r) => r.id), ...(c.baseMoves.range_grab ? RANGE_GRAB : []), ...(c.gameplay.low_energy_stun ? LOW_ENERGY_STUN : [])] : [])
   const swapped = Object.keys(c.moves).filter((id) => !added.has(id)).length + c.moveIdle.length
+  const held = c.baseMoves.holster !== undefined
 
   return (
     <div className="page">
@@ -73,7 +79,7 @@ export function MovesPage() {
             <details key={category} open={OPEN.has(category) || changed > 0}>
               <summary><b>{category}</b> <span className="muted">({rows.length}{changed ? `, ${changed} swapped` : ''})</span></summary>
               <table className="gameplay grid fixed">
-                <thead><tr><th className="c-move">Move</th><th className="c-anim">{label(c.base)}'s animation</th><th>Taken from</th><th className="c-fx">Effects</th></tr></thead>
+                <thead><tr><th className="c-move">Move</th><th className="c-anim">{label(c.base)}'s animation</th><th>Taken from</th><th className="c-fx">Effects</th>{held && <th className="c-held" title="Where the holster's prop is during the move">Prop in hand?</th>}</tr></thead>
                 <tbody>{rows.map((m) => <MoveRow key={m.id} cat={cat} move={m} />)}</tbody>
               </table>
             </details>
@@ -134,7 +140,34 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
         {!opts.length && !offer && !picked && <span className="muted"> no other version</span>}
       </td>
       <td className="fx">{picked && <MoveEffects id={move.id} from={picked} />}</td>
+      {c.baseMoves.holster && <td><InHand move={move} /></td>}
     </tr>
+  )
+}
+
+const HOLSTER_SAYS: Record<string, string> = { PowerOn: 'draws', PowerOff: 'puts back' }
+
+function setDrawn(id: string, inHand: boolean | undefined) {
+  const h = store.character.baseMoves.holster!
+  const drawn = { ...h.drawn }
+  if (inHand === undefined) delete drawn[id]
+  else drawn[id] = inHand
+  store.character.baseMoves.holster = { position: h.position, rotation: h.rotation, ...(Object.keys(drawn).length ? { drawn } : {}) }
+  store.touch('character')
+}
+
+function InHand({ move }: { move: Move }) {
+  const h = store.character.baseMoves.holster!
+  const def = holster.defaultDrawn(move.states)
+  if (def === null) return <span className="muted">{HOLSTER_SAYS[move.id] ?? '-'}</span>
+  const now = h.drawn?.[move.id] ?? def
+  const locked = holster.CLUB_MOVES.includes(move.id) && now
+  const title = locked ? 'This move throws or hits with the prop, so it stays in hand' : `${def ? 'In hand' : 'On the back'} by default`
+  return (
+    <label className="check" title={title}>
+      <input type="checkbox" checked={now} disabled={locked} onChange={(e) => setDrawn(move.id, e.target.checked === def ? undefined : e.target.checked)} />
+      {now !== def && <span className="muted">changed</span>}
+    </label>
   )
 }
 
@@ -477,12 +510,14 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
   const cable = mv.throw_cable !== undefined
   const farSwapped = Boolean(c.moves.SuperAttackFar), farStretched = Boolean(c.moveReach.SuperAttackFar)
   const grab = BASE_MOVES[c.base].includes('range_grab')
+  const held = mv.holster !== undefined
   return (
     <>
       <h3>{label(c.base)}-specific moves</h3>
       <Note>
         Whatever is fixed to game bone 39, the club/baton, is what flies: on the Materials page, fix a prop to that bone.<br />
-        The cable is drawn from the forearm to the baton all the time.
+        The cable is drawn from the forearm to the baton all the time.<br />
+        The holster carries the same prop on the back outside power mode: power-on reaches back for it and power-off puts it back. It needs the cable off.
         {farSwapped && <><br />Super attack far is swapped above, so the reach can't be changed.</>}
         {farStretched && <><br />Super attack far is stretched above, so the reach can't be changed.</>}
       </Note>
@@ -511,10 +546,110 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
             <td><select disabled={!cable} value={mv.throw_cable === false ? 'off' : 'on'} onChange={(e) => { mv.throw_cable = e.target.value === 'on'; edited() }}>
               <option>off</option><option>on</option></select></td>
           </tr>
+          <tr>
+            <td><label className="check"><input type="checkbox" checked={held} onChange={(e) => {
+              if (e.target.checked) {
+                mv.holster = defaultHolster()
+                mv.throw_cable = false
+              } else delete mv.holster
+              edited()
+            }} />Baton holster location</label></td>
+            <td className="num">forearm</td>
+            <td>{held ? 'custom' : '-'}</td>
+          </tr>
         </tbody>
       </table>
+      {held && <Holster />}
       {grab && cat && <RangeGrab cat={cat} />}
     </>
+  )
+}
+
+const AXES = ["X (character's right)", 'Y (forward)', 'Z (up)']
+
+function Holster() {
+  const c = store.character
+  const h = c.baseMoves.holster!
+  const changed = Object.keys(h.drawn ?? {}).length
+  const set = (what: 'position' | 'rotation', k: number, v: number) => {
+    const next = [...h[what]] as [number, number, number]
+    next[k] = what === 'position' ? Math.round(v * 1000) / 1000 : Math.round(v * 10) / 10
+    c.baseMoves.holster = { ...h, [what]: next }
+    store.touch('character')
+  }
+  return (
+    <>
+      <h4>Holster Location</h4>
+      <Note>
+        Where the prop's middle sits from the chest.<br />
+        The "Prop in Hand" column of the Moves tables above picks where it is during each move.
+      </Note>
+      {changed > 0 && <div className="row"><span>{changed} move{changed === 1 ? '' : 's'} changed from the default</span><button onClick={() => {
+        c.baseMoves.holster = { position: h.position, rotation: h.rotation }
+        store.touch('character')
+      }}>Set all back</button></div>}
+      <div className="row">
+        <table className="gameplay grid">
+          <thead><tr><th>Axis</th><th>Position</th><th>Rotation</th></tr></thead>
+          <tbody>
+            {AXES.map((axis, k) => (
+              <tr key={axis}>
+                <td>{axis}</td>
+                <td><span><NumberInput min={HOLSTER_POSITION[0]} max={HOLSTER_POSITION[1]} step={0.01} value={h.position[k]} onChange={(v) => set('position', k, v)} /> m</span></td>
+                <td><span><NumberInput min={HOLSTER_ROTATION[0]} max={HOLSTER_ROTATION[1]} step={5} value={h.rotation[k]} onChange={(v) => set('rotation', k, v)} /> °</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <HolsterView />
+      </div>
+    </>
+  )
+}
+
+function HolsterView() {
+  const s = useStore()
+  const canvas = useRef<HTMLCanvasElement>(null)
+  const view = useRef<Viewport | null>(null)
+  const framed = useRef(false)
+  const [report, setReport] = useState('')
+  useEffect(() => {
+    view.current = new Viewport(canvas.current!)
+    view.current.showBones = false
+    return () => view.current?.dispose()
+  }, [])
+  useEffect(() => {
+    if (!s.model) return
+    let live = true
+    const timer = window.setTimeout(() => {
+      engine.call<{ meshes: MeshData[]; bones: BoneLine[] } | string>('holsterPreview', [copyCharacter({ ...store.character, glb: null })]).then((r) => {
+        if (!live || !view.current) return
+        if (typeof r === 'string') {
+          setReport('✖ ' + r)
+          view.current.setScene([], [])
+          return
+        }
+        setReport('')
+        view.current.setScene(r.meshes, r.bones, !framed.current)
+        if (!framed.current) view.current.view('back')
+        framed.current = true
+      }, (e) => live && setReport('✖ ' + errorText(e)))
+    }, 200)
+    return () => {
+      live = false
+      clearTimeout(timer)
+    }
+  }, [s.versions.character, s.versions.model, s.versions.mapping, s.model])
+  return (
+    <div className="holster-view">
+      <canvas ref={canvas} className="viewport" />
+      {!s.model ? <Note>Import a model on the Model page to see the holster.</Note> : report && <Note>{report}</Note>}
+      <div className="row">
+        {(['back', 'right', 'front'] as const).map((n) => (
+          <button key={n} className="small" onClick={() => view.current?.view(n)}>{n[0].toUpperCase() + n.slice(1)}</button>
+        ))}
+      </div>
+    </div>
   )
 }
 

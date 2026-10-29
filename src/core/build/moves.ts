@@ -16,6 +16,7 @@ import type { MoveEffect, MoveLines, MoveReach } from '../package/imperfect'
 import * as basemoves from './basemoves'
 import * as damage from './damage'
 import * as energy from './energy'
+import * as holster from './holster'
 import type { Effects } from './effects'
 import { EFFECT_FIELDS, effectNames, OWN_EFFECTS, Slots } from './effectslots'
 import * as reach from './reach'
@@ -125,6 +126,7 @@ export const MOVES: Move[] = (() => {
   return out
 })()
 export const MOVE_IDS = new Map(MOVES.map((m) => [m.id, m]))
+const MOVE_OF = new Map(MOVES.flatMap((m) => m.states.map((s): [string, string] => [s.toLowerCase(), m.id])))
 
 export function motionSetName(internal: string): string {
   return `${internal}.nms`
@@ -205,14 +207,15 @@ export function animations(cat: Catalog, base: string, move: Move): (string | nu
   return out.some((a) => a !== null) ? out : null
 }
 
-// The moves that hit with each damage value, by the animations the character ends up with (picked: move id -> base).
-export function damageMoves(cat: Catalog, base: string, picked: Record<string, string>): Move[][] {
-  const out: Move[][] = damage.KEYS.map(() => [])
+// The moves that hit with each damage value, by the animations the character ends up with (picked: move id -> base), then the baton throw's when it has its own.
+export function damageMoves(cat: Catalog, base: string, picked: Record<string, string>, ownThrow = false): Move[][] {
+  const out: Move[][] = [...damage.KEYS, damage.THROW_KEY].map(() => [])
   for (const move of MOVES) {
     const from = picked[move.id] ?? base
     const anims = animations(cat, from, move)
     if (!anims) continue
-    const ts = new Set(move.states.flatMap((s, i) => (anims[i] ? damage.tiers(s, cat[from].strikes?.[anims[i]!.toLowerCase()]) : [])))
+    const hits = (a: string) => (ownThrow && from === base && a === basemoves.THROW ? [damage.THROW_PARAM] : cat[from].strikes?.[a])
+    const ts = new Set(move.states.flatMap((s, i) => (anims[i] ? damage.tiers(s, hits(anims[i]!.toLowerCase())) : [])))
     for (const t of ts) out[t].push(move)
   }
   return out
@@ -521,7 +524,7 @@ export interface MotionFiles {
 
 export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: string, moves: Record<string, string>, throwReach?: number,
   choice: Record<string, MoveEffect> = {}, plan: EffectPlan | null = null, stretches: Record<string, MoveReach> = {}, fx: Effects | null = null,
-  size = 1, idle: string[] = []): MotionFiles {
+  size = 1, idle: string[] = [], onBack: holster.Plan | null = null, throwDamage = false): MotionFiles {
   const set = motionSetOf(base), stem = stemOf(set), name = internal.toLowerCase()
   const own = nmstool.parse(src.entry(`Motions/${set}`))
   const bundles = loadBundles(src, stem)
@@ -543,11 +546,20 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     }
   }
   const displaced = new Set<string>()
-  if (throwReach !== undefined) {
+  const arm = onBack ? holster.armOf(new Skeleton(models[0], base.body)) : null
+  if (throwReach !== undefined || throwDamage || arm) {
     const main = bundles.get('') ?? []
     const at = main.findIndex((r) => r.name.toLowerCase() === basemoves.THROW)
     if (at < 0) throw new LabError(`${base.label}'s animations have no ${basemoves.THROW}`)
-    const rec = basemoves.longThrow(main[at], models[0], throwReach)
+    let rec = main[at]
+    if (arm) {
+      const anim = own.motions().get('powerstand')?.anim.toLowerCase()
+      const stand = main.find((r) => r.name.toLowerCase() === anim)
+      if (!stand) throw new LabError(`${base.label}'s animations have no power-stand to take the club's grip from`)
+      rec = holster.regrip(rec, models[0], stand, arm.hand)
+    }
+    if (throwReach !== undefined) rec = basemoves.longThrow(rec, models[0], throwReach)
+    if (throwDamage) rec = damage.throwRecord(rec)
     rec.name = ownName(rec)
     own.rename(main[at].name, rec.name)
     main[at] = rec
@@ -693,6 +705,41 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       notes.push(`reach: ${move.label} stretches the ${r.limbs.map((l) => reach.LIMB_LABELS[l]).join(' and ')} ${how}${r.returns ? ', coming back from where it hits' : ''}${r.hold ? ', held while airborne' : ''}`)
     }
   }
+  if (onBack) {
+    const plan = holster.sized(onBack, size)
+    const groups = new Map<string, [Exclude<holster.Role, 'drawn'>, string, nmstool.Motion[]]>()
+    for (const m of resolved(src, own, holds(bundles)).values()) {
+      const own = holster.role(m.state)
+      const picked = onBack.drawn?.[MOVE_OF.get(m.state.toLowerCase()) ?? '']
+      const role = (own === 'stowed' || own === 'drawn') && picked !== undefined ? (picked ? 'drawn' : 'stowed') : own
+      if (role === null || role === 'drawn') continue
+      const key = `${role} ${m.anim.toLowerCase()}`
+      if (!groups.has(key)) groups.set(key, [role, m.anim.toLowerCase(), []])
+      groups.get(key)![2].push(m)
+    }
+    let held = 0
+    for (const [role, anim, states] of groups.values()) {
+      const found = SLOTS.flatMap((slot): [string, ngbtool.Record][] => {
+        const rec = bundles.get(slot)?.find((r) => r.name.toLowerCase() === anim)
+        return rec ? [[slot, rec]] : []
+      })
+      if (!found.length) continue
+      const out = found.map(([, rec]) => {
+        if (role === 'stowed') return holster.stow(rec, models[0], plan)
+        if (role === 'free') return holster.free(rec)
+        return holster.draw(rec, models[0], plan, arm!, role)
+      })
+      const named = ownName(out[0])
+      found.forEach(([slot], i) => {
+        const into = bundles.get(slot)!
+        if (!into.some((r) => r.name.toLowerCase() === named.toLowerCase())) into.push({ ...out[i], name: named })
+      })
+      for (const m of states) own.set({ ...m, anim: named })
+      displaced.add(anim)
+      held++
+    }
+    notes.push(`holster: ${base.label}'s club rides on the back outside power mode (${held} animations); power-on draws it and power-off puts it back; the baton throw's catch ends in the power-stand grip`)
+  }
   // the base's records the moves replaced, unless another state still plays them
   const used = new Set([...resolved(src, own, () => true).values()].map((m) => m.anim.toLowerCase()))
   for (const l of own.lines) if (l.motion) used.add(l.motion.anim.toLowerCase())
@@ -718,6 +765,6 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     after += data.length
     files.set(`Bundles/${name}${slot}.ngb`, data)
   }
-  if (Object.keys(moves).length || idle.length || size !== 1) notes.push(`${size !== 1 ? 'size' : 'moves'}: animations ${Math.round(after / 1024)} KB (${base.label}'s ${Math.round(before / 1024)} KB)`)
+  if (Object.keys(moves).length || idle.length || size !== 1 || onBack) notes.push(`${size !== 1 ? 'size' : 'moves'}: animations ${Math.round(after / 1024)} KB (${base.label}'s ${Math.round(before / 1024)} KB)`)
   return { motionSet: motionSetName(internal), files, notes }
 }

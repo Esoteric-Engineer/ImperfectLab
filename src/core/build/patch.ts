@@ -16,6 +16,7 @@ import * as gxtex from '../mnroi/gxtex'
 import * as nfxtool from '../mnroi/nfxtool'
 import * as nottool from '../mnroi/nottool'
 import * as nvbtool from '../mnroi/nvbtool'
+import type * as ngbtool from '../mnroi/ngbtool'
 import * as ngmtool from '../mnroi/ngmtool'
 import * as bundle from '../model/bundle'
 import { Fit, type MaterialSlots } from '../model/fit'
@@ -23,9 +24,11 @@ import { Model } from '../model/glb'
 import { Skeleton } from '../model/skeleton'
 import { type Character, hasCutscenes, image as readImage, type Material, problems, type Placement, WALL, type WallKey } from '../package/imperfect'
 import * as cutscenes from './cutscenes'
+import * as damage from './damage'
 import * as effects from './effects'
 import * as basemoves from './basemoves'
 import * as flames from './flames'
+import * as holster from './holster'
 import * as moves from './moves'
 import * as portraits from './portraits'
 import * as reach from './reach'
@@ -77,6 +80,7 @@ export class Builder {
   tint: string | null = null
   greyTint: [boolean, boolean] = [false, false] // whether tinted effects draw the grey fire sprite
   moveFx: moves.EffectPlan | null = null
+  propCenter: [number, number, number] | null = null
 
   constructor(source: GameSource, character: Character, progress?: Progress, model?: Model) {
     this.src = source
@@ -123,6 +127,7 @@ export class Builder {
     if (this.r.cache !== null) this.r.dol = D.growEffectCache(this.r.dol, this.r.cache)
     if (mirrors(c)) this.r.dol = D.mirrorSkip(this.r.dol)
     if (splitsCharge(c)) this.r.dol = D.chargeRate(this.r.dol)
+    if (throwsDamage(c)) this.r.dol = D.throwDamage(this.r.dol)
     if (ownSounds(c)) this.r.dol = D.soundBanks(this.r.dol, [c.internalName])
     if (c.zButton) this.r.dol = D.zActions(this.r.dol, zCharacters([c]))
     return this.r
@@ -185,6 +190,7 @@ export class Builder {
       if (m.bind !== null && m.bind >= sk.nodes.length) throw new LabError(`material ${m.name} is bound to game bone ${m.bind}, which ${base.label} does not have`)
     }
     const tris = f.triangles(slots)
+    this.propCenter = c.baseMoves.holster ? holster.center(tris.values()) : null
     const far = Object.keys(c.moveReach).length ? moves.farLimb(this.src, base, c.moveReach, c.moves) : null
     const imgs = this.materialImages(model)
     const normals = new bundle.NormalIndex(bundle.readNormals(this.src.entry('Misc/NormalTable.ngn')))
@@ -361,8 +367,15 @@ export class Builder {
     const fields = tuningFields(c)
     const strings = new Map(power)
     if (fields.pickup_range !== undefined) this.note(`pickup: props can be grabbed from ${fields.pickup_range} m away`)
-    if (hasCutscenes(c.cutscenes)) {
-      const cuts = this.moveFx ? cutscenes.plan(this.src, this.base, c, this.moveFx.slots) : cutscenes.plan(this.src, this.base, c)
+    const onBack = this.onBack()
+    if (hasCutscenes(c.cutscenes) || onBack) {
+      let stow: ((rec: ngbtool.Record) => ngbtool.Record) | null = null
+      if (onBack) {
+        const own = ngmtool.read(this.base.bundleFiles()[0])[1][0]
+        const model = c.size !== 1 ? bundle.scaleModel(own, c.size) : own, plan = holster.sized(onBack, c.size)
+        stow = (rec) => holster.stow(rec, model, plan)
+      }
+      const cuts = cutscenes.plan(this.src, this.base, c, this.moveFx?.slots ?? cutscenes.moveSlots(this.src, this.base, c), stow)
       for (const [fid, names] of cuts.fields) strings.set(fid, names)
       for (const [k, v] of cuts.files) this.r.adds.set(k, v)
       for (const n of cuts.notes) this.note(n)
@@ -376,15 +389,22 @@ export class Builder {
     return c.internalName
   }
 
+  // The holster's plan, once the model has given the prop's middle.
+  onBack(): holster.Plan | null {
+    const h = this.c.baseMoves.holster
+    return h && this.propCenter ? { ...h, center: this.propCenter } : null
+  }
+
   // The character's own motion set, when a move changes an animation.
   motions(): string | null {
     const c = this.c
     if (!ownMotions(c)) return null
     const thrown = c.baseMoves.throw_reach
     const fx = Object.keys(c.moveReach).length ? new effects.Effects(this.src.entry('Misc/game.nfx')) : null
-    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle)
+    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, this.onBack(), throwsDamage(c))
     for (const [k, v] of m.files) this.r.adds.set(k, v)
     if (thrown !== undefined) this.note(`baton throw: reaches ${thrown} m (${this.base.label}'s about 8)`)
+    if (throwsDamage(c)) this.note(`baton throw: hits for ${c.gameplay.attack_damage_throw}`)
     for (const n of m.notes) this.note(n)
     return m.motionSet
   }
@@ -525,13 +545,14 @@ export class Builder {
 
 // Whether the character gets its own motion set and animation bundles (Builder.motions).
 export function ownMotions(c: Character): boolean {
-  return c.baseMoves.throw_reach !== undefined || Object.keys(c.moves).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1
+  return c.baseMoves.throw_reach !== undefined || c.baseMoves.holster !== undefined || throwsDamage(c) || Object.keys(c.moves).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1
 }
 
 // A stretched hit that comes back from where it lands needs RETURN_ABILITY and main.dol's mirrored skip.
 export const stretchReturns = (c: Character) => reach.RETURNS.some((id) => c.moveReach[id])
 export const mirrors = (c: Character) => c.baseMoves.throw_reach !== undefined || stretchReturns(c)
 export const splitsCharge = (c: Character) => c.gameplay.energy_regen !== undefined || c.gameplay.energy_charge !== undefined
+export const throwsDamage = (c: Character) => c.gameplay.attack_damage_throw !== undefined
 
 // Whether stretched moves' own lines are recolored, which takes the character's tuning file.
 export const paintsReach = (c: Character) => Object.keys(c.moveReach).some((id) => !reach.JUMPS.includes(id)) && (c.moveLines.color !== null || c.moveLines.alt_color !== null)
@@ -550,7 +571,7 @@ export function zCharacters(chars: Character[]): D.ZCharacter[] {
 
 // The gameplay fields that go in the character's own tuning file.
 export function tuningFields(c: Character): Record<string, unknown> {
-  const out: Record<string, unknown> = Object.fromEntries(Object.entries(c.gameplay).filter(([k]) => k in tuning.FIELDS || k === 'damage_taken' || k === 'energy_charge'))
+  const out: Record<string, unknown> = Object.fromEntries(Object.entries(c.gameplay).filter(([k]) => k in tuning.FIELDS || k === 'damage_taken' || k === 'energy_charge' || k === damage.THROW_KEY))
   if (c.baseMoves.throw_reach !== undefined) out.throw_reach = c.baseMoves.throw_reach
   const far = c.moveReach.SuperAttackFar?.distance
   if (far !== undefined) out.throw_reach = far
@@ -611,6 +632,7 @@ export function report(characters: Character | Character[], result: Result): str
   else lines.push(`main.dol: roster records 19 to ${18 + chars.length} in a new data section, select-screen limits 18 -> ${18 + chars.length}`, `main.dol: arena starts at 0x${D.arenaLo(result.dol!).toString(16).toUpperCase()}`)
   if (chars.some(mirrors)) lines.push('main.dol: fn_8019DB24 mirrors a long throw\'s or stretch\'s return on a hit')
   if (chars.some(splitsCharge)) lines.push('main.dol: fn_8009D71C adds tuning field 245 to the energy recharge rate while holding R')
+  if (chars.some(throwsDamage)) lines.push('main.dol: fn_800E1788 reads tuning field 217 for an animation\'s damage event with param 5 (the baton throw)')
   if (chars.some(ownSounds)) lines.push('main.dol: fn_80114420 loads a new character\'s own sound bank, and one bank per type ID')
   if (chars.some((c) => c.zButton)) lines.push('main.dol: Z is bound for every human player; fn_80137494 is rewritten to run Stealth Mode, hooked from fn_800FB944, fn_80085F4C, fn_800E07A4, fn_80150200, fn_80461948 and fn_8014F8BC')
   const cache = result.dol ? D.readEffectCache(result.dol) : null

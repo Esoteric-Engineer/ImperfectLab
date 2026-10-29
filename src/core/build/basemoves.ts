@@ -7,6 +7,7 @@ export const CLUB = 39
 export const THROW = 'daredevil_rangedattack.nad'
 // the club leaves at frame 13 and is back at 24
 const FLIGHT: [number, number] = [13, 24]
+export const CATCH = FLIGHT[1]
 // meters per frame; faster passes targets between frames
 const STEP = 2.0
 // how far each end of the club's hit segment (attachment kinds 43 and 44) moves out

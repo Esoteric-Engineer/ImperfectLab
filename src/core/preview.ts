@@ -7,10 +7,12 @@ import { hueShift } from './image/filters'
 import * as gxtex from './mnroi/gxtex'
 import * as ngmtool from './mnroi/ngmtool'
 import * as shaders from './build/shaders'
+import { CLUB } from './build/basemoves'
+import * as holster from './build/holster'
 import { conv, type Tri, unit } from './model/fit'
 import type { Model } from './model/glb'
 import type { Skeleton } from './model/skeleton'
-import { type Character, image as readImage } from './package/imperfect'
+import { type Character, type Holster, image as readImage } from './package/imperfect'
 
 export interface MeshData {
   positions: Float32Array
@@ -100,6 +102,19 @@ export function fittedMeshes(trisByMat: Map<number, Tri[]>, images: Map<number, 
     for (const t of trisByMat.get(slot)!) for (const [p, n, u, w] of t) b.vertex([p[0] * size, p[1] * size, p[2] * size], n, u, w)
     return b.done(images.get(slot) ?? null)
   })
+}
+
+// What is fixed to the club alone, moved onto the back as the holster carries it.
+export function holsteredTris(trisByMat: Map<number, Tri[]>, skeleton: Skeleton, h: Holster): Map<number, Tri[]> {
+  const C = holster.center(trisByMat.values())
+  const chest = skeleton.positions()[holster.CHEST]
+  const R = holster.turn(h.rotation)
+  const at = (p: number[]) => {
+    const v = holster.apply(R, [p[0] - C[0], p[1] - C[1], p[2] - C[2]])
+    return [0, 1, 2].map((k) => chest[k] + h.position[k] + v[k]) as [number, number, number]
+  }
+  const onClub = (w: [number, number][]) => w.some(([b, x]) => b === CLUB && x > 0) && !w.some(([b, x]) => b !== CLUB && x > 0)
+  return new Map([...trisByMat].map(([slot, tris]) => [slot, tris.map((t) => t.map((v): Tri[number] => (onClub(v[3]) ? [at(v[0]), holster.apply(R, v[1]), v[2], v[3]] : v)) as Tri)]))
 }
 
 export function baseMeshes(source: GameSource, base: BaseCharacter, alpha = 1.0): MeshData[] {

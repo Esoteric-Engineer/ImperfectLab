@@ -45,6 +45,15 @@ const CHARGE_RATE: [number, string, string] = [0x8009d71c,
   '9421fff07c0802a6bfc10008900100147c7e1b783880002d48014151d03e03cc7fc3f3783880002b48014141d03e03c47fc3f3783880002c48014131d03e03c8806d91e8' +
   '3880003938a00000483965b9c1be03ccec010372d01e03d07fc3f378388000f548014105c01e03d0ec00082ad01e03d0800100147c0803a6bbc10008382100104e80002060000000']
 
+// fn_800E1788's event 0x1B (sets the hit's damage, +0x3F8, from tuning field 22 + param) rewritten in place: param 5 reads tuning field 217, which only ImperfectLab sets.
+const THROW_DAMAGE: [number, string, string] = [0x800e2338,
+  '801f00102c0000024182007c28000002418100182c000000418200242c000001418200404800003c2c0000034182007c2c00000441820098480000287e639b78' +
+  '4bfea2697c701b787e038378388000164bfcf4fdfc000890d01303f8480000947e639b784bfea2457c6f1b787de37b78388000174bfcf4d9fc000890d01303f8' +
+  '480000707e639b784bfea2217c6e1b787dc37378388000184bfcf4b5fc000890d01303f84800004c7e639b784bfea1fd907f0038807f0038388000194bfcf491' +
+  'fc000890d01303f8480000287e639b784bfea1d9907f003c807f003c3880001a4bfcf46dfc000890d01303f848000004',
+  '7e639b784bfea2a5809f00102804000440810018280400053880001740820010388000d948000008388400164bfcf521d03303f8480000bc' +
+  '60000000'.repeat(46)]
+
 // fn_80114420 (loads each player's SFX bank) rewritten in place from sfxbanks.s: own banks for new characters, one bank per type ID.
 const SFX_BANKS: [number, number, string] = [0x80114420, 0x3b4, '7298b504a7cb5aa56a512407733250e5f641ca5b']
 const SFX_BANKS_CODE =
@@ -175,6 +184,13 @@ export function mirrorSkip(dol: Uint8Array): Uint8Array {
 export function chargeRate(dol: Uint8Array): Uint8Array {
   const out = dol.slice()
   const [va, old, next] = CHARGE_RATE
+  put(out, fileOffset(out, va), fromHex(old), fromHex(next))
+  return out
+}
+
+export function throwDamage(dol: Uint8Array): Uint8Array {
+  const out = dol.slice()
+  const [va, old, next] = THROW_DAMAGE
   put(out, fileOffset(out, va), fromHex(old), fromHex(next))
   return out
 }

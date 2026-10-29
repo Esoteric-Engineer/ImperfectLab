@@ -145,7 +145,31 @@ export function encodeTranslation(t: Vec3): Packed {
   return [...t.map((x) => roundHalfEven(x * d)), d] as Packed
 }
 
-function qmat([w, x, y, z]: number[]): Mat3 {
+export function encodeRotation([w, x, y, z]: number[]): Packed {
+  return [w, z, x, y].map((v, i) => roundHalfEven((i ? -v : v) * 16384)) as Packed
+}
+
+export function matQuat(m: Mat3): [number, number, number, number] {
+  const tr = m[0][0] + m[1][1] + m[2][2]
+  let q: [number, number, number, number]
+  if (tr > 0) {
+    const s = 2 * Math.sqrt(tr + 1)
+    q = [s / 4, (m[2][1] - m[1][2]) / s, (m[0][2] - m[2][0]) / s, (m[1][0] - m[0][1]) / s]
+  } else if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {
+    const s = 2 * Math.sqrt(1 + m[0][0] - m[1][1] - m[2][2])
+    q = [(m[2][1] - m[1][2]) / s, s / 4, (m[0][1] + m[1][0]) / s, (m[0][2] + m[2][0]) / s]
+  } else if (m[1][1] > m[2][2]) {
+    const s = 2 * Math.sqrt(1 + m[1][1] - m[0][0] - m[2][2])
+    q = [(m[0][2] - m[2][0]) / s, (m[0][1] + m[1][0]) / s, s / 4, (m[1][2] + m[2][1]) / s]
+  } else {
+    const s = 2 * Math.sqrt(1 + m[2][2] - m[0][0] - m[1][1])
+    q = [(m[1][0] - m[0][1]) / s, (m[0][2] + m[2][0]) / s, (m[1][2] + m[2][1]) / s, s / 4]
+  }
+  const n = Math.hypot(...q) || 1.0
+  return q.map((v) => v / n) as [number, number, number, number]
+}
+
+export function qmat([w, x, y, z]: number[]): Mat3 {
   return [
     [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
     [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],

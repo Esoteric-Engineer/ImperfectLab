@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import * as cutscenes from '../src/core/build/cutscenes'
+import * as damage from '../src/core/build/damage'
 import * as effects from '../src/core/build/effects'
 import { EFFECT_FIELDS } from '../src/core/build/effectslots'
 import * as flames from '../src/core/build/flames'
+import * as holster from '../src/core/build/holster'
 import * as basemoves from '../src/core/build/basemoves'
 import * as moves from '../src/core/build/moves'
 import * as reach from '../src/core/build/reach'
@@ -16,11 +18,13 @@ import { LabError } from '../src/core/errors'
 import * as D from '../src/core/game/dol'
 import * as R from '../src/core/game/roster'
 import { Apt } from '../src/core/mnroi/apt'
+import * as cuttool from '../src/core/mnroi/cuttool'
 import * as nfxtool from '../src/core/mnroi/nfxtool'
 import * as ngbtool from '../src/core/mnroi/ngbtool'
 import * as ngmtool from '../src/core/mnroi/ngmtool'
 import * as nmstool from '../src/core/mnroi/nmstool'
 import * as nvbtool from '../src/core/mnroi/nvbtool'
+import { scaleModel } from '../src/core/model/bundle'
 import { Model } from '../src/core/model/glb'
 import * as mapping from '../src/core/model/mapping'
 import { Skeleton } from '../src/core/model/skeleton'
@@ -82,6 +86,16 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(changed.length).toBeGreaterThan(0)
     expect(changed.every((i) => i >= at && i < at + 0x8c)).toBe(true)
     expect(() => D.chargeRate(out)).toThrow(LabError)
+  })
+
+  it('rewrites only the damage event for the baton throw', () => {
+    const dol = gameSource().dol
+    const out = D.throwDamage(dol)
+    const at = D.fileOffset(dol, 0x800e2338)
+    const changed = [...out].flatMap((b, i) => (b !== dol[i] ? [i] : []))
+    expect(changed.length).toBeGreaterThan(0)
+    expect(changed.every((i) => i >= at && i < at + 0xf0)).toBe(true)
+    expect(() => D.throwDamage(out)).toThrow(LabError)
   })
 
   it('binds Z to Stealth Mode', () => {
@@ -723,6 +737,28 @@ describe.skipIf(!ISO)('base moves', () => {
     }
   })
 
+  it('gives the baton throw its own damage', () => {
+    for (const n of src().names('Bundles/', '.ngb')) {
+      for (const [, , evs] of ngbtool.events(src().entry(n))) expect(evs.some(([, t, p]) => t === damage.TIER_EVENT && p === damage.THROW_PARAM)).toBe(false)
+    }
+    const c = daredevil()
+    c.gameplay = { attack_damage_throw: 45 }
+    const r = new Builder(src(), c).build()
+    expect(equal(r.dol!, D.throwDamage(new Builder(src(), daredevil()).build().dol!))).toBe(true)
+    const set = nmstool.parse(r.adds.get('Motions/Synth.nms')!).motions()
+    const own = set.get('superattackfar')!.anim.toLowerCase()
+    expect(own).not.toBe(basemoves.THROW)
+    const rec = ngbtool.parse(r.adds.get('Bundles/synth.ngb')!).find((x) => x.name.toLowerCase() === own)!
+    const stock = ngbtool.parse(src().entry('Bundles/daredevil.ngb')).find((x) => x.name.toLowerCase() === basemoves.THROW)!
+    expect(damage.strikes(stock.events)).toEqual([damage.THROW_TIER])
+    expect(damage.strikes(rec.events)).toEqual([damage.THROW_PARAM])
+    const nvb = nvbtool.parseNvb(r.adds.get('Misc/PLAYER_Synth.nvb')!)
+    const fields = nvbtool.parseNdb(src().entry('Misc/defaults.ndb')).fields('PLAYER')
+    const floats = (v: Uint8Array[]) => v.map((b) => new DataView(b.buffer, b.byteOffset).getFloat32(0, true))
+    const tier = floats(new tuning.Tuning(src(), new R.BaseCharacter(src(), 'daredevil')).slots(22 + damage.THROW_TIER)[1])
+    floats(nvb.slots(damage.THROW_FIELD, fields[damage.THROW_FIELD][1])!).forEach((v, s) => expect(v).toBeCloseTo((tier[s] * 45) / tier[0], 4))
+  })
+
   it('keeps the cable unless asked', () => {
     const c = daredevil()
     c.baseMoves = { throw_reach: 20 }
@@ -741,6 +777,135 @@ describe.skipIf(!ISO)('base moves', () => {
     expect(own).toMatch(/^Daredevil_RangedAtta_[0-9a-f]{6}\.nad$/)
     for (const s of ['rangedattack', 'dodgeexitsuperattack']) expect(set.get(s)!.anim).toBe(own)
     expect(names).toContain(own.toLowerCase())
+  })
+})
+
+describe.skipIf(!ISO)('holster', () => {
+  const src = () => gameSource()
+  const dd = () => new R.BaseCharacter(src(), 'daredevil')
+  const model = () => ngmtool.read(src().entry('Bundles/daredevil.ngm'))[1][0]
+  const plan = (): holster.Plan => {
+    const club = ngbtool.pose(model(), null, 0)[basemoves.CLUB][1]
+    return { position: [0.05, -0.2, 0.1], rotation: [0, 90, 0], center: [club[0], club[1] + 0.05, club[2]] }
+  }
+  const built = (mf: moves.MotionFiles) => ({
+    set: nmstool.parse(mf.files.get('Motions/Synth.nms')!).motions(),
+    recs: new Map(ngbtool.parse(mf.files.get('Bundles/synth.ngb')!).map((r) => [r.name.toLowerCase(), r])),
+  })
+  const onBack = (m: Pick<ngmtool.Model, 'nodes'>, p: holster.Plan, rec: ngbtool.Record, t: number) => {
+    const posed = ngbtool.pose(m, rec, t)
+    const [, T] = holster.stowedAt(m, p)(posed)
+    return Math.hypot(...posed[basemoves.CLUB][1].map((v, k) => v - T[k]))
+  }
+
+  it('keeps the club on the back outside power mode, and in hand in it', () => {
+    const p = plan()
+    const { set, recs } = built(moves.motionFiles(src(), dd(), 'Synth', {}, undefined, {}, null, {}, null, 1, [], p))
+    for (const state of ['stand', 'walk', 'run', 'attack1', 'block', 'hitreactlarge', 'jump']) {
+      const rec = recs.get(set.get(state)!.anim.toLowerCase())!
+      for (const t of [0, rec.length / 3, rec.length]) expect(onBack(model(), p, rec, t)).toBeLessThan(0.01)
+    }
+    expect(set.get('powerstand')!.anim).toBe('Daredevil_PowerStand.nad')
+    expect(set.get('superattack1')!.anim).toBe('Daredevil_SCombo_H1.nad')
+    expect(set.get('superrun')!.anim).toBe('Spiderman_Run.nad')
+    expect(set.get('run')!.anim).not.toBe('Spiderman_Run.nad')
+    expect(recs.has('spiderman_run.nad')).toBe(true)
+    expect(recs.has('daredevil_stand.nad')).toBe(false)
+    const on = recs.get(set.get('poweron')!.anim.toLowerCase())!
+    expect(onBack(model(), p, on, 0)).toBeLessThan(5e-3)
+    expect(onBack(model(), p, on, on.length)).toBeGreaterThan(0.2)
+    const clip = recs.get(set.get('ikclaws')!.anim.toLowerCase())!
+    expect(clip.tracks.some(([b]) => b === basemoves.CLUB)).toBe(false)
+    expect(clip.tracks.length).toBe(8)
+    const off = recs.get(set.get('poweroff')!.anim.toLowerCase())!
+    expect(onBack(model(), p, off, 0)).toBeGreaterThan(0.2)
+    expect(onBack(model(), p, off, off.length)).toBeLessThan(5e-3)
+  })
+
+  it('holds moves in hand or on the back as picked', () => {
+    const p = { ...plan(), drawn: { Block: true, SuperBlock: false } }
+    const { set, recs } = built(moves.motionFiles(src(), dd(), 'Synth', {}, undefined, {}, null, {}, null, 1, [], p))
+    for (const st of ['blockstart', 'block', 'blockend']) expect(set.get(st)!.anim).toMatch(/^Daredevil_Block(Start|End)?\.nad$/)
+    const sb = recs.get(set.get('superblock')!.anim.toLowerCase())!
+    expect(sb.name).not.toBe('Daredevil_SuperBlock.nad')
+    for (const t of [0, sb.length / 2, sb.length]) expect(onBack(model(), p, sb, t)).toBeLessThan(0.01)
+  })
+
+  it('ends the baton throw in the power-stand grip', () => {
+    const hand = holster.armOf(new Skeleton(model(), dd().body)).hand
+    const stock = new Map(ngbtool.parse(src().entry('Bundles/daredevil.ngb')).map((r) => [r.name.toLowerCase(), r]))
+    const gripAt = (rec: ngbtool.Record, t: number) => holster.grip(ngbtool.pose(model(), rec, t), hand)
+    const off = (a: ngbtool.Mat3, b: ngbtool.Mat3) => Math.max(...a.flatMap((r, i) => r.map((v, j) => Math.abs(v - b[i][j]))))
+    const [GR, GT] = gripAt(stock.get('daredevil_powerstand.nad')!, 0)
+    const thrown = stock.get(basemoves.THROW)!
+    expect(off(gripAt(thrown, thrown.length)[0], GR)).toBeGreaterThan(0.5)
+    for (const reachTo of [undefined, 35]) {
+      const { set, recs } = built(moves.motionFiles(src(), dd(), 'Synth', {}, reachTo, {}, null, {}, null, 1, [], plan()))
+      const rec = recs.get(set.get('superattackfar')!.anim.toLowerCase())!
+      expect(set.get('rangedattack')!.anim).toBe(rec.name)
+      const [R, T] = gripAt(rec, rec.length)
+      expect(off(R, GR)).toBeLessThan(1e-2)
+      expect(Math.hypot(...T.map((v, k) => v - GT[k]))).toBeLessThan(5e-3)
+      expect(off(gripAt(rec, 10)[0], gripAt(thrown, 10)[0])).toBeLessThan(1e-2)
+    }
+  })
+
+  it('draws from swapped power animations, sized and with a long throw', () => {
+    const p = plan()
+    const mf = moves.motionFiles(src(), dd(), 'Synth', { PowerOn: 'wolverine', PowerOff: 'wolverine', PowerStand: 'wolverine' }, 30, {}, null, {}, null, 1.5, [], p)
+    const { set, recs } = built(mf)
+    const big = scaleModel(model(), 1.5)
+    const k = (v: ngbtool.Vec3) => v.map((x) => x * 1.5) as ngbtool.Vec3
+    const bp = { ...p, position: k(p.position), center: k(p.center) }
+    const stand = recs.get(set.get('stand')!.anim.toLowerCase())!
+    expect(onBack(big, bp, stand, 5)).toBeLessThan(5e-3)
+    const on = recs.get(set.get('poweron')!.anim.toLowerCase())!
+    expect(on.length).toBe(10)
+    expect(onBack(big, bp, on, 0)).toBeLessThan(5e-3)
+    expect(set.get('superattackfar')!.anim).toMatch(/^Daredevil_RangedAtta_[0-9a-f]{6}\.nad$/)
+    expect(mf.notes.some((n) => n.startsWith('holster:'))).toBe(true)
+  })
+
+  it('reads and writes a cutscene actor\'s animation unchanged', () => {
+    const body = src().entry('Cutscenes/mp_dd_int_1.cut')
+    const cut = cuttool.read(body)
+    for (const ch of cut.chunks) for (const a of ch.actors) cuttool.setRecord(a, cuttool.record(a))
+    expect(equal(cuttool.build(cut), body)).toBe(true)
+  })
+
+  it('keeps the club on the back in the intros', () => {
+    const p = plan(), c = tinted('daredevil')
+    const out = cutscenes.plan(src(), dd(), c, undefined, (rec) => holster.stow(rec, model(), p))
+    const stock = cuttool.read(src().entry('Cutscenes/mp_dd_int_2.cut'))
+    for (const fid of cutscenes.FIELDS.intro) {
+      for (const name of out.fields.get(fid)!) {
+        expect(name).toMatch(/^synth_intro\d$/)
+        const cut = cuttool.read(out.files.get(cutscenes.cutPath(name))!)
+        for (const ch of cut.chunks) {
+          const rec = cuttool.record(ch.actors.find((a) => cuttool.recordName(a.record).toLowerCase() === 'daredevil')!)
+          for (const t of [0, rec.length / 2, rec.length]) expect(onBack(model(), p, rec, t)).toBeLessThan(0.01)
+        }
+      }
+    }
+    const cut = cuttool.read(out.files.get(cutscenes.cutPath(out.fields.get(171)![0]))!)
+    cut.chunks.forEach((ch, i) => ch.actors.forEach((a, j) => {
+      const was = stock.chunks[i].actors[j]
+      if (cuttool.recordName(a.record).toLowerCase() !== 'daredevil') expect(a.tracks).toEqual(was.tracks)
+      else expect(a.tracks.filter((t) => cuttool.bone(t) !== basemoves.CLUB)).toEqual(was.tracks.filter((t) => cuttool.bone(t) !== basemoves.CLUB))
+    }))
+    expect(out.notes).toEqual(['cutscenes: intro club on the back'])
+  })
+
+  it('builds a character with a holster', () => {
+    const c = tinted('daredevil')
+    c.aura = { ...c.aura, mode: 'base' }
+    c.materials[0].bind = basemoves.CLUB
+    c.baseMoves = { throw_cable: false, holster: imperfect.defaultHolster() }
+    const r = new Builder(src(), c).build()
+    expect(r.adds.has('Motions/Synth.nms')).toBe(true)
+    expect(r.adds.has('Cutscenes/synth_intro1.cut')).toBe(true)
+    expect(r.notes.some((n) => n.startsWith('holster:'))).toBe(true)
+    expect(r.notes.some((n) => n.includes('intro club on the back'))).toBe(true)
   })
 })
 
@@ -988,6 +1153,11 @@ describe.skipIf(!ISO)('moves', () => {
     expect(thing.flat()).not.toContain('Walk')
     expect(labels('wolverine')[0]).not.toContain('Attack1')
     expect(labels('wolverine', { Attack1: 'thing' })[0]).toContain('Attack1')
+    const thrown = ['SuperAttackFar', 'RangedAttack', 'DodgeExitSuperAttack']
+    expect(labels('daredevil')[2]).toEqual(expect.arrayContaining(thrown))
+    const own = moves.damageMoves(cat, 'daredevil', {}, true).map((ms) => ms.map((m) => m.id))
+    expect(own[5].sort()).toEqual([...thrown].sort())
+    expect(own.slice(0, 5).flat()).not.toEqual(expect.arrayContaining(['SuperAttackFar']))
   })
 
   it('doubles Thing\'s first damage value in every tuning slot', () => {

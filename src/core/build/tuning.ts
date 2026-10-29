@@ -5,6 +5,7 @@ import type { BaseCharacter } from '../game/roster'
 import type { GameSource } from '../game/source'
 import { roundHalfEven } from '../mnroi/gxtex'
 import * as nvbtool from '../mnroi/nvbtool'
+import * as damage from './damage'
 import * as energy from './energy'
 
 export const SLOTS = nvbtool.SLOTS
@@ -128,6 +129,8 @@ export class Tuning {
       const held = charge !== null ? this.scaled(energy.REGEN, charge) : base.map((v) => v * g)
       this.set(nvb, energy.CHARGE, held.map((r, s) => r - Math.fround(g * Math.fround(passive[s]))))
     }
+    const thrown = gameplay[damage.THROW_KEY] as number | undefined
+    if (thrown !== null && thrown !== undefined) this.set(nvb, damage.THROW_FIELD, this.scaled(FIELDS.attack_damage_1 + damage.THROW_TIER, thrown))
     const t = gameplay.damage_taken as number | undefined
     if (t !== null && t !== undefined) {
       const t0 = this.damageTaken()

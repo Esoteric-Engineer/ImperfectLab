@@ -142,6 +142,7 @@ Older ImperfectLab builds refuse a file with `flames`.
   - `wall_run`: `true` lets a base that can't run on walls run on them, the same way. Not allowed on a base that already runs on walls.
   - `super_throw_range`: 1-20, how far away, in meters, the opponent can be for the super throw (R + X grab) to start.
   - `attack_damage_1` to `attack_damage_5`: 1-1000, the character's five damage values. Every attack hits with one of them.
+  - `attack_damage_throw`: 1-1000, a Daredevil base's baton throw (`Daredevil_RangedAttack.nad`: super attack far, ranged attack and dodge exit super attack) hits with this instead of `attack_damage_3`.
   - Energy costs, 0-100 out of a full bar of 100. Super moves: `energy_super_attack` (super attacks 1-4, far and air), `energy_super_low`,
     `energy_super_stomp`, `energy_super_rise`, `energy_super_jump_attack`, `energy_super_jump_desc`, `energy_super_wall`,
     `energy_super_swing` (super swing and wire attacks), `energy_dodge_super`, `energy_super_throw`, `energy_super_air_throw` and
@@ -183,6 +184,10 @@ Daredevil (`daredevil`):
 - `throw_reach`: 8-35, how far the baton throw reaches, in meters.
 - `throw_cable`: a boolean, default `true`. `false` removes the cable drawn from the forearm to the club.
 - `range_grab`: `true` lets him grab props from a distance as Spider-Man does.
+- `holster`: optional, carries what is fixed to game bone 39 (the club) on the back outside power mode and in the versus intros, and ends the baton throw's catch in the power-stand grip. Requires `throw_cable: false` and a prop on bone 39.
+  - `position`: three numbers from -0.6 to 0.6, the prop's middle from the chest bone in meters.
+  - `rotation`: three numbers from -180 to 180, degrees about X, Y and Z, rotating the prop from the middle.
+  - `drawn` (optional): move id -> `true` (in hand) or `false` (on the back), overriding the default of in hand for power-stand, `Super*` states, `RangedAttack` and `DodgeExitSuperAttack` and on the back otherwise. `PowerOn`, `PowerOff` and `IKClaws` can't be listed, and `SuperAttackFar`, `RangedAttack`, `DodgeExitSuperAttack` and `SuperRiseAttack` can't be `false`.
 
 ### `moves`
 Moves taken from other bases: move id -> the base (not the character's own) whose animations it gets. Ids are motion-set state names, listed in `MOVES` in `src/core/build/moves.ts`; a throw or a sequence is one id covering its parts (`SuperThrow` includes the female, brute and victim versions).
