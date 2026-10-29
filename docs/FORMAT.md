@@ -142,6 +142,7 @@ Older ImperfectLab builds refuse a file with `flames`.
   - `wall_run`: `true` lets a base that can't run on walls run on them, the same way. Not allowed on a base that already runs on walls.
   - `super_throw_range`: 1-20, how far away, in meters, the opponent can be for the super throw (R + X grab) to start.
   - `attack_damage_1` to `attack_damage_5`: 1-1000, the character's five damage values. Every attack hits with one of them.
+  - `attack_damage_throw`: 1-1000, a Daredevil base's baton throw (`Daredevil_RangedAttack.nad`: super attack far, ranged attack and dodge exit super attack) hits with this instead of `attack_damage_3`.
   - Energy costs, 0-100 out of a full bar of 100. Super moves: `energy_super_attack` (super attacks 1-4, far and air), `energy_super_low`,
     `energy_super_stomp`, `energy_super_rise`, `energy_super_jump_attack`, `energy_super_jump_desc`, `energy_super_wall`,
     `energy_super_swing` (super swing and wire attacks), `energy_dodge_super`, `energy_super_throw`, `energy_super_air_throw` and

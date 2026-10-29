@@ -207,14 +207,15 @@ export function animations(cat: Catalog, base: string, move: Move): (string | nu
   return out.some((a) => a !== null) ? out : null
 }
 
-// The moves that hit with each damage value, by the animations the character ends up with (picked: move id -> base).
-export function damageMoves(cat: Catalog, base: string, picked: Record<string, string>): Move[][] {
-  const out: Move[][] = damage.KEYS.map(() => [])
+// The moves that hit with each damage value, by the animations the character ends up with (picked: move id -> base), then the baton throw's when it has its own.
+export function damageMoves(cat: Catalog, base: string, picked: Record<string, string>, ownThrow = false): Move[][] {
+  const out: Move[][] = [...damage.KEYS, damage.THROW_KEY].map(() => [])
   for (const move of MOVES) {
     const from = picked[move.id] ?? base
     const anims = animations(cat, from, move)
     if (!anims) continue
-    const ts = new Set(move.states.flatMap((s, i) => (anims[i] ? damage.tiers(s, cat[from].strikes?.[anims[i]!.toLowerCase()]) : [])))
+    const hits = (a: string) => (ownThrow && from === base && a === basemoves.THROW ? [damage.THROW_PARAM] : cat[from].strikes?.[a])
+    const ts = new Set(move.states.flatMap((s, i) => (anims[i] ? damage.tiers(s, hits(anims[i]!.toLowerCase())) : [])))
     for (const t of ts) out[t].push(move)
   }
   return out
@@ -523,7 +524,7 @@ export interface MotionFiles {
 
 export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: string, moves: Record<string, string>, throwReach?: number,
   choice: Record<string, MoveEffect> = {}, plan: EffectPlan | null = null, stretches: Record<string, MoveReach> = {}, fx: Effects | null = null,
-  size = 1, idle: string[] = [], onBack: holster.Plan | null = null): MotionFiles {
+  size = 1, idle: string[] = [], onBack: holster.Plan | null = null, throwDamage = false): MotionFiles {
   const set = motionSetOf(base), stem = stemOf(set), name = internal.toLowerCase()
   const own = nmstool.parse(src.entry(`Motions/${set}`))
   const bundles = loadBundles(src, stem)
@@ -545,11 +546,12 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     }
   }
   const displaced = new Set<string>()
-  if (throwReach !== undefined) {
+  if (throwReach !== undefined || throwDamage) {
     const main = bundles.get('') ?? []
     const at = main.findIndex((r) => r.name.toLowerCase() === basemoves.THROW)
     if (at < 0) throw new LabError(`${base.label}'s animations have no ${basemoves.THROW}`)
-    const rec = basemoves.longThrow(main[at], models[0], throwReach)
+    let rec = throwReach !== undefined ? basemoves.longThrow(main[at], models[0], throwReach) : main[at]
+    if (throwDamage) rec = damage.throwRecord(rec)
     rec.name = ownName(rec)
     own.rename(main[at].name, rec.name)
     main[at] = rec

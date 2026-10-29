@@ -48,7 +48,7 @@ export const GAMEPLAY: Record<string, [number, number, boolean]> = {
   sprint_speed: [1.0, 40.0, false], rage_per_super: [0.0, 100.0, false], rage_duration: [1000, 120000, true],
   super_throw_range: [1.0, 20.0, false],
   attack_damage_1: [1, 1000, false], attack_damage_2: [1, 1000, false], attack_damage_3: [1, 1000, false],
-  attack_damage_4: [1, 1000, false], attack_damage_5: [1, 1000, false],
+  attack_damage_4: [1, 1000, false], attack_damage_5: [1, 1000, false], attack_damage_throw: [1, 1000, false],
   ...Object.fromEntries(COSTS.map((c): [string, [number, number, boolean]] => [c.key, [FALLBACK.includes(c.key) ? 0.1 : 0, 100, false]])),
   ...Object.fromEntries(RECHARGE.map((r): [string, [number, number, boolean]] => [r.key, [0, 100, false]])),
 }
@@ -105,7 +105,7 @@ export interface Credit {
   url: string
 }
 
-export type Gameplay = Partial<Record<'damage_taken' | 'health' | 'run_speed' | 'sprint_speed' | 'rage_per_super' | 'rage_duration' | 'super_throw_range' | DamageKey | EnergyKey | RechargeKey, number>> & {
+export type Gameplay = Partial<Record<'damage_taken' | 'health' | 'run_speed' | 'sprint_speed' | 'rage_per_super' | 'rage_duration' | 'super_throw_range' | DamageKey | 'attack_damage_throw' | EnergyKey | RechargeKey, number>> & {
   lift?: string
   wire_swing?: boolean
   flight?: boolean
@@ -320,6 +320,7 @@ export function problems(c: Character): Problem[] {
   for (const m of c.materials) if (m.texture && !c.files.has(m.texture)) out.push(['error', `the texture of ${m.name} is missing`])
   const unsupported = Object.keys(c.baseMoves).filter((k) => !(BASE_MOVES[c.base] ?? []).includes(k as keyof BaseMoves))
   if (unsupported.length) out.push(['error', `${unsupported.join(', ')} only apply to a ${movesBases(unsupported[0])} base: untick them on the Moves page`])
+  if (c.gameplay.attack_damage_throw !== undefined && c.base !== 'daredevil') out.push(['error', 'the baton throw damage only applies to a Daredevil base: untick it on the Stats page'])
   for (const [id, from] of Object.entries(c.moves)) {
     const move = MOVE_IDS.get(id)
     if (!move) out.push(['error', `there is no move ${id}`])

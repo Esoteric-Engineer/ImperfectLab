@@ -99,6 +99,7 @@ The character's five damage values (`attack_damage_1` to `_5`, [`FORMAT.md`](FOR
 - **A held object's swing** uses the object's strength, not these values.
 - **Projectiles keep their damage.** They pass their own damage to the hit (`fn_800A0488`), so a ranged attack is unchanged.
 - **Memory and space.** Changed values need the character's own tuning file, so they take a line in the tuning list (above).
+- **The baton throw's own value** (`attack_damage_throw`) is a sixth value for one animation. The throw's event `0x1B` gets param 5, which `fn_800E1788` (rewritten in place) reads as tuning field 217, a field the game doesn't use. The value goes with the animation, so it covers every move that plays the throw: super attack far, ranged attack and dodge exit super attack.
 
 ## Energy costs
 

@@ -23,6 +23,7 @@ import { Model } from '../model/glb'
 import { Skeleton } from '../model/skeleton'
 import { type Character, hasCutscenes, image as readImage, type Material, problems, type Placement, WALL, type WallKey } from '../package/imperfect'
 import * as cutscenes from './cutscenes'
+import * as damage from './damage'
 import * as effects from './effects'
 import * as basemoves from './basemoves'
 import * as flames from './flames'
@@ -125,6 +126,7 @@ export class Builder {
     if (this.r.cache !== null) this.r.dol = D.growEffectCache(this.r.dol, this.r.cache)
     if (mirrors(c)) this.r.dol = D.mirrorSkip(this.r.dol)
     if (splitsCharge(c)) this.r.dol = D.chargeRate(this.r.dol)
+    if (throwsDamage(c)) this.r.dol = D.throwDamage(this.r.dol)
     if (ownSounds(c)) this.r.dol = D.soundBanks(this.r.dol, [c.internalName])
     if (c.zButton) this.r.dol = D.zActions(this.r.dol, zCharacters([c]))
     return this.r
@@ -387,9 +389,10 @@ export class Builder {
     const fx = Object.keys(c.moveReach).length ? new effects.Effects(this.src.entry('Misc/game.nfx')) : null
     const h = c.baseMoves.holster
     const onBack = h && this.propCenter ? { ...h, center: this.propCenter } : null
-    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, onBack)
+    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, onBack, throwsDamage(c))
     for (const [k, v] of m.files) this.r.adds.set(k, v)
     if (thrown !== undefined) this.note(`baton throw: reaches ${thrown} m (${this.base.label}'s about 8)`)
+    if (throwsDamage(c)) this.note(`baton throw: hits for ${c.gameplay.attack_damage_throw}`)
     for (const n of m.notes) this.note(n)
     return m.motionSet
   }
@@ -530,13 +533,14 @@ export class Builder {
 
 // Whether the character gets its own motion set and animation bundles (Builder.motions).
 export function ownMotions(c: Character): boolean {
-  return c.baseMoves.throw_reach !== undefined || c.baseMoves.holster !== undefined || Object.keys(c.moves).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1
+  return c.baseMoves.throw_reach !== undefined || c.baseMoves.holster !== undefined || throwsDamage(c) || Object.keys(c.moves).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1
 }
 
 // A stretched hit that comes back from where it lands needs RETURN_ABILITY and main.dol's mirrored skip.
 export const stretchReturns = (c: Character) => reach.RETURNS.some((id) => c.moveReach[id])
 export const mirrors = (c: Character) => c.baseMoves.throw_reach !== undefined || stretchReturns(c)
 export const splitsCharge = (c: Character) => c.gameplay.energy_regen !== undefined || c.gameplay.energy_charge !== undefined
+export const throwsDamage = (c: Character) => c.gameplay.attack_damage_throw !== undefined
 
 // Whether stretched moves' own lines are recolored, which takes the character's tuning file.
 export const paintsReach = (c: Character) => Object.keys(c.moveReach).some((id) => !reach.JUMPS.includes(id)) && (c.moveLines.color !== null || c.moveLines.alt_color !== null)
@@ -555,7 +559,7 @@ export function zCharacters(chars: Character[]): D.ZCharacter[] {
 
 // The gameplay fields that go in the character's own tuning file.
 export function tuningFields(c: Character): Record<string, unknown> {
-  const out: Record<string, unknown> = Object.fromEntries(Object.entries(c.gameplay).filter(([k]) => k in tuning.FIELDS || k === 'damage_taken' || k === 'energy_charge'))
+  const out: Record<string, unknown> = Object.fromEntries(Object.entries(c.gameplay).filter(([k]) => k in tuning.FIELDS || k === 'damage_taken' || k === 'energy_charge' || k === damage.THROW_KEY))
   if (c.baseMoves.throw_reach !== undefined) out.throw_reach = c.baseMoves.throw_reach
   const far = c.moveReach.SuperAttackFar?.distance
   if (far !== undefined) out.throw_reach = far
@@ -616,6 +620,7 @@ export function report(characters: Character | Character[], result: Result): str
   else lines.push(`main.dol: roster records 19 to ${18 + chars.length} in a new data section, select-screen limits 18 -> ${18 + chars.length}`, `main.dol: arena starts at 0x${D.arenaLo(result.dol!).toString(16).toUpperCase()}`)
   if (chars.some(mirrors)) lines.push('main.dol: fn_8019DB24 mirrors a long throw\'s or stretch\'s return on a hit')
   if (chars.some(splitsCharge)) lines.push('main.dol: fn_8009D71C adds tuning field 245 to the energy recharge rate while holding R')
+  if (chars.some(throwsDamage)) lines.push('main.dol: fn_800E1788 reads tuning field 217 for an animation\'s damage event with param 5 (the baton throw)')
   if (chars.some(ownSounds)) lines.push('main.dol: fn_80114420 loads a new character\'s own sound bank, and one bank per type ID')
   if (chars.some((c) => c.zButton)) lines.push('main.dol: Z is bound for every human player; fn_80137494 is rewritten to run Stealth Mode, hooked from fn_800FB944, fn_80085F4C, fn_800E07A4, fn_80150200, fn_80461948 and fn_8014F8BC')
   const cache = result.dol ? D.readEffectCache(result.dol) : null

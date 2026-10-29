@@ -190,6 +190,11 @@ describe('round trip', () => {
     const m = imperfect.manifest(c) as Json
     expect(() => imperfect.fromManifest({ ...m, stats: { gameplay: { attack_damage_2: 0 } } }, new Map())).toThrow(/from 1 to 1000/)
     expect(() => imperfect.fromManifest({ ...m, stats: { gameplay: { attack_damage_6: 10 } } }, new Map())).toThrow(/unknown key/)
+    c.gameplay = { attack_damage_throw: 40 }
+    expect(imperfect.load(imperfect.save(c)).gameplay).toEqual(c.gameplay)
+    const baton = (base: string) => imperfect.problems({ ...c, base }).some(([l, msg]) => l === 'error' && msg.includes('baton throw damage'))
+    expect(baton('daredevil')).toBe(false)
+    expect(baton('thing')).toBe(true)
   })
 
   it('saves and loads energy costs', () => {

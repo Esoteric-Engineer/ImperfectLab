@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as cutscenes from '../src/core/build/cutscenes'
+import * as damage from '../src/core/build/damage'
 import * as effects from '../src/core/build/effects'
 import { EFFECT_FIELDS } from '../src/core/build/effectslots'
 import * as flames from '../src/core/build/flames'
@@ -84,6 +85,16 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(changed.length).toBeGreaterThan(0)
     expect(changed.every((i) => i >= at && i < at + 0x8c)).toBe(true)
     expect(() => D.chargeRate(out)).toThrow(LabError)
+  })
+
+  it('rewrites only the damage event for the baton throw', () => {
+    const dol = gameSource().dol
+    const out = D.throwDamage(dol)
+    const at = D.fileOffset(dol, 0x800e2338)
+    const changed = [...out].flatMap((b, i) => (b !== dol[i] ? [i] : []))
+    expect(changed.length).toBeGreaterThan(0)
+    expect(changed.every((i) => i >= at && i < at + 0xf0)).toBe(true)
+    expect(() => D.throwDamage(out)).toThrow(LabError)
   })
 
   it('binds Z to Stealth Mode', () => {
@@ -725,6 +736,28 @@ describe.skipIf(!ISO)('base moves', () => {
     }
   })
 
+  it('gives the baton throw its own damage', () => {
+    for (const n of src().names('Bundles/', '.ngb')) {
+      for (const [, , evs] of ngbtool.events(src().entry(n))) expect(evs.some(([, t, p]) => t === damage.TIER_EVENT && p === damage.THROW_PARAM)).toBe(false)
+    }
+    const c = daredevil()
+    c.gameplay = { attack_damage_throw: 45 }
+    const r = new Builder(src(), c).build()
+    expect(equal(r.dol!, D.throwDamage(new Builder(src(), daredevil()).build().dol!))).toBe(true)
+    const set = nmstool.parse(r.adds.get('Motions/Synth.nms')!).motions()
+    const own = set.get('superattackfar')!.anim.toLowerCase()
+    expect(own).not.toBe(basemoves.THROW)
+    const rec = ngbtool.parse(r.adds.get('Bundles/synth.ngb')!).find((x) => x.name.toLowerCase() === own)!
+    const stock = ngbtool.parse(src().entry('Bundles/daredevil.ngb')).find((x) => x.name.toLowerCase() === basemoves.THROW)!
+    expect(damage.strikes(stock.events)).toEqual([damage.THROW_TIER])
+    expect(damage.strikes(rec.events)).toEqual([damage.THROW_PARAM])
+    const nvb = nvbtool.parseNvb(r.adds.get('Misc/PLAYER_Synth.nvb')!)
+    const fields = nvbtool.parseNdb(src().entry('Misc/defaults.ndb')).fields('PLAYER')
+    const floats = (v: Uint8Array[]) => v.map((b) => new DataView(b.buffer, b.byteOffset).getFloat32(0, true))
+    const tier = floats(new tuning.Tuning(src(), new R.BaseCharacter(src(), 'daredevil')).slots(22 + damage.THROW_TIER)[1])
+    floats(nvb.slots(damage.THROW_FIELD, fields[damage.THROW_FIELD][1])!).forEach((v, s) => expect(v).toBeCloseTo((tier[s] * 45) / tier[0], 4))
+  })
+
   it('keeps the cable unless asked', () => {
     const c = daredevil()
     c.baseMoves = { throw_reach: 20 }
@@ -1068,6 +1101,11 @@ describe.skipIf(!ISO)('moves', () => {
     expect(thing.flat()).not.toContain('Walk')
     expect(labels('wolverine')[0]).not.toContain('Attack1')
     expect(labels('wolverine', { Attack1: 'thing' })[0]).toContain('Attack1')
+    const thrown = ['SuperAttackFar', 'RangedAttack', 'DodgeExitSuperAttack']
+    expect(labels('daredevil')[2]).toEqual(expect.arrayContaining(thrown))
+    const own = moves.damageMoves(cat, 'daredevil', {}, true).map((ms) => ms.map((m) => m.id))
+    expect(own[5].sort()).toEqual([...thrown].sort())
+    expect(own.slice(0, 5).flat()).not.toEqual(expect.arrayContaining(['SuperAttackFar']))
   })
 
   it('doubles Thing\'s first damage value in every tuning slot', () => {
