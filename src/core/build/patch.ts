@@ -22,7 +22,7 @@ import * as bundle from '../model/bundle'
 import { Fit, type MaterialSlots } from '../model/fit'
 import { Model } from '../model/glb'
 import { Skeleton } from '../model/skeleton'
-import { type Character, hasCutscenes, image as readImage, type Material, problems, type Placement, WALL, type WallKey } from '../package/imperfect'
+import { type Character, hasCutscenes, image as readImage, type Material, problems, type Placement, WALL, type WallKey, type ZCostume, zTexture } from '../package/imperfect'
 import * as cutscenes from './cutscenes'
 import * as damage from './damage'
 import * as effects from './effects'
@@ -177,7 +177,24 @@ export class Builder {
     return out
   }
 
-  buildModel(): string[] {
+  // Each included material's texture while Z is held, as [name, image or null when it is the costume's own].
+  zImages(imgs: [Material, RgbaImage, RgbaImage][], alt: boolean): [string, RgbaImage | null][] {
+    const c = this.c, z = c.zButton!
+    const costume: ZCostume = alt ? 'alt' : 'normal'
+    return imgs.map(([m, im, imAlt]) => {
+      const v = zTexture(z, costume, m.gltfMaterial)
+      const name = c.internalName + (alt ? '_altz' : '_z') + m.suffix
+      if (v === costume) return [name, null]
+      if (v === 'normal') return [name, im]
+      if (v === 'alt') return [name, imAlt]
+      if (v.startsWith('hue:')) return [name, hueShift(im, parseFloat(v.slice(4)))]
+      const body = c.files.get(v)
+      if (!body) throw new LabError(`the Z costume texture of ${m.name} is missing`)
+      return [name, readImage(body)]
+    })
+  }
+
+  buildModel(): (string | [string, string])[] {
     const c = this.c, base = this.base
     const model = this.model ?? new Model(c.glb!)
     const sk = Skeleton.ofBase(base)
@@ -197,7 +214,7 @@ export class Builder {
     const nsa = shaders.blocks(this.src.entry('Materials/Shaders/shaders.nsa'))
     this.texture2 = 'ge_charlight'
     this.bundleAdds = new Map()
-    const allMaterials: string[] = []
+    const allMaterials: (string | [string, string])[] = []
     const stats = new bundle.Stats()
     const first = (v: string | undefined) => shaders.firstWord(v).toLowerCase()
     for (const [costume, alt] of [['', false], ['_alt', true]] as [string, boolean][]) {
@@ -229,6 +246,9 @@ export class Builder {
       }
       const mats = included.map((m) => c.internalName + costume + m.suffix)
       allMaterials.push(...mats)
+      const zs = c.zButton?.costume ? this.zImages(imgs, alt) : []
+      const kept = zs.length ? included.map((m) => c.internalName + (alt ? '_altzo' : '_zo') + m.suffix) : []
+      allMaterials.push(...zs.map(([name, im], i): [string, string] => [name, im ? name : mats[i]]), ...kept.map((name, i): [string, string] => [name, mats[i]]))
       const nm = templates.modelNames(c.internalName, costume)
       const plr = alt ? base.alt : base.plr
       const renames = new Map<string, string>()
@@ -237,7 +257,7 @@ export class Builder {
         if (old) renames.set(old.toLowerCase(), nm[key])
       }
       const copy = new Map([...tris].map(([k, v]) => [k, [...v]]))
-      const render = bundle.renderModel(renderBase, copy, normals, nm.MODEL, mats,
+      const render = bundle.renderModel(renderBase, copy, normals, nm.MODEL, [...mats, ...zs.map(([name]) => name), ...kept],
         renderBase.meshes.length ? renderBase.meshes[0][5] : [0, 0, 0], stats)
       if (c.baseMoves.throw_reach !== undefined) basemoves.hitSegment(render)
       if (far && reach.farVolume(render, far, reach.bonesOf(sk)[far]) && !alt) {
@@ -255,7 +275,11 @@ export class Builder {
         const [m, im, imAlt] = imgs[i]
         return [mat, alt ? imAlt : im, m.size]
       })
+      zs.forEach(([name, im], i) => {
+        if (im) textures.push([name, im, imgs[i][0].size])
+      })
       const [tplOut, ngtOut] = bundle.buildTpl(tpl, ngt, textures, keep, extra)
+      if (zs.length) this.note(`Z costume${alt ? ' (costume 2)' : ''}: ${zs.filter(([, im]) => im).length} of ${zs.length} materials draw their own texture`)
       const b = c.internalName.toLowerCase() + costume
       this.bundleAdds.set(`Bundles/${b}.ngm`, data)
       this.bundleAdds.set(`Bundles/${b}.ngt`, ngtOut)
@@ -265,6 +289,9 @@ export class Builder {
         this.note(`model: ${render.meshes.length} parts, ${st.vertices.length} positions, ${st.refs.length} vertices, ${render.indices.length / 3} triangles; scale ${f.S.toFixed(3)}${c.size !== 1 ? `; size ${formatG(c.size)}x the base's` : ''}; .ngm ${data.length} bytes, .tpl ${tplOut.length} bytes`)
       }
     }
+    const named = allMaterials.map((m) => (typeof m === 'string' ? m : m[0]).toLowerCase())
+    const twice = named.find((n, i) => named.indexOf(n) !== i)
+    if (twice) throw new LabError(`two materials would both be named ${twice}: change a material's suffix on the Materials page`)
     if (stats.clampedUvs) this.note(`warning: ${stats.clampedUvs} UVs were outside the range the game stores and were clamped`)
     this.fit = f
     return allMaterials
@@ -565,7 +592,12 @@ export function zCharacters(chars: Character[]): D.ZCharacter[] {
   return chars.flatMap((c) => {
     const z = c.zButton
     if (!z) return []
-    return [{ internal: c.internalName, seconds: z.requires.energy?.seconds ?? 0, regen: z.requires.energy?.regen ?? false, ...z.stealth, visible: z.stealth.visible ?? 1 }]
+    const st = z.stats ?? {}
+    return [{
+      internal: c.internalName, seconds: z.requires.energy?.seconds ?? 0, regen: z.requires.energy?.regen ?? false,
+      undetected: z.stealth?.undetected ?? false, untouchable: z.stealth?.untouchable ?? false, visible: z.stealth?.visible ?? 1,
+      costume: z.costume !== null, damage: damage.KEYS.map((k) => st[k] ?? null), taken: st.damage_taken ?? null, lift: st.lift ?? null,
+    }]
   })
 }
 
@@ -634,7 +666,11 @@ export function report(characters: Character | Character[], result: Result): str
   if (chars.some(splitsCharge)) lines.push('main.dol: fn_8009D71C adds tuning field 245 to the energy recharge rate while holding R')
   if (chars.some(throwsDamage)) lines.push('main.dol: fn_800E1788 reads tuning field 217 for an animation\'s damage event with param 5 (the baton throw)')
   if (chars.some(ownSounds)) lines.push('main.dol: fn_80114420 loads a new character\'s own sound bank, and one bank per type ID')
-  if (chars.some((c) => c.zButton)) lines.push('main.dol: Z is bound for every human player; fn_80137494 is rewritten to run Stealth Mode, hooked from fn_800FB944, fn_80085F4C, fn_800E07A4, fn_80150200, fn_80461948 and fn_8014F8BC')
+  if (chars.some((c) => c.zButton)) {
+    const names: [keyof NonNullable<Character['zButton']>, string][] = [['stealth', 'Stealth Mode'], ['costume', 'Costume Change'], ['stats', 'Stat Change']]
+    const used = names.filter(([k]) => chars.some((c) => c.zButton?.[k])).map(([, label]) => label)
+    lines.push(`main.dol: Z is bound for every human player; fn_80137494 is rewritten to run ${used.join(', ')}, hooked from fn_800FB944, fn_80085F4C, fn_800E07A4, fn_80150200, fn_80461948 and fn_8014F8BC; fn_800B1884 and fn_80086C80 are rewritten in place`)
+  }
   const cache = result.dol ? D.readEffectCache(result.dol) : null
   if (cache && cache !== nfxtool.CACHE_SIZE) lines.push(`main.dol: effect cache ${nfxtool.CACHE_SIZE} -> ${cache} bytes`)
   const sorted = (m: Map<string, Uint8Array>) => [...m].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))

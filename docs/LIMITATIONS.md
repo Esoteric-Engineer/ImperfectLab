@@ -188,6 +188,7 @@ The action picked on the **Z-Button Actions** page (`z_button`, [`FORMAT.md`](FO
 
 - **CPU players never press it.** Their input class doesn't read the table.
 - **Two players at once.** The rewrite has room for two active players, which a versus match never exceeds.
+- **Stat Change.** Attack damage is set when a move starts (`fn_800DA884`), so a change applies from the next move, not partway through one.
 
 ## More characters
 
