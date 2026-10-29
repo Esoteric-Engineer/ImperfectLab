@@ -4,7 +4,7 @@ import * as ngbtool from '../mnroi/ngbtool'
 import type * as ngmtool from '../mnroi/ngmtool'
 import type { Tri } from '../model/fit'
 import type { Skeleton } from '../model/skeleton'
-import { CLUB } from './basemoves'
+import { CATCH, CLUB } from './basemoves'
 import { withKeys } from './reach'
 
 type Vec3 = ngbtool.Vec3
@@ -19,6 +19,8 @@ const ON: [number, number, number] = [0, 0.45, 0.9]
 const OFF: [number, number, number] = [0.1, 0.55, 1]
 // frames the club takes to jump between the back and the hand
 const SWITCH = 0.01
+// frames the club takes after the baton throw's catch to turn from Daredevil's reversed grip to the power-stand one
+const REGRIP = 4
 
 export interface Plan {
   position: Vec3
@@ -183,6 +185,31 @@ function withClub(rec: ngbtool.Record, rot: ngbtool.Key[], pos: ngbtool.Key[]): 
 // The club on the back for the whole animation.
 export function stow(rec: ngbtool.Record, model: Model, plan: Plan): ngbtool.Record {
   const [rot, pos] = clubKeys(rec, model, plan, frameList(0, rec.length))
+  return withClub(rec, rot, pos)
+}
+
+// The club's place in the hand in a posed skeleton: rotation and offset in the hand's frame.
+export function grip(posed: Posed, hand: number): [Mat3, Vec3] {
+  const [HR, HT] = posed[hand], [CR, CT] = posed[CLUB]
+  return [mul(tr(HR), CR), apply(tr(HR), sub(CT, HT))]
+}
+
+// After the baton throw's catch, turns the club into the stand record's grip and holds it there.
+export function regrip(rec: ngbtool.Record, model: Model, stand: ngbtool.Record, hand: number): ngbtool.Record {
+  const [GR, GT] = grip(ngbtool.pose(model, stand, 0), hand)
+  const parent = model.nodes[CLUB][2]
+  const [ownRot, ownPos] = [0, 1].map((ch) => own(rec, ch))
+  const rot: ngbtool.Key[] = ownRot.keys.filter(([f]) => f < CATCH), pos: ngbtool.Key[] = ownPos.keys.filter(([f]) => f < CATCH)
+  let prev: Quat | null = null
+  for (const t of frameList(CATCH, rec.length)) {
+    const posed = ngbtool.pose(model, rec, t)
+    const [HR, HT] = posed[hand], w = smooth((t - CATCH) / REGRIP)
+    const target = ngbtool.matQuat(mul(tr(posed[parent][0]), mul(HR, GR)))
+    prev = near(nlerp(ngbtool.quat(ownRot.at(t)), target, w), prev)
+    rot.push([t, ngbtool.encodeRotation(prev)])
+    const T = posed[CLUB][1]
+    pos.push([t, ngbtool.placeAt(model, rec, CLUB, t, add(T, scale(sub(add(HT, apply(HR, GT)), T), w)), posed)])
+  }
   return withClub(rec, rot, pos)
 }
 

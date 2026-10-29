@@ -830,6 +830,25 @@ describe.skipIf(!ISO)('holster', () => {
     for (const t of [0, sb.length / 2, sb.length]) expect(onBack(model(), p, sb, t)).toBeLessThan(0.01)
   })
 
+  it('ends the baton throw in the power-stand grip', () => {
+    const hand = holster.armOf(new Skeleton(model(), dd().body)).hand
+    const stock = new Map(ngbtool.parse(src().entry('Bundles/daredevil.ngb')).map((r) => [r.name.toLowerCase(), r]))
+    const gripAt = (rec: ngbtool.Record, t: number) => holster.grip(ngbtool.pose(model(), rec, t), hand)
+    const off = (a: ngbtool.Mat3, b: ngbtool.Mat3) => Math.max(...a.flatMap((r, i) => r.map((v, j) => Math.abs(v - b[i][j]))))
+    const [GR, GT] = gripAt(stock.get('daredevil_powerstand.nad')!, 0)
+    const thrown = stock.get(basemoves.THROW)!
+    expect(off(gripAt(thrown, thrown.length)[0], GR)).toBeGreaterThan(0.5)
+    for (const reachTo of [undefined, 35]) {
+      const { set, recs } = built(moves.motionFiles(src(), dd(), 'Synth', {}, reachTo, {}, null, {}, null, 1, [], plan()))
+      const rec = recs.get(set.get('superattackfar')!.anim.toLowerCase())!
+      expect(set.get('rangedattack')!.anim).toBe(rec.name)
+      const [R, T] = gripAt(rec, rec.length)
+      expect(off(R, GR)).toBeLessThan(1e-2)
+      expect(Math.hypot(...T.map((v, k) => v - GT[k]))).toBeLessThan(5e-3)
+      expect(off(gripAt(rec, 10)[0], gripAt(thrown, 10)[0])).toBeLessThan(1e-2)
+    }
+  })
+
   it('draws from swapped power animations, sized and with a long throw', () => {
     const p = plan()
     const mf = moves.motionFiles(src(), dd(), 'Synth', { PowerOn: 'wolverine', PowerOff: 'wolverine', PowerStand: 'wolverine' }, 30, {}, null, {}, null, 1.5, [], p)

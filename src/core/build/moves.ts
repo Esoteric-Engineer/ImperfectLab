@@ -546,11 +546,19 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     }
   }
   const displaced = new Set<string>()
-  if (throwReach !== undefined || throwDamage) {
+  const arm = onBack ? holster.armOf(new Skeleton(models[0], base.body)) : null
+  if (throwReach !== undefined || throwDamage || arm) {
     const main = bundles.get('') ?? []
     const at = main.findIndex((r) => r.name.toLowerCase() === basemoves.THROW)
     if (at < 0) throw new LabError(`${base.label}'s animations have no ${basemoves.THROW}`)
-    let rec = throwReach !== undefined ? basemoves.longThrow(main[at], models[0], throwReach) : main[at]
+    let rec = main[at]
+    if (arm) {
+      const anim = own.motions().get('powerstand')?.anim.toLowerCase()
+      const stand = main.find((r) => r.name.toLowerCase() === anim)
+      if (!stand) throw new LabError(`${base.label}'s animations have no power-stand to take the club's grip from`)
+      rec = holster.regrip(rec, models[0], stand, arm.hand)
+    }
+    if (throwReach !== undefined) rec = basemoves.longThrow(rec, models[0], throwReach)
     if (throwDamage) rec = damage.throwRecord(rec)
     rec.name = ownName(rec)
     own.rename(main[at].name, rec.name)
@@ -700,7 +708,6 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
   if (onBack) {
     const k3 = (v: ngbtool.Vec3) => v.map((x) => x * size) as ngbtool.Vec3
     const plan = { ...onBack, position: k3(onBack.position), center: k3(onBack.center) }
-    const arm = holster.armOf(new Skeleton(models[0], base.body))
     const groups = new Map<string, [Exclude<holster.Role, 'drawn'>, string, nmstool.Motion[]]>()
     for (const m of resolved(src, own, holds(bundles)).values()) {
       const own = holster.role(m.state)
@@ -721,7 +728,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       const out = found.map(([, rec]) => {
         if (role === 'stowed') return holster.stow(rec, models[0], plan)
         if (role === 'free') return holster.free(rec)
-        return holster.draw(rec, models[0], plan, arm, role)
+        return holster.draw(rec, models[0], plan, arm!, role)
       })
       const named = ownName(out[0])
       found.forEach(([slot], i) => {
@@ -732,7 +739,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       displaced.add(anim)
       held++
     }
-    notes.push(`holster: ${base.label}'s club rides on the back outside power mode (${held} animations); power-on draws it and power-off puts it back`)
+    notes.push(`holster: ${base.label}'s club rides on the back outside power mode (${held} animations); power-on draws it and power-off puts it back; the baton throw's catch ends in the power-stand grip`)
   }
   // the base's records the moves replaced, unless another state still plays them
   const used = new Set([...resolved(src, own, () => true).values()].map((m) => m.anim.toLowerCase()))
