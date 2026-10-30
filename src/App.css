@@ -286,6 +286,32 @@ button.small {
   margin: 0 0 8px;
 }
 
+.card.zaction > .note {
+  margin: 2px 0 0 24px;
+}
+
+.zaction-head {
+  font-weight: 600;
+}
+
+.card.zaction:not(.on) .zaction-head {
+  color: var(--muted);
+}
+
+.zaction-body {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.zaction-body > .note {
+  margin: 0 0 8px;
+}
+
+.zaction-indent {
+  margin-left: 24px;
+}
+
 .thumb {
   display: inline-flex;
   align-items: center;

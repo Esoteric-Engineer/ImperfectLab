@@ -273,27 +273,61 @@ describe('round trip', () => {
     expect(imperfect.problems(c).some(([l, msg]) => l === 'error' && msg.includes("can't stretch"))).toBe(true)
   })
 
-  it('saves and loads the Z button action', () => {
+  it('saves and loads the Z button actions', () => {
     const c = character()
     expect(imperfect.manifest(c).z_button).toBeUndefined()
-    c.zButton = { action: 'stealth', stealth: { undetected: true, untouchable: false, visible: null }, requires: {} }
-    expect(JSON.parse(JSON.stringify(imperfect.manifest(c).z_button))).toEqual({ action: 'stealth', stealth: { undetected: true } })
-    expect(imperfect.load(imperfect.save(c)).zButton).toEqual(c.zButton)
-    c.zButton.stealth = { undetected: false, untouchable: true, visible: 0.35 }
-    c.zButton.requires.energy = { seconds: 12, regen: true }
-    expect(imperfect.load(imperfect.save(c)).zButton).toEqual(c.zButton)
+    const z: imperfect.ZButton = { stealth: { undetected: true, untouchable: false, visible: null }, costume: null, stats: null, size: null, requires: {} }
+    c.zButton = z
+    expect(JSON.parse(JSON.stringify(imperfect.manifest(c).z_button))).toEqual({ stealth: { undetected: true } })
+    expect(imperfect.load(imperfect.save(c)).zButton).toEqual(z)
+    z.stealth = { undetected: false, untouchable: true, visible: 0.35 }
+    z.requires.energy = { seconds: 12, regen: true }
+    expect(imperfect.load(imperfect.save(c)).zButton).toEqual(z)
+    c.files.set('textures/mat0_altz.png', pngBytes())
+    z.costume = { normal: { 0: 'hue:40' }, alt: { 0: 'textures/mat0_altz.png' } }
+    z.stats = { attack_damage_2: 30, damage_taken: 0.5, lift: 'heavy' }
+    expect(imperfect.load(imperfect.save(c)).zButton).toEqual(z)
+    expect(imperfect.zTexture(z, 'normal', 1)).toBe('alt')
+    expect(imperfect.zTexture(z, 'alt', 1)).toBe('normal')
+    z.stealth = null
+    expect(imperfect.load(imperfect.save(c)).zButton).toEqual(z)
+    z.size = 0.5
+    expect(imperfect.manifest(c).z_button).toMatchObject({ size: 0.5 })
+    expect(imperfect.load(imperfect.save(c)).zButton).toEqual(z)
+    z.stats = {}
+    z.costume = null
+    expect(imperfect.load(imperfect.save(c)).zButton).toEqual({ ...z, stats: null })
+    z.size = 1
+    expect(imperfect.problems(c).some(([l, msg]) => l === 'warning' && msg.includes('Change Size'))).toBe(true)
+    z.size = null
+    expect(imperfect.problems(c).some(([l, msg]) => l === 'warning' && msg.includes('Stat Change'))).toBe(true)
+    expect(imperfect.manifest(c).z_button).toBeUndefined()
+
     const m = imperfect.manifest(c) as Json
+    const legacy = imperfect.fromManifest({ ...m, z_button: { action: 'stealth', stealth: { visible: 0.2 } } } as Json, new Map())
+    expect(legacy.zButton).toEqual({ stealth: { undetected: false, untouchable: false, visible: 0.2 }, costume: null, stats: null, size: null, requires: {} })
     const bad = (z: unknown) => expect(() => imperfect.fromManifest({ ...m, z_button: z } as Json, new Map())).toThrow(/z_button/)
     bad('stealth')
+    bad({})
     bad({ action: 'fly' })
     bad({ action: 'stealth' })
-    bad({ action: 'stealth', stealth: { undetected: false } })
-    bad({ action: 'stealth', stealth: { visible: 1 } })
-    bad({ action: 'stealth', stealth: { hidden: true } })
-    bad({ action: 'stealth', stealth: { untouchable: true }, requires: { health: {} } })
-    bad({ action: 'stealth', stealth: { untouchable: true }, requires: { energy: { seconds: 0 } } })
-    bad({ action: 'stealth', stealth: { untouchable: true }, requires: { energy: { seconds: 8, regen: 'yes' } } })
-    bad({ action: 'stealth', extra: 1 })
+    bad({ stealth: { undetected: false } })
+    bad({ stealth: { visible: 1 } })
+    bad({ stealth: { hidden: true } })
+    bad({ stealth: { untouchable: true }, requires: { health: {} } })
+    bad({ stealth: { untouchable: true }, requires: { energy: { seconds: 0 } } })
+    bad({ stealth: { untouchable: true }, requires: { energy: { seconds: 8, regen: 'yes' } } })
+    bad({ stealth: { untouchable: true }, extra: 1 })
+    bad({ costume: { normal: { x: 'alt' } } })
+    bad({ costume: { normal: { 0: 'hue:999' } } })
+    bad({ costume: { normal: { 0: 'textures/missing.png' } } })
+    bad({ costume: { other: {} } })
+    bad({ stats: {} })
+    bad({ size: 4 })
+    bad({ size: '2' })
+    bad({ stats: { attack_damage_1: 0 } })
+    bad({ stats: { lift: 'huge' } })
+    bad({ stats: { health: 10 } })
   })
 
   it('finds problems with moves', () => {

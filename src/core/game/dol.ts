@@ -203,33 +203,58 @@ const BINDING = 0x50
 const GAME_BINDINGS = 18
 const Z_BUTTON = 5
 const Z_LOGICAL = 19
-export const Z_ACTIONS = ['stealth'] as const
+export const Z_ACTIONS = ['stealth', 'costume', 'stats', 'size'] as const
 export type ZAction = (typeof Z_ACTIONS)[number]
 export const Z_SECONDS: [number, number] = [1, 60]
+export const Z_SIZE: [number, number] = [0.1, 3.0]
 
 // fn_80137494 (the AI debug display, never called in retail) rewritten from zactions.s, then its table.
 const Z_CODE: [number, number, string] = [0x80137494, 0x858, '33246b517b202fa554e0792f4a66b6d4c5a84712']
 const Z_ACTIONS_CODE =
-  '9421ffc07c0802a690010044bea100147fbfeb78807f05b42c0300004182021c83c300e42c1e000041820210813f00088389004c3b600000813f000c2c090000418200088369004c3fa080133bbd781c801d00007c00f000418201583bbd0010801d00007c00f000418201482c1c0000418201c8' +
-  '2c1b0000408201c07fc3f3784bf4e9d92c030000408201b03b0000003c60805538632110482fd3d57c181800408001983c608055386321107f04c378482fa2797c771b78482f89e13b1800017c03f0004082ffcc3f4080133b5a783c881a000c2c000000418201603aba000c387700047ea4ab78' +
-  '4803b0d92c030000418200347ea4ab784800016d7c952378387700044803b0bd2c030000418200187ea4ab784800015138840003549a003a4bffffb0c03a00003d208013c0097814fc0100004182001c7fc3f3784bf4f1613d208013c0097814fc010000408100ec3fa080133bbd781c38000002' +
-  '7c0903a63d20805981293c2c801d00002c00000041820020801d00047c004850280000fa408000103bbd00104200ffe0480000ac93dd0000801a0000901d0008801a0004901d000cc03a0008480000a5480000682c1c0000418200707fc3f3784bf4e89d2c03000040820060c03d00083d208013' +
-  'c0097814fc0100004182003c3d208059c0493c38c07e0328ec6300b2ec230824801d000c700000014082000cc09e03ccec2408ba7fc3f3784bf4d3c52c030000418200143d20805980093c2c901d00044800001838000000901d00003d208013c029781848000019baa10014800100447c0803a6' +
-  '382100404e800020807e01bc2c0300004d8200203d208013c04978144806e42888040000388400012c0000004082fff44e800020380000002c0400004d8200203d2080133929781c394000027d4903a6814900007c0a20004082002c3d408059814a3c2c800900047d40505038000000280a00fa' +
-  '408000108149000c7d4a283940820010392900104200ffc84e800020380000014e8000207d8802a67c641b7838a000044bffff917d8803a67c0303784e8000209421fff07c0802a690010014906100084bf794bd2c030000418200148081000838a000044bffff5d68030001800100147c0803a6' +
-  '382100104e8000207d8802a67c641b7838a000024bffff397d8803a62c0000004182000838600000816100004e8000207d8802a638a000024bffff157d8803a62c0000004082000848027a70386000014e800020000000003f800000000000000000000000000000000000000000000000000000' +
-  '0000000000000000'
+  '9421ffc07c0802a690010044bea100147fbfeb78807f05b42c030000418202c483c300e42c1e0000418202b8813f00088389004c3b600000813f000c2c090000418200088369004c480116fd3fa0800b3bbd18b8801d00007c00f0004182017c3bbd0018801d00007c00f0004182016c' +
+  '2c1c00004182026c2c1b0000408202647fc3f3784bf4e9d52c030000408202543b0000003c60805538632110482fd3d17c1818004080023c3c608055386321107f04c378482fa2757c771b78482f89dd3b1800017c03f0004082ffcc3f4080133b5a79bc3aba000c801a000470090010' +
+  '418200083ab5001c70090020418200083ab50004881500002c000000418201e4387700047ea4ab784803b0b92c030000418200347ea4ab78480001f57c952378387700044803b09d2c030000418200187ea4ab78480001d938840003549a003a4bffff94c03a00003d208008c0096cc4' +
+  'fc0100004182001c7fc3f3784bf4f1413d208008c0096cc4fc010000408101743fa0800b3bbd18b8380000027c0903a63d20805981293c2c801d00002c00000041820020801d00047c004850280000fa408000103bbd00184200ffe04800013493dd0000801a0000901d0008801a0004' +
+  '901d000c935d0010801e0308901d00143b200001480000842c1c0000418200707fc3f3784bf4e8752c03000040820060c03d00083d208008c0096cc4fc0100004182003c3d208059c0493c38c07e0328ec6300b2ec230824801d000c700000014082000cc09e03ccec2408ba7fc3f378' +
+  '4bf4d39d2c030000418200143d20805980093c2c901d0004480000983b200000933d0000835d0010c03a00083d208008c0096cc8fc010000418200142c19000040820008fc2000904800007d801d000c700000084182000c7f23cb7848001149801d000c7000001041820030813a0024' +
+  '2c09ffff41820024801e0308540007322c1900004082000c813d0014712900307c004b78901e0308801d000c7000002041820008480115052c1900004082ff60baa10014800100447c0803a6382100404e800020807e01bc2c0300004d8200203d208008c0496cc44806e38088040000' +
+  '388400012c0000004082fff44e800020380000002c0400004d8200203d20800b392918b8394000027d4903a6814900007c0a20004082002c3d408059814a3c2c800900047d40505038000000280a00fa408000108149000c7d4a283940820010392900184200ffc84e80002038000001' +
+  '4e8000207d8802a67c641b7838a000044bffff917d8803a67c0303784e8000209421fff07c0802a690010014906100084bf794152c030000418200148081000838a000044bffff5d68030001800100147c0803a6382100104e8000207d8802a67c641b7838a000024bffff397d8803a6' +
+  '2c0000004182000838600000816100004e8000207d8802a638a000024bffff157d8803a62c00000040820008480279c8386000014e8000207d8802a67c8b23787c641b7838a000104bfffee97d8803a67d645b782c0000004182002481290010548a103a3929ffb47c29542e3d208008' +
+  'c0096cc4fc0100004c8000204bf79f947d8802a67c641b7838a000104bfffea57d8803a62c0000004d82002081290010c04900203d408008c00a6cc4fc0200004d8000209421ffe091810024d0210008d041000c388000864bf79f393d208008c0096cc8ec000828c021000c3d208008' +
+  'c0496cc4fc00100040810010c0410008ec2100b2ec210024800100247c0803a6382100204e800020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
 const Z_UPDATE = 0x80137494
-const Z_INVULNERABLE = 0x80137770
-const Z_AIR_GRAB = 0x8013778c
-const Z_AI_EXIT = 0x801377c8
-const Z_AI_SKIP = 0x801377f0
+const Z_INVULNERABLE = 0x80137818
+const Z_AIR_GRAB = 0x80137834
+const Z_AI_EXIT = 0x80137870
+const Z_AI_SKIP = 0x80137898
+// fn_80138868 and fn_80148B50 (only called by the AI debug display) rewritten from zactions.s's .costume and .grow.
+const Z_COSTUME: [number, number, string] = [0x80138868, 0x1bc, '61e8152bdf47e9ccfa6ade46acca4702b944d154']
+const Z_COSTUME_CODE =
+  '9421ffd07c0802a690010034bee1000c7c7f1b78809e01bc2c0400004182009080a4000083a400ac8b8500048b650008380000037f7b0396834500882c1c00004182006c833d00003b0000007c18d800408000505700103a7efa002e7c17c80041820020387900283897002848039d81' +
+  '2c0300004182000c3b1800014bffffd07c18da142c1f0000408200087c00da145400103a7d3a002e80090014901900143bbd00043b9cffff4bffff94bae1000c800100347c0803a6382100304e800020'
+const Z_GROW: [number, number, string] = [0x80148b50, 0x1e0, 'df1294d9c898ae4c8244d1f6ccc7d315012fa7d6']
+const Z_GROW_CODE =
+  '3d2080133929798c39400000380000027c0903a6816900002c0b000041820028c0090004c0290010ec000072c02b0044fc000800408200107c0b20004d820020480000087d2a4b78392900184200ffc8392000002c0500004d8200207d4953794d820020908900003d608008c00b6cc8' +
+  'd0090004c0040044d0090010c004004cd00900144e8000207d8802a67fc4f37838a000004bffff6d7d8803a62c0900004d820020c0290004c0490008c069000c3d408059c08a3c38ec630132ec020828fc800210fc04180040810010fc801850fc6020eeec41182ad0490004c0090010' +
+  'ec0000b2d01e0044c0090014ec0000b2d01e004cc00900083d408008c02a6cc8fc0208004c820020fc0008004c82002038000000900900004e8000207d8802a67fc4f3787f25cb784bfffed97d8803a62c0900004d8200203d408008c04a6cc8fc2010902c19000041820034801a0004' +
+  '70000010395a000c41820008394a001cc02a0000ec011028fc0002103d408008c06a6cccec0000f2d009000cd02900084e8000207d8802a6809f00083884ff8838a000004bfffe6d7d8803a62c09000041820024c0290004393f000c3800000c7c0903a6c4090004ec000072d0090000' +
+  '4200fff4801e00b04e800020'
+const Z_POSE = 0x80148cd4
+// fn_800B1884 (a tuning float) and fn_80086C80 (damage taken) rewritten in place from zactions.s; they also hold its slots and constants.
+const Z_TUNING: [number, string, string] = [0x800b1884,
+  '9421ffe87c0802a6bfa1000c9001001c7c3f0b787c7d1b787c9e2378801d016c2c000000408200103d208049c029ba6848000020807d016c7fc4f37880bd01704838245dfc000890fc2000904800000481610000800b00047c0803a6bbabfff47d615b784e800020',
+  '3804ffea28000004418100084808602c8003016c2c0000004182001080a301707c030378483824783d208008c0296cc44e80002000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000060000000']
+const Z_TAKEN: [number, string, string] = [0x80086c80,
+  '9421ffe87c0802a6bfa1000c9001001c7c3f0b787c7e1b787c9d2378381d00867fc3f3787c0403784802abddfc0008903d208049c1a98758ec0d0028fc2000904800000481610000800b00047c0803a6bbabfff47d615b784e800020',
+  '9421fff07c0802a69001001493e1000c7c7f1b78388400864802abed3d208008c0096cc8ec2008287fe3fb78480b0c5983e1000c800100147c0803a6382100104e800020000000003f80000040800000600000006000000060000000']
 // fn_80085F4C (is the actor invulnerable) keeps its bit test and asks zactions.s otherwise.
 const INVULNERABLE: [number, string] = [0x80085f4c, '9421fff093e1000c7c3f0b787c691b7881690304556007fe7c030378480000048161000083ebfffc7d615b784e800020']
-// {site, old instruction, target}: fn_800FB944 (human input update), fn_800E07A4 (air grab), fn_80150200 and fn_80461948 (AI target), fn_8014F8BC (AI enemy choice).
+// {site, old instruction, target}: fn_800FB944 (human input update), fn_800E07A4 (air grab), fn_80150200 and fn_80461948 (AI target),
+// fn_8014F8BC (AI enemy choice), fn_801A479C (a model's bones posed from its actor's world matrix).
 const Z_HOOKS: [number, string, number][] = [
   [0x800fba50, '48000008', Z_UPDATE], [0x800e09cc, '4bfd028d', Z_AIR_GRAB], [0x80150240, '81610000', Z_AI_EXIT],
-  [0x804619b0, '81610000', Z_AI_EXIT], [0x8014fa14, '4800f865', Z_AI_SKIP],
+  [0x804619b0, '81610000', Z_AI_EXIT], [0x8014fa14, '4800f865', Z_AI_SKIP], [0x801a483c, '801e00b0', Z_POSE],
 ]
 
 export const Z_VISIBLE: [number, number] = [0, 0.95]
@@ -241,7 +266,15 @@ export interface ZCharacter {
   undetected: boolean
   untouchable: boolean
   visible: number
+  costume: boolean
+  damage: (number | null)[]
+  taken: number | null
+  lift: string | null
+  size: number | null
 }
+
+const LIFT_BITS: Record<string, number> = { light: 0, medium: 0x10, heavy: 0x20 }
+const changesStats = (c: ZCharacter) => c.damage.some((v) => v !== null) || c.taken !== null || c.lift !== null
 
 const branch = (from: number, to: number, link: boolean) => (0x48000000 | ((to - from) & 0x3fffffc) | (link ? 1 : 0)) >>> 0
 const word = (v: number) => {
@@ -250,17 +283,34 @@ const word = (v: number) => {
   return b
 }
 
+function unchanged(dol: Uint8Array, [va, size, digest]: [number, number, string]): number {
+  const at = fileOffset(dol, va)
+  if (toHex(sha1(dol.subarray(at, at + size))) !== digest) throw new LabError(`main.dol differs from GVLE69 at 0x${at.toString(16).toUpperCase()}`)
+  return at
+}
+
 function zTable(chars: ZCharacter[]): Uint8Array {
   const parts: Uint8Array[] = []
   for (const c of chars) {
     if (c.seconds !== 0 && !(c.seconds >= Z_SECONDS[0] && c.seconds <= Z_SECONDS[1])) throw new LabError(`a full energy bar lasts ${Z_SECONDS[0]} to ${Z_SECONDS[1]} seconds, not ${c.seconds}`)
     if (c.visible !== 1 && !(c.visible >= Z_VISIBLE[0] && c.visible <= Z_VISIBLE[1])) throw new LabError(`a faded character is ${Z_VISIBLE[0] * 100}% to ${Z_VISIBLE[1] * 100}% visible, not ${c.visible * 100}%`)
+    if (c.damage.length !== 5) throw new LabError('Z-button stats need five attack damage values')
+    if (c.lift !== null && !Object.hasOwn(LIFT_BITS, c.lift)) throw new LabError(`lifting strength is light, medium or heavy, not ${c.lift}`)
+    if (c.size !== null && !(c.size >= Z_SIZE[0] && c.size <= Z_SIZE[1])) throw new LabError(`a Z size is ${Z_SIZE[0]} to ${Z_SIZE[1]} times the character's, not ${c.size}`)
+    const stats = changesStats(c)
     const names = encodeLatin1(entityNames(c.internal).join('\0') + '\0')
-    const entry = new Uint8Array(12 + ((names.length + 3) & ~3))
+    const at = (stats ? 40 : 12) + (c.size !== null ? 4 : 0)
+    const entry = new Uint8Array(at + ((names.length + 3) & ~3))
     putF32be(entry, 0, c.seconds)
-    putU32be(entry, 4, (c.regen ? 1 : 0) | (c.undetected ? 2 : 0) | (c.untouchable ? 4 : 0))
+    putU32be(entry, 4, (c.regen ? 1 : 0) | (c.undetected ? 2 : 0) | (c.untouchable ? 4 : 0) | (c.costume ? 8 : 0) | (stats ? 16 : 0) | (c.size !== null ? 32 : 0))
     putF32be(entry, 8, c.visible)
-    entry.set(names, 12)
+    if (stats) {
+      c.damage.forEach((v, i) => putF32be(entry, 12 + 4 * i, v ?? -1))
+      putF32be(entry, 32, c.taken ?? -1)
+      putU32be(entry, 36, c.lift === null ? 0xffffffff : LIFT_BITS[c.lift])
+    }
+    if (c.size !== null) putF32be(entry, at - 4, c.size)
+    entry.set(names, at)
     parts.push(entry)
   }
   parts.push(new Uint8Array(16))
@@ -277,22 +327,25 @@ export function zActions(dol: Uint8Array, chars: ZCharacter[]): Uint8Array {
   put(out, fileOffset(out, BINDINGS + BINDING * GAME_BINDINGS), new Uint8Array(BINDING), z)
   put(out, fileOffset(out, BINDINGS_COUNT), word(GAME_BINDINGS), word(GAME_BINDINGS + 1))
 
-  const [va, size, digest] = Z_CODE
-  const at = fileOffset(out, va)
-  if (toHex(sha1(out.subarray(at, at + size))) !== digest) throw new LabError(`main.dol differs from GVLE69 at 0x${at.toString(16).toUpperCase()}`)
   const code = fromHex(Z_ACTIONS_CODE)
   const table = zTable(chars)
-  if (code.length + table.length > size) throw new LabError(`fn_80137494 has no room for ${chars.length} characters' Z-button actions`)
-  const body = new Uint8Array(size)
+  if (code.length + table.length > Z_CODE[1]) throw new LabError(`fn_80137494 has no room for ${chars.length} characters' Z-button actions`)
+  const body = new Uint8Array(Z_CODE[1])
   body.set(code)
   body.set(table, code.length)
-  out.set(body, at)
+  out.set(body, unchanged(out, Z_CODE))
+  for (const [fn, hex] of [[Z_COSTUME, Z_COSTUME_CODE], [Z_GROW, Z_GROW_CODE]] as const) {
+    const more = new Uint8Array(fn[1])
+    more.set(fromHex(hex))
+    out.set(more, unchanged(out, fn))
+  }
 
   const [fn, old] = INVULNERABLE
   // lwz r0,0x304(r3); clrlwi. r0,r0,31; beq +12; li r3,1; blr; b invulnerable
   const next = concat([fromHex('80030304540007ff4182000c386000014e800020'), word(branch(fn + 0x14, Z_INVULNERABLE, false)), fromHex('60000000'.repeat(6))])
   put(out, fileOffset(out, fn), fromHex(old), next)
   for (const [site, instruction, target] of Z_HOOKS) put(out, fileOffset(out, site), fromHex(instruction), word(branch(site, target, true)))
+  for (const [fva, before, after] of [Z_TUNING, Z_TAKEN]) put(out, fileOffset(out, fva), fromHex(before), fromHex(after))
   return out
 }
 

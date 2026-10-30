@@ -1,9 +1,10 @@
 import * as damage from '../../core/build/damage'
 import * as energy from '../../core/build/energy'
-import { damageMoves, energyMoves, type Move } from '../../core/build/moves'
+import { energyMoves, type Move } from '../../core/build/moves'
 import { formatG } from '../../core/format'
 import { FLYERS, type Gameplay, GAMEPLAY as RANGES } from '../../core/package/imperfect'
 import { Note, NumberInput } from '../components/common'
+import { DamageTable } from '../components/DamageTable'
 import { store, useStore } from '../store'
 
 const NAMES = ['Intel', 'Strength', 'Speed', 'Durability', 'Energy', 'Skill']
@@ -146,8 +147,8 @@ export function StatsPage() {
   )
 }
 
-function setDamage(key: damage.DamageKey | typeof damage.THROW_KEY, v: number | null) {
-  const gp = store.character.gameplay
+function setDamage(key: string, v: number | null) {
+  const gp = store.character.gameplay as Record<string, number>
   if (v === null) delete gp[key]
   else gp[key] = Math.round(v * 10) / 10
   store.touch('character')
@@ -155,14 +156,6 @@ function setDamage(key: damage.DamageKey | typeof damage.THROW_KEY, v: number | 
 
 function Damage() {
   const c = store.character
-  const gp = c.gameplay
-  const cat = store.moveCatalog()
-  const bv = store.baseDetails()
-  const base = damage.KEYS.map((k, i) => cat?.[c.base]?.damage[i] ?? bv?.gameplay[k])
-  const ownThrow = gp[damage.THROW_KEY] !== undefined
-  const users = cat?.[c.base] ? damageMoves(cat, c.base, c.moves, ownThrow) : null
-  const rows: [damage.DamageKey | typeof damage.THROW_KEY, string, number | undefined, Move[] | undefined][] = damage.KEYS.map((k, i) => [k, `Damage ${i + 1}`, base[i], users?.[i]])
-  if (c.base === 'daredevil') rows.push([damage.THROW_KEY, 'Baton throw', base[damage.THROW_TIER], cat?.[c.base] ? damageMoves(cat, c.base, c.moves, true)[damage.KEYS.length] : undefined])
   return (
     <>
       <h3>Attack damage</h3>
@@ -171,31 +164,10 @@ function Damage() {
         CPUs hit softer (on Easy) or harder (on Hard) than these values, but keep the same proportion.
         {c.base === 'daredevil' && <><br />The baton throw can have its own value, taken out of Damage {damage.THROW_TIER + 1}. This needs the character's own copy of Daredevil's animations.</>}
       </Note>
-      <table className="gameplay grid damage">
-        <thead><tr><th>Value</th><th>Moves</th><th className="num">Base</th><th>New</th><th className="num">Change</th></tr></thead>
-        <tbody>
-          {rows.map(([key, name, b, moves]) => {
-            const have = gp[key] !== undefined
-            const [lo, hi] = RANGES[key]
-            const scaled = have && b! > 0 && gp[key] !== b
-            return (
-              <tr key={key}>
-                <td><label className="check"><input type="checkbox" checked={have} disabled={b === undefined} onChange={(e) => setDamage(key, e.target.checked ? b! : null)} /> {name}</label></td>
-                <td>
-                  {!moves ? <span className="muted">reading moves...</span> : moves.length ? <div className="chips">{moves.map((m) => <span key={m.id} className="chip">{m.label}</span>)}</div> : <span className="muted">none</span>}
-                </td>
-                <td className="num">{b === undefined ? '-' : formatG(b)}</td>
-                <td><NumberInput className="short" disabled={!have} min={lo} max={hi} step={1} value={gp[key] ?? b ?? null} onChange={(v) => setDamage(key, v)} /></td>
-                <td className="num muted">{scaled ? `×${formatG(Math.round((gp[key]! / b!) * 100) / 100)}` : ''}</td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+      <DamageTable values={c.gameplay as Record<string, number | undefined>} set={setDamage} batonThrow={c.base === 'daredevil'} />
     </>
   )
 }
-
 
 function setEnergy(key: energy.EnergyKey | energy.RechargeKey, v: number | null) {
   const gp = store.character.gameplay

@@ -8,11 +8,11 @@ import { encodePng, pngSize } from '../image/png'
 import type { RgbaImage } from '../image/rgba'
 import { CLUB } from '../build/basemoves'
 import { CLUB_MOVES, defaultDrawn } from '../build/holster'
-import type { DamageKey } from '../build/damage'
+import { type DamageKey, KEYS as DAMAGE_KEYS } from '../build/damage'
 import { COSTS, type EnergyKey, FALLBACK, RECHARGE, type RechargeKey } from '../build/energy'
 import { LOW_ENERGY_STUN, MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
 import { DISTANCE, JUMP_DISTANCE, JUMPS, type Limb, LIMBS } from '../build/reach'
-import { type ZAction, Z_ACTIONS, Z_SECONDS, Z_VISIBLE } from '../game/dol'
+import { Z_SECONDS, Z_SIZE, Z_VISIBLE } from '../game/dol'
 import { BASES } from '../game/roster'
 import * as asftool from '../mnroi/asftool'
 import { GLB, type Json } from '../mnroi/gltf'
@@ -154,11 +154,25 @@ export type Cutscenes = Partial<Record<CutsceneKind, string>> & { audio: Record<
 
 export type SoundSource = { game: string } | { file: string }
 
+// A Z costume texture: 'normal' or 'alt' (that costume's), 'hue:<degrees>' (costume 1's, shifted) or a textures/ member.
+export const Z_COSTUMES = ['normal', 'alt'] as const
+export type ZCostume = (typeof Z_COSTUMES)[number]
+export type ZStats = Partial<Record<DamageKey | 'damage_taken', number>> & { lift?: string }
+export const Z_STATS: (DamageKey | 'damage_taken')[] = [...DAMAGE_KEYS, 'damage_taken']
+
 export interface ZButton {
-  action: ZAction
-  stealth: { undetected: boolean; untouchable: boolean; visible: number | null }
+  stealth: { undetected: boolean; untouchable: boolean; visible: number | null } | null
+  costume: Record<ZCostume, Record<number, string>> | null
+  stats: ZStats | null
+  size: number | null
   requires: { energy?: { seconds: number; regen: boolean } }
 }
+
+export function zTexture(z: ZButton, costume: ZCostume, m: number): string {
+  return z.costume?.[costume][m] ?? (costume === 'normal' ? 'alt' : 'normal')
+}
+
+const zMember = (v: string) => v !== 'normal' && v !== 'alt' && !v.startsWith('hue:')
 
 export interface Character {
   internalName: string
@@ -271,6 +285,7 @@ function fitJson(fit: Character['fit']): Json {
 }
 
 export function manifest(c: Character): Json {
+  const z = c.zButton, zStats = z?.stats && Object.keys(z.stats).length ? z.stats : undefined
   const files = new Map(c.files)
   if (c.glb !== null) files.set('model/model.glb', c.glb)
   return {
@@ -297,10 +312,12 @@ export function manifest(c: Character): Json {
     move_idle: c.moveIdle.length ? c.moveIdle : undefined,
     cutscenes: hasCutscenes(c.cutscenes) ? { ...c.cutscenes, effects: Object.keys(c.cutscenes.effects).length ? c.cutscenes.effects : undefined } : undefined,
     sounds: Object.keys(c.sounds).length ? c.sounds : undefined,
-    z_button: c.zButton ? {
-      action: c.zButton.action,
-      stealth: { undetected: c.zButton.stealth.undetected || undefined, untouchable: c.zButton.stealth.untouchable || undefined, visible: c.zButton.stealth.visible ?? undefined },
-      requires: Object.keys(c.zButton.requires).length ? c.zButton.requires : undefined,
+    z_button: z && (z.stealth || z.costume || zStats || z.size !== null) ? {
+      stealth: z.stealth ? { undetected: z.stealth.undetected || undefined, untouchable: z.stealth.untouchable || undefined, visible: z.stealth.visible ?? undefined } : undefined,
+      costume: z.costume ?? undefined,
+      stats: zStats,
+      size: z.size ?? undefined,
+      requires: Object.keys(z.requires).length ? z.requires : undefined,
     } : undefined,
     files: Object.fromEntries([...files].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, v]) => [k, sha(v)])),
   }
@@ -387,6 +404,13 @@ export function problems(c: Character): Problem[] {
   for (const [slot, from] of Object.entries(c.sounds)) {
     if ('file' in from && !c.files.has(from.file)) out.push(['error', `the new sound for sound ${Number(slot) + 1} is missing`])
     if ('game' in from && !(GAME_SOUND.test(from.game) && Object.hasOwn(BASES, from.game.split(':')[0]))) out.push(['error', `sound ${Number(slot) + 1} is taken from an unknown character`])
+  }
+  if (c.zButton?.stats && !Object.keys(c.zButton.stats).length) out.push(['warning', 'Stat Change is ticked but changes nothing: tick a value on the Z-Button Actions page'])
+  if (c.zButton?.size === 1) out.push(['warning', 'Change Size is ticked but changes nothing: set a size other than 1 on the Z-Button Actions page'])
+  if (c.zButton?.costume) {
+    for (const costume of Z_COSTUMES) {
+      for (const v of Object.values(c.zButton.costume[costume])) if (zMember(v) && !c.files.has(v)) out.push(['error', `a Z costume texture (${v}) is missing`])
+    }
   }
   if (!c.files.get('ui/select_ready.png')) out.push(['warning', "no select-screen portrait: the base's portraits are used"])
   return out
@@ -673,17 +697,54 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   }
   c.zButton = null
   if (m.z_button !== undefined && m.z_button !== null) {
-    const z = keys(m.z_button, ['action', 'stealth', 'requires'], 'z_button')
-    if (!Z_ACTIONS.includes(z.action as ZAction)) throw new LabError(`manifest: z_button.action is one of ${Z_ACTIONS.join(', ')}`)
-    const s = keys(z.stealth ?? {}, ['undetected', 'untouchable', 'visible'], 'z_button.stealth')
-    const stealth = {
-      undetected: typed<boolean>(s.undetected ?? false, 'boolean', 'z_button.stealth.undetected'),
-      untouchable: typed<boolean>(s.untouchable ?? false, 'boolean', 'z_button.stealth.untouchable'),
-      visible: num(s.visible, 'z_button.stealth.visible', ...Z_VISIBLE),
+    const z = keys(m.z_button, ['action', 'stealth', 'costume', 'stats', 'size', 'requires'], 'z_button')
+    if (z.action !== undefined && z.action !== 'stealth') throw new LabError('manifest: z_button.action can only be stealth, as older files have it')
+    let stealth: ZButton['stealth'] = null
+    if (z.stealth !== undefined || z.action === 'stealth') {
+      const s = keys(z.stealth ?? {}, ['undetected', 'untouchable', 'visible'], 'z_button.stealth')
+      stealth = {
+        undetected: typed<boolean>(s.undetected ?? false, 'boolean', 'z_button.stealth.undetected'),
+        untouchable: typed<boolean>(s.untouchable ?? false, 'boolean', 'z_button.stealth.untouchable'),
+        visible: num(s.visible, 'z_button.stealth.visible', ...Z_VISIBLE),
+      }
+      if (!stealth.undetected && !stealth.untouchable && stealth.visible === null) throw new LabError('manifest: z_button.stealth needs at least one of undetected, untouchable and visible')
     }
-    if (!stealth.undetected && !stealth.untouchable && stealth.visible === null) throw new LabError('manifest: z_button.stealth needs at least one of undetected, untouchable and visible')
+    let costume: ZButton['costume'] = null
+    if (z.costume !== undefined) {
+      const co = keys(z.costume, [...Z_COSTUMES], 'z_button.costume')
+      costume = { normal: {}, alt: {} }
+      for (const k of Z_COSTUMES) {
+        for (const [mat, v0] of Object.entries(typed<Record<string, unknown>>(co[k] ?? {}, 'object', `z_button.costume.${k}`))) {
+          if (!/^\d{1,3}$/.test(mat) || Number(mat) > 255) throw new LabError(`manifest: z_button.costume.${k} has a bad material index`)
+          const v = str(v0, `z_button.costume.${k}.${mat}`, 80)!
+          if (v.startsWith('hue:')) num(/^hue:-?\d{1,3}(\.\d+)?$/.test(v) ? parseFloat(v.slice(4)) : null, 'z_button.costume hue', -360, 360, false)
+          else if (zMember(v)) {
+            if (!MEMBER.test(v) || !v.startsWith('textures/')) throw new LabError(`manifest: z_button.costume.${k}.${mat} is not valid`)
+            if (!files.has(v)) throw new LabError(`manifest: z_button.costume.${k}.${mat} names ${v}, which the file lacks`)
+          }
+          costume[k][Number(mat)] = v
+        }
+      }
+    }
+    let stats: ZStats | null = null
+    if (z.stats !== undefined) {
+      const st = keys(z.stats, [...Z_STATS, 'lift'], 'z_button.stats')
+      stats = {}
+      for (const k of Z_STATS) {
+        const [lo, hi, integer] = GAMEPLAY[k]
+        const v = num(st[k], `z_button.stats.${k}`, lo, hi, true, integer)
+        if (v !== null) stats[k] = v
+      }
+      if (st.lift !== undefined && st.lift !== null) {
+        if (!LIFT.includes(st.lift as string)) throw new LabError('manifest: z_button.stats.lift is light, medium or heavy')
+        stats.lift = st.lift as string
+      }
+      if (!Object.keys(stats).length) throw new LabError('manifest: z_button.stats needs at least one value')
+    }
+    const size = num(z.size, 'z_button.size', ...Z_SIZE)
+    if (!stealth && !costume && !stats && size === null) throw new LabError('manifest: z_button needs at least one of stealth, costume, stats and size')
     const requires = keys(z.requires ?? {}, ['energy'], 'z_button.requires')
-    c.zButton = { action: z.action as ZAction, stealth, requires: {} }
+    c.zButton = { stealth, costume, stats, size, requires: {} }
     if (requires.energy !== undefined) {
       const e = keys(requires.energy, ['seconds', 'regen'], 'z_button.requires.energy')
       c.zButton.requires.energy = { seconds: num(e.seconds, 'z_button.requires.energy.seconds', ...Z_SECONDS, false)!, regen: typed<boolean>(e.regen ?? false, 'boolean', 'z_button.requires.energy.regen') }

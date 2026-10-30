@@ -8,6 +8,7 @@ import * as holster from '../src/core/build/holster'
 import * as basemoves from '../src/core/build/basemoves'
 import * as moves from '../src/core/build/moves'
 import * as reach from '../src/core/build/reach'
+import * as shaders from '../src/core/build/shaders'
 import { buildBatch, checkBatch, ordinal } from '../src/core/build/batch'
 import { Builder, report } from '../src/core/build/patch'
 import * as templates from '../src/core/build/templates'
@@ -98,9 +99,14 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(() => D.throwDamage(out)).toThrow(LabError)
   })
 
-  it('binds Z to Stealth Mode', () => {
+  it('binds Z to its actions', () => {
     const dol = gameSource().dol
-    const out = D.zActions(dol, [{ internal: 'Synth', seconds: 8, regen: true, undetected: false, untouchable: true, visible: 0.25 }, { internal: 'Other', seconds: 0, regen: false, undetected: true, untouchable: false, visible: 1 }])
+    const none = { costume: false, damage: [null, null, null, null, null], taken: null, lift: null, size: null }
+    const out = D.zActions(dol, [
+      { internal: 'Synth', seconds: 8, regen: true, undetected: false, untouchable: true, visible: 0.25, ...none },
+      { internal: 'Other', seconds: 0, regen: false, undetected: true, untouchable: false, visible: 1, ...none, costume: true, damage: [null, 30, null, null, 2.5], taken: 0.5, lift: 'heavy', size: 2.5 },
+      { internal: 'Small', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, ...none, size: 0.5 },
+    ])
     const at = (va: number) => D.fileOffset(dol, va)
     const block = at(0x804cc810), z = at(0x804cc810 + 18 * 0x50)
     expect(u32be(out, at(0x804cc80c))).toBe(19)
@@ -108,26 +114,41 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(u32be(out, z + 0x48)).toBe(19)
     expect(u32be(out, z + 0xc)).toBe(3)
     expect([...out.subarray(z + 0x14, z + 0x48)]).toEqual([...out.subarray(block + 0x14, block + 0x48)])
-    const bl = (from: number) => (from + ((((u32be(out, at(from)) << 6) >> 6) & ~3))) >>> 0
-    expect(bl(0x800fba50)).toBe(0x80137494)
-    expect(bl(0x80150240)).toBe(bl(0x804619b0))
-    for (const site of [0x800e09cc, 0x80150240, 0x8014fa14]) expect(bl(site) > 0x80137494 && bl(site) < 0x80137494 + 0x3a8).toBe(true)
+    const target = (from: number) => (from + ((((u32be(out, at(from)) << 6) >> 6) & ~3))) >>> 0
+    expect(target(0x800fba50)).toBe(0x80137494)
+    expect(target(0x80150240)).toBe(target(0x804619b0))
+    const code = 0x528
+    for (const site of [0x800e09cc, 0x80150240, 0x8014fa14, 0x800b1890]) expect(target(site) > 0x80137494 && target(site) < 0x80137494 + code).toBe(true)
+    expect(target(0x801a483c) > 0x80148b50 && target(0x801a483c) < 0x80148b50 + 0x1e0).toBe(true)
+    expect(u32be(out, at(0x801a483c)) & 1).toBe(1)
     expect(u32be(out, at(0x80085f4c))).toBe(0x80030304)
-    const t = at(0x80137494) + 0x3a8
+    expect(u32be(out, at(0x800b1884))).toBe(0x3804ffea)
+    expect(target(0x80086c98)).toBe(0x800b1884)
+    const t = at(0x80137494) + code
     expect(latin1(out, t, at(0x80137494) + 0x858)).toContain('plr_synth\0plr_altSynth\0')
     expect([u32be(out, t), u32be(out, t + 4), u32be(out, t + 8)]).toEqual([0x41000000, 5, 0x3e800000])
     const other = t + 12 + 24
-    expect(latin1(out, other + 12, other + 36)).toBe('plr_other\0plr_altOther\0\0')
-    expect([u32be(out, other), u32be(out, other + 4), u32be(out, other + 8)]).toEqual([0, 2, 0x3f800000])
-    const sites = [[0x804cc80c, 4], [0x804cc810 + 18 * 0x50, 0x50], [0x80137494, 0x858], [0x80085f4c, 0x30],
-      [0x800fba50, 4], [0x800e09cc, 4], [0x80150240, 4], [0x804619b0, 4], [0x8014fa14, 4]].map(([va, n]) => [at(va), at(va) + n])
+    expect([u32be(out, other), u32be(out, other + 4), u32be(out, other + 8)]).toEqual([0, 2 | 8 | 16 | 32, 0x3f800000])
+    expect([12, 16, 20, 24, 28, 32, 36, 40].map((o) => u32be(out, other + o))).toEqual([0xbf800000, 0x41f00000, 0xbf800000, 0xbf800000, 0x40200000, 0x3f000000, 0x20, 0x40200000])
+    expect(latin1(out, other + 44, other + 68)).toBe('plr_other\0plr_altOther\0\0')
+    const small = other + 68
+    expect([u32be(out, small + 4), u32be(out, small + 12)]).toEqual([32, 0x3f000000])
+    expect(latin1(out, small + 16, small + 40)).toBe('plr_small\0plr_altSmall\0\0')
+    const sites = [[0x804cc80c, 4], [0x804cc810 + 18 * 0x50, 0x50], [0x80137494, 0x858], [0x80138868, 0x1bc], [0x80148b50, 0x1e0], [0x80085f4c, 0x30],
+      [0x800b1884, 0x68], [0x80086c80, 0x5c], [0x800fba50, 4], [0x800e09cc, 4], [0x80150240, 4], [0x804619b0, 4], [0x8014fa14, 4], [0x801a483c, 4]]
+      .map(([va, n]) => [at(va), at(va) + n])
     const changed = [...out].flatMap((b, i) => (b !== dol[i] ? [i] : []))
     expect(changed.every((i) => sites.some(([lo, hi]) => i >= lo && i < hi))).toBe(true)
     expect(() => D.zActions(out, [])).toThrow(LabError)
-    const one = { internal: 'Synth', seconds: 8, regen: false, undetected: true, untouchable: true, visible: 0.2 }
+    const one = { internal: 'Synth', seconds: 8, regen: false, undetected: true, untouchable: true, visible: 0.2, ...none }
     expect(() => D.zActions(dol, [{ ...one, seconds: 61 }])).toThrow(LabError)
     expect(() => D.zActions(dol, [{ ...one, visible: 0.99 }])).toThrow(LabError)
-    const many = Array.from({ length: 40 }, (_, i) => ({ ...one, internal: `Character${i}` }))
+    expect(() => D.zActions(dol, [{ ...one, lift: 'huge' }])).toThrow(LabError)
+    expect(() => D.zActions(dol, [{ ...one, size: 3.5 }])).toThrow(LabError)
+    expect(() => D.zActions(dol, [{ ...one, size: 0.05 }])).toThrow(LabError)
+    const nine = Array.from({ length: 9 }, (_, i) => ({ ...one, internal: `Character${i}`, taken: 1, size: 2 }))
+    expect(() => D.zActions(dol, nine)).not.toThrow()
+    const many = Array.from({ length: 20 }, (_, i) => ({ ...one, internal: `Character${i}` }))
     expect(() => D.zActions(dol, many)).toThrow(/no room/)
   })
 
@@ -390,14 +411,45 @@ describe.skipIf(!ISO)('game', () => {
     c.mapping = auto.mapping
     c.overrides = auto.overrides
     c.gameplay = { lift: 'heavy' }
-    c.zButton = { action: 'stealth', stealth: { undetected: true, untouchable: false, visible: 0.5 }, requires: { energy: { seconds: 5, regen: false } } }
+    c.zButton = { stealth: { undetected: true, untouchable: false, visible: 0.5 }, costume: null, stats: null, size: null, requires: { energy: { seconds: 5, regen: false } } }
     const r = new Builder(src(), c).build()
     expect(r.adds.has('Bundles/synth.ngm')).toBe(true)
-    expect(equal(r.dol!, D.zActions(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt), [{ internal: 'Synth', seconds: 5, regen: false, undetected: true, untouchable: false, visible: 0.5 }]))).toBe(true)
+    expect(equal(r.dol!, D.zActions(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt), [{ internal: 'Synth', seconds: 5, regen: false, undetected: true, untouchable: false, visible: 0.5, costume: false, damage: [null, null, null, null, null], taken: null, lift: null, size: null }]))).toBe(true)
     expect(report(c, r)).toContain('Stealth Mode')
     expect(r.adds.has('Bundles/synth_alt.tpl')).toBe(true)
     const t = new R.Templates(r.sets.get('Misc/Global.not')!)
     expect(R.u32(t.prop('plr_Synth', R.P_ABILITIES))! & 0x30).toBe(0x20)
+  })
+
+  it('builds Z costumes and stats', () => {
+    const c = imperfect.newCharacter()
+    c.internalName = 'Synth'
+    c.displayName = 'SYNTH'
+    c.base = 'wolverine'
+    c.glb = makeGlb()
+    c.materials = [{ ...imperfect.newMaterial(0, 'skin', true, '', [64, 64]), texture: 'textures/skin.png' }]
+    c.files = new Map([['textures/skin.png', pngBytes()], ['ui/hud.png', pngBytes(64, 64)]])
+    const auto = mapping.autoMap(new Model(c.glb), Skeleton.ofBase(new R.BaseCharacter(src(), c.base)))
+    c.mapping = auto.mapping
+    c.overrides = auto.overrides
+    c.zButton = { stealth: null, costume: { normal: {}, alt: { 0: 'alt' } }, stats: { attack_damage_3: 40, lift: 'light' }, size: 1.5, requires: {} }
+    const r = new Builder(src(), c).build()
+    const parts = (name: string) => ngmtool.read(r.adds.get(name)!)[1][0].parts
+    expect(parts('Bundles/synth.ngm')).toEqual(['Synth', 'Synth_z', 'Synth_zo'])
+    expect(parts('Bundles/synth_alt.ngm')).toEqual(['Synth_alt', 'Synth_altz', 'Synth_altzo'])
+    const nsa = shaders.blocks(r.sets.get('Materials/Shaders/shaders.nsa')!)
+    expect(nsa.get('synth_z')!.get('texture')).toBe('Synth_z')
+    expect(nsa.get('synth_altz')!.get('texture')).toBe('Synth_alt')
+    expect(nsa.get('synth_zo')!.get('texture')).toBe('Synth')
+    expect(nsa.get('synth_altzo')!.get('texture')).toBe('Synth_alt')
+    expect(latin1(r.adds.get('Bundles/synth.ngt')!)).toContain('Synth_z\r\n')
+    expect(latin1(r.adds.get('Bundles/synth_alt.ngt')!)).not.toContain('Synth_altz')
+    const want = D.zActions(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt),
+      [{ internal: 'Synth', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, costume: true, damage: [null, null, 40, null, null], taken: null, lift: 'light', size: 1.5 }])
+    expect(equal(r.dol!, want)).toBe(true)
+    expect(report(c, r)).toContain('Costume Change, Stat Change, Change Size')
+    c.materials = [...c.materials, { ...imperfect.newMaterial(1, 'cape', true, '_z', [64, 64]), texture: 'textures/skin.png' }]
+    expect(() => new Builder(src(), c).build()).toThrow(/both be named synth_z/)
   })
 
   it('points every field naming a tinted effect at its copy', () => {
@@ -537,7 +589,7 @@ describe.skipIf(!ISO)('game', () => {
 
   it('builds two characters, the second on the first', () => {
     const a = tinted('johnnyohm')
-    const b = { ...tinted('humantorch'), internalName: 'Other', displayName: 'OTHER', zButton: { action: 'stealth' as const, stealth: { undetected: true, untouchable: true, visible: null }, requires: {} } }
+    const b = { ...tinted('humantorch'), internalName: 'Other', displayName: 'OTHER', zButton: { stealth: { undetected: true, untouchable: true, visible: null }, costume: null, stats: null, size: null, requires: {} } }
     b.ui = { ...b.ui, ready_voice: 'FE_SFX_TORCH' }
     b.files = new Map([...b.files, ['ui/select_ready.png', pngBytes(200, 400)], ['ui/tile.png', pngBytes(64, 32)]])
     const r = buildBatch(src(), [a, b])
