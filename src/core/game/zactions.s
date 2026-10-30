@@ -1,19 +1,22 @@
-# fn_80137494, fn_80138868 and fn_80148B50 (only reached from the AI debug display), and fn_800B1884 and fn_80086C80 in place,
-# as game/dol.ts (zActions) writes them.
+# fn_80137494, fn_80138868 and fn_80148B50 (only reached from the AI debug draw), the AI debug draw fn_80132838 itself
+# (a blr first, as retail never draws it), and fn_800B1884 and fn_80086C80 in place, as game/dol.ts (zActions) writes them.
 #   powerpc-eabi-as -mgekko -mregnames -o zactions.o zactions.s
 #   powerpc-eabi-ld -Ttext=0x80137494 --section-start=.tuning=0x800B1884 --section-start=.taken=0x80086C80 \
-#     --section-start=.grow=0x80148B50 --section-start=.costume=0x80138868 -e z_update \
+#     --section-start=.grow=0x80148B50 --section-start=.costume=0x80138868 --section-start=.time=0x80132838 -e z_update \
 #     --defsym strcmp=0x80172654 --defsym fn_80434900=0x80434900 --defsym fn_804317BC=0x804317BC --defsym fn_8042FF2C=0x8042FF2C \
 #     --defsym fn_80085EEC=0x80085EEC --defsym fn_80086730=0x80086730 --defsym fn_80084A60=0x80084A60 --defsym fn_801A5B1C=0x801A5B1C \
-#     --defsym fn_800B0C58=0x800B0C58 --defsym fn_8015F278=0x8015F278 --defsym fn_80433D20=0x80433D20 -o zactions.elf zactions.o
-#   powerpc-eabi-objcopy -O binary -j <.text, .tuning, .taken, .grow or .costume> zactions.elf <section>.bin
+#     --defsym fn_800B0C58=0x800B0C58 --defsym fn_8015F278=0x8015F278 --defsym fn_80433D20=0x80433D20 \
+#     --defsym fn_800B9534=0x800B9534 --defsym fn_80074954=0x80074954 --defsym fn_80074D64=0x80074D64 \
+#     --defsym fn_80327EC4=0x80327EC4 -o zactions.elf zactions.o
+#   powerpc-eabi-objcopy -O binary -j <.text, .tuning, .taken, .grow, .costume or .time> zactions.elf <section>.bin
 # `slots`: two {actor, stamp ms, seconds, flags, entry, saved actor+0x308}.
 # `sizes`: two {actor, f32 size now, f32 target, f32 change per second, saved radius, saved height}.
-# `table`: {f32 seconds (0 drains nothing), u32 flags (1 keeps regen, 2 undetected, 4 untouchable, 8 costume, 16 stats, 32 size), f32 fade,
-# [with 16: f32 damage[5], f32 taken, u32 lift bits; -1 keeps the game's], [with 32: f32 size], entity name, alt entity name}, 4-aligned,
-# ended by 16 zero bytes and "".
+# `table`: {f32 seconds (0 drains nothing), u32 flags (1 keeps regen, 2 undetected, 4 untouchable, 8 costume, 16 stats, 32 size,
+# 64 bullet time), f32 fade, [with 16: f32 damage[5], f32 taken, u32 lift bits; -1 keeps the game's], [with 32: f32 size],
+# [with 64: f32 world speed], entity name, alt entity name}, 4-aligned, ended by 16 zero bytes and "".
 	.text
 	.globl z_update, invulnerable, air_grab_check, ai_resolve_exit, ai_enemy_skip, z_pose, z_tuning, z_taken, table
+	.globl z_time, z_rate, own_slot, own_logic, own_pose, z_step
 	.set SLOT, 24
 	.set SIZES, 24
 	.set STATS, 12
@@ -84,6 +87,9 @@ entry:
 	beq 1f
 	addi r21, r21, STATS_SIZE
 1:	andi. r9, r0, 32
+	beq 1f
+	addi r21, r21, 4
+1:	andi. r9, r0, 64
 	beq 1f
 	addi r21, r21, 4
 1:	lbz r0, 0(r21)
@@ -609,3 +615,221 @@ costume:
 	mtlr r0
 	addi r1, r1, 0x30
 	blr
+
+# fn_80085A04 (actor r3's rate) for fn_800BD2D0 and fn_800BD3A8's state timers, divided by `now` in Bullet Time.
+z_rate:
+	mflr r12
+	lfs f1, 0x2ec(r3)
+	mr r4, r3
+	li r5, 64
+	bl stealth_test
+	mtlr r12
+	cmpwi r0, 0
+	beqlr
+	lis r9, now@ha
+	lfs f0, now@l(r9)
+	fdivs f1, f1, f0
+	blr
+
+# Each live Bullet Time actor's body velocity times f1, plus f2 on its vz while Havok's gravity pulls it. Uses r31.
+hasten:
+	mflr r12
+	li r31, 0
+1:	lis r9, slots@ha
+	addi r9, r9, slots@l
+	mulli r0, r31, SLOT
+	lwzx r4, r9, r0
+	li r5, 64
+	bl stealth_test
+	cmpwi r0, 0
+	beq 3f
+	lwz r9, 0x180(r4)
+	cmpwi r9, 0
+	beq 3f
+	lwz r9, 0x50(r9)
+	lfs f0, 0xd0(r9)
+	fmuls f0, f0, f1
+	stfs f0, 0xd0(r9)
+	lfs f0, 0xd4(r9)
+	fmuls f0, f0, f1
+	stfs f0, 0xd4(r9)
+	lfs f0, 0xd8(r9)
+	fmuls f0, f0, f1
+	lwz r0, 0x18c(r4)
+	cmpwi r0, 0
+	bne 2f
+	fadds f0, f0, f2
+2:	stfs f0, 0xd8(r9)
+3:	addi r31, r31, 1
+	cmpwi r31, 2
+	blt 1b
+	mtlr r12
+	blr
+
+	.section .time, "awx"
+	blr
+
+# fn_801AF790's time scale (r3 = the globals) times `now`, which eases toward the slowest live Bullet Time.
+z_time:
+	stwu r1, -0x20(r1)
+	mflr r0
+	stw r0, 0x24(r1)
+	stmw r30, 0x18(r1)
+	mr r31, r3
+	lis r9, one@ha
+	lfs f0, one@l(r9)
+	stfs f0, 0x8(r1)
+	li r30, 0
+1:	lis r9, slots@ha
+	addi r9, r9, slots@l
+	mulli r0, r30, SLOT
+	lwzx r4, r9, r0
+	li r5, 64
+	bl stealth_test
+	cmpwi r0, 0
+	beq 2f
+	lwz r9, 16(r9)
+	lwz r0, 4(r9)
+	addi r10, r9, NAMES
+	andi. r11, r0, 16
+	beq 3f
+	addi r10, r10, STATS_SIZE
+3:	andi. r11, r0, 32
+	beq 4f
+	addi r10, r10, 4
+4:	lfs f1, 0(r10)
+	lfs f0, 0x8(r1)
+	fcmpu cr0, f1, f0
+	bge 2f
+	stfs f1, 0x8(r1)
+2:	addi r30, r30, 1
+	cmpwi r30, 2
+	blt 1b
+	lis r9, now@ha
+	lfs f1, now@l(r9)
+	lfs f2, 0x8(r1)
+	lfs f3, 0x30(r31)
+	lis r10, four@ha
+	lfs f4, four@l(r10)
+	fmuls f3, f3, f4
+	fsubs f0, f2, f1
+	fabs f4, f0
+	fcmpu cr0, f4, f3
+	ble 5f
+	fneg f4, f3
+	fsel f3, f0, f3, f4
+	fadds f2, f1, f3
+5:	stfs f2, now@l(r9)
+	lfs f1, 0x58(r31)
+	fmuls f1, f1, f2
+	lmw r30, 0x18(r1)
+	lwz r0, 0x24(r1)
+	mtlr r0
+	addi r1, r1, 0x20
+	blr
+
+# fn_80094E04's slot update, and fn_80074814's and fn_800748A4's actor passes, in real time for an actor in Bullet Time.
+own_slot:
+	lwz r4, 0x744(r30)
+	lwz r4, 0x28(r4)
+	lis r12, fn_800B9534@ha
+	addi r12, r12, fn_800B9534@l
+	b own
+own_logic:
+	mr r4, r3
+	lis r12, fn_80074954@ha
+	addi r12, r12, fn_80074954@l
+	b own
+own_pose:
+	mr r4, r3
+	lis r12, fn_80074D64@ha
+	addi r12, r12, fn_80074D64@l
+own:
+	mflr r11
+	li r5, 64
+	bl stealth_test
+	mtlr r11
+	mtctr r12
+	cmpwi r0, 0
+	beqctr
+	stwu r1, -0x20(r1)
+	stw r11, 0x24(r1)
+	lis r9, 0x8059
+	lwz r0, 0x3c34(r9)
+	stw r0, 0x8(r1)
+	lfs f0, 0x3c38(r9)
+	stfs f0, 0xc(r1)
+	lfs f2, 0x3c3c(r9)
+	stfs f2, 0x10(r1)
+	lis r10, now@ha
+	lfs f1, now@l(r10)
+	fdivs f0, f0, f1
+	stfs f0, 0x3c38(r9)
+	fmuls f2, f2, f1
+	stfs f2, 0x3c3c(r9)
+	lis r10, thousand@ha
+	lfs f1, thousand@l(r10)
+	fmuls f0, f0, f1
+	fctiwz f0, f0
+	stfd f0, 0x18(r1)
+	lwz r0, 0x1c(r1)
+	stw r0, 0x3c34(r9)
+	bctrl
+	lis r9, 0x8059
+	lwz r0, 0x8(r1)
+	stw r0, 0x3c34(r9)
+	lwz r0, 0xc(r1)
+	stw r0, 0x3c38(r9)
+	lwz r0, 0x10(r1)
+	stw r0, 0x3c3c(r9)
+	lwz r0, 0x24(r1)
+	mtlr r0
+	addi r1, r1, 0x20
+	blr
+
+# fn_80061A10's Havok step (world r3, f1 seconds), with Bullet Time bodies moving 1 / `now` as fast.
+z_step:
+	stwu r1, -0x20(r1)
+	mflr r0
+	stw r0, 0x24(r1)
+	stw r31, 0x1c(r1)
+	stw r3, 0x8(r1)
+	stfs f1, 0xc(r1)
+	lis r9, now@ha
+	lfs f2, now@l(r9)
+	lis r9, one@ha
+	lfs f1, one@l(r9)
+	fcmpu cr0, f2, f1
+	beq 1f
+	fdivs f1, f1, f2
+	stfs f1, 0x10(r1)
+	lis r9, zero@ha
+	lfs f2, zero@l(r9)
+	bl hasten
+1:	lwz r3, 0x8(r1)
+	lfs f1, 0xc(r1)
+	bl fn_80327EC4
+	lis r9, now@ha
+	lfs f1, now@l(r9)
+	lis r9, one@ha
+	lfs f2, one@l(r9)
+	fcmpu cr0, f1, f2
+	beq 2f
+	lfs f2, 0x10(r1)
+	fsubs f2, f2, f1
+	lfs f3, 0xc(r1)
+	fmuls f2, f2, f3
+	lis r9, gravity@ha
+	lfs f3, gravity@l(r9)
+	fmuls f2, f2, f3
+	bl hasten
+2:	lwz r31, 0x1c(r1)
+	lwz r0, 0x24(r1)
+	mtlr r0
+	addi r1, r1, 0x20
+	blr
+
+	.balign 4
+now:	.float 1.0
+thousand:	.float 1000.0
+gravity:	.float -20.0

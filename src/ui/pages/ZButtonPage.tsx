@@ -1,5 +1,5 @@
 import { formatG } from '../../core/format'
-import { Z_SECONDS, Z_SIZE, Z_VISIBLE, type ZAction } from '../../core/game/dol'
+import { Z_SECONDS, Z_SIZE, Z_SLOW, Z_VISIBLE, type ZAction } from '../../core/game/dol'
 import { encodePng } from '../../core/image/png'
 import { GAMEPLAY as RANGES, LIFT, type ZButton, type ZCostume, Z_COSTUMES, type ZStats, zTexture } from '../../core/package/imperfect'
 import { decodePicture, pickFile } from '../../io/files'
@@ -12,6 +12,7 @@ const ACTIONS: [ZAction, string][] = [
   ['costume', 'Costume Change'],
   ['stats', 'Stat Change'],
   ['size', 'Change Size'],
+  ['bullet', 'Bullet Time'],
 ]
 
 const EFFECTS: ['undetected' | 'untouchable', string][] = [
@@ -26,6 +27,7 @@ const fresh = (action: ZAction): Partial<ZButton> => {
   if (action === 'stealth') return { stealth: { undetected: true, untouchable: true, visible: 0.2 } }
   if (action === 'costume') return { costume: { normal: {}, alt: {} } }
   if (action === 'size') return { size: 2 }
+  if (action === 'bullet') return { bullet: 0.5 }
   return { stats: {} }
 }
 
@@ -36,8 +38,8 @@ export function ZButtonPage() {
   const energy = z?.requires.energy
   const edited = () => store.touch('character')
   const setAction = (action: ZAction, on: boolean) => {
-    const next: ZButton = { ...(z ?? { stealth: null, costume: null, stats: null, size: null, requires: {} }), ...(on ? fresh(action) : { [action]: null }) }
-    c.zButton = next.stealth || next.costume || next.stats || next.size !== null ? next : null
+    const next: ZButton = { ...(z ?? { stealth: null, costume: null, stats: null, size: null, bullet: null, requires: {} }), ...(on ? fresh(action) : { [action]: null }) }
+    c.zButton = next.stealth || next.costume || next.stats || next.size !== null || next.bullet !== null ? next : null
     edited()
   }
   return (
@@ -76,6 +78,7 @@ export function ZButtonPage() {
           {action === 'costume' && z?.costume && <Costume />}
           {action === 'stats' && z?.stats && <Stats />}
           {action === 'size' && z?.size && <Size />}
+          {action === 'bullet' && z?.bullet && <BulletTime />}
         </div>
       ))}
     </div>
@@ -185,6 +188,19 @@ function Size() {
         }} />x
       </div>
       <Note>Times the character's size while Z is held, on top of the Model page's size.</Note>
+    </div>
+  )
+}
+
+function BulletTime() {
+  const z = store.character.zButton!
+  return (
+    <div className="zaction-body">
+      <div className="row tight">
+        <input type="range" min={100 * Z_SLOW[0]} max={100 * Z_SLOW[1]} step={5} value={Math.round(100 * z.bullet!)} aria-label="World speed"
+          onChange={(e) => { z.bullet = Number(e.target.value) / 100; store.touch('character') }} /> {Math.round(100 * z.bullet!)}% world speed
+      </div>
+      <Note>While Z is held, everything else (opponents, CPU players, projectiles and thrown objects) moves at this speed, and you move at full speed.</Note>
     </div>
   )
 }

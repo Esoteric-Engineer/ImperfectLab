@@ -597,7 +597,7 @@ export function zCharacters(chars: Character[]): D.ZCharacter[] {
       internal: c.internalName, seconds: z.requires.energy?.seconds ?? 0, regen: z.requires.energy?.regen ?? false,
       undetected: z.stealth?.undetected ?? false, untouchable: z.stealth?.untouchable ?? false, visible: z.stealth?.visible ?? 1,
       costume: z.costume !== null, damage: damage.KEYS.map((k) => st[k] ?? null), taken: st.damage_taken ?? null, lift: st.lift ?? null,
-      size: z.size,
+      size: z.size, slow: z.bullet,
     }]
   })
 }
@@ -668,9 +668,9 @@ export function report(characters: Character | Character[], result: Result): str
   if (chars.some(throwsDamage)) lines.push('main.dol: fn_800E1788 reads tuning field 217 for an animation\'s damage event with param 5 (the baton throw)')
   if (chars.some(ownSounds)) lines.push('main.dol: fn_80114420 loads a new character\'s own sound bank, and one bank per type ID')
   if (chars.some((c) => c.zButton)) {
-    const names: [keyof NonNullable<Character['zButton']>, string][] = [['stealth', 'Stealth Mode'], ['costume', 'Costume Change'], ['stats', 'Stat Change'], ['size', 'Change Size']]
+    const names: [keyof NonNullable<Character['zButton']>, string][] = [['stealth', 'Stealth Mode'], ['costume', 'Costume Change'], ['stats', 'Stat Change'], ['size', 'Change Size'], ['bullet', 'Bullet Time']]
     const used = names.filter(([k]) => chars.some((c) => c.zButton?.[k])).map(([, label]) => label)
-    lines.push(`main.dol: Z is bound for every human player; fn_80137494 and fn_80148B50 are rewritten to run ${used.join(', ')}, hooked from fn_800FB944, fn_80085F4C, fn_800E07A4, fn_80150200, fn_80461948, fn_8014F8BC and fn_801A479C; fn_800B1884 and fn_80086C80 are rewritten in place`)
+    lines.push(`main.dol: Z is bound for every human player; fn_80137494, fn_80148B50 and fn_80132838 are rewritten to run ${used.join(', ')}, hooked from fn_800FB944, fn_80085F4C, fn_800E07A4, fn_80150200, fn_80461948, fn_8014F8BC, fn_801A479C, fn_801AF790, fn_80094E04, fn_80074814, fn_800748A4, fn_80061A10, fn_800BD2D0 and fn_800BD3A8; fn_800B1884 and fn_80086C80 are rewritten in place`)
   }
   const cache = result.dol ? D.readEffectCache(result.dol) : null
   if (cache && cache !== nfxtool.CACHE_SIZE) lines.push(`main.dol: effect cache ${nfxtool.CACHE_SIZE} -> ${cache} bytes`)
