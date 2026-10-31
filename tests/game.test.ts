@@ -12,6 +12,7 @@ import * as shaders from '../src/core/build/shaders'
 import { buildBatch, checkBatch, ordinal } from '../src/core/build/batch'
 import { Builder, report } from '../src/core/build/patch'
 import * as templates from '../src/core/build/templates'
+import * as trails from '../src/core/build/trails'
 import * as tuning from '../src/core/build/tuning'
 import * as ui from '../src/core/build/ui'
 import { equal, latin1, u32be } from '../src/core/bytes'
@@ -101,11 +102,12 @@ describe.skipIf(!ISO)('main.dol', () => {
 
   it('binds Z to its actions', () => {
     const dol = gameSource().dol
-    const none = { costume: false, damage: [null, null, null, null, null], taken: null, lift: null, size: null }
+    const none = { costume: false, damage: [null, null, null, null, null], taken: null, lift: null, size: null, slow: null }
     const out = D.zActions(dol, [
       { internal: 'Synth', seconds: 8, regen: true, undetected: false, untouchable: true, visible: 0.25, ...none },
-      { internal: 'Other', seconds: 0, regen: false, undetected: true, untouchable: false, visible: 1, ...none, costume: true, damage: [null, 30, null, null, 2.5], taken: 0.5, lift: 'heavy', size: 2.5 },
+      { internal: 'Other', seconds: 0, regen: false, undetected: true, untouchable: false, visible: 1, ...none, costume: true, damage: [null, 30, null, null, 2.5], taken: 0.5, lift: 'heavy', size: 2.5, slow: 0.5 },
       { internal: 'Small', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, ...none, size: 0.5 },
+      { internal: 'Quick', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, ...none, slow: 0.25 },
     ])
     const at = (va: number) => D.fileOffset(dol, va)
     const block = at(0x804cc810), z = at(0x804cc810 + 18 * 0x50)
@@ -117,10 +119,13 @@ describe.skipIf(!ISO)('main.dol', () => {
     const target = (from: number) => (from + ((((u32be(out, at(from)) << 6) >> 6) & ~3))) >>> 0
     expect(target(0x800fba50)).toBe(0x80137494)
     expect(target(0x80150240)).toBe(target(0x804619b0))
-    const code = 0x528
+    const code = 0x534
     for (const site of [0x800e09cc, 0x80150240, 0x8014fa14, 0x800b1890]) expect(target(site) > 0x80137494 && target(site) < 0x80137494 + code).toBe(true)
     expect(target(0x801a483c) > 0x80148b50 && target(0x801a483c) < 0x80148b50 + 0x1e0).toBe(true)
     expect(u32be(out, at(0x801a483c)) & 1).toBe(1)
+    for (const site of [0x801afb8c, 0x80094e88, 0x8007487c, 0x800748f8, 0x80061af0]) expect(target(site) > 0x80132838 && target(site) < 0x80132838 + 0x274).toBe(true)
+    for (const site of [0x800bd30c, 0x800bd3e4]) expect(target(site) > 0x80138868 && target(site) < 0x80138868 + 0x1bc).toBe(true)
+    expect(u32be(out, at(0x80132838))).toBe(0x4e800020)
     expect(u32be(out, at(0x80085f4c))).toBe(0x80030304)
     expect(u32be(out, at(0x800b1884))).toBe(0x3804ffea)
     expect(target(0x80086c98)).toBe(0x800b1884)
@@ -128,14 +133,18 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(latin1(out, t, at(0x80137494) + 0x858)).toContain('plr_synth\0plr_altSynth\0')
     expect([u32be(out, t), u32be(out, t + 4), u32be(out, t + 8)]).toEqual([0x41000000, 5, 0x3e800000])
     const other = t + 12 + 24
-    expect([u32be(out, other), u32be(out, other + 4), u32be(out, other + 8)]).toEqual([0, 2 | 8 | 16 | 32, 0x3f800000])
-    expect([12, 16, 20, 24, 28, 32, 36, 40].map((o) => u32be(out, other + o))).toEqual([0xbf800000, 0x41f00000, 0xbf800000, 0xbf800000, 0x40200000, 0x3f000000, 0x20, 0x40200000])
-    expect(latin1(out, other + 44, other + 68)).toBe('plr_other\0plr_altOther\0\0')
-    const small = other + 68
+    expect([u32be(out, other), u32be(out, other + 4), u32be(out, other + 8)]).toEqual([0, 2 | 8 | 16 | 32 | 64, 0x3f800000])
+    expect([12, 16, 20, 24, 28, 32, 36, 40, 44].map((o) => u32be(out, other + o))).toEqual([0xbf800000, 0x41f00000, 0xbf800000, 0xbf800000, 0x40200000, 0x3f000000, 0x20, 0x40200000, 0x3f000000])
+    expect(latin1(out, other + 48, other + 72)).toBe('plr_other\0plr_altOther\0\0')
+    const small = other + 72
     expect([u32be(out, small + 4), u32be(out, small + 12)]).toEqual([32, 0x3f000000])
     expect(latin1(out, small + 16, small + 40)).toBe('plr_small\0plr_altSmall\0\0')
-    const sites = [[0x804cc80c, 4], [0x804cc810 + 18 * 0x50, 0x50], [0x80137494, 0x858], [0x80138868, 0x1bc], [0x80148b50, 0x1e0], [0x80085f4c, 0x30],
-      [0x800b1884, 0x68], [0x80086c80, 0x5c], [0x800fba50, 4], [0x800e09cc, 4], [0x80150240, 4], [0x804619b0, 4], [0x8014fa14, 4], [0x801a483c, 4]]
+    const quick = small + 40
+    expect([u32be(out, quick + 4), u32be(out, quick + 12)]).toEqual([64, 0x3e800000])
+    expect(latin1(out, quick + 16, quick + 40)).toBe('plr_quick\0plr_altQuick\0\0')
+    const sites = [[0x804cc80c, 4], [0x804cc810 + 18 * 0x50, 0x50], [0x80137494, 0x858], [0x80138868, 0x1bc], [0x80148b50, 0x1e0], [0x80132838, 0x274], [0x80085f4c, 0x30],
+      [0x800b1884, 0x68], [0x80086c80, 0x5c], [0x800fba50, 4], [0x800e09cc, 4], [0x80150240, 4], [0x804619b0, 4], [0x8014fa14, 4], [0x801a483c, 4],
+      [0x801afb8c, 4], [0x80094e88, 4], [0x8007487c, 4], [0x800748f8, 4], [0x80061af0, 4], [0x800bd30c, 4], [0x800bd3e4, 4]]
       .map(([va, n]) => [at(va), at(va) + n])
     const changed = [...out].flatMap((b, i) => (b !== dol[i] ? [i] : []))
     expect(changed.every((i) => sites.some(([lo, hi]) => i >= lo && i < hi))).toBe(true)
@@ -146,7 +155,9 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(() => D.zActions(dol, [{ ...one, lift: 'huge' }])).toThrow(LabError)
     expect(() => D.zActions(dol, [{ ...one, size: 3.5 }])).toThrow(LabError)
     expect(() => D.zActions(dol, [{ ...one, size: 0.05 }])).toThrow(LabError)
-    const nine = Array.from({ length: 9 }, (_, i) => ({ ...one, internal: `Character${i}`, taken: 1, size: 2 }))
+    expect(() => D.zActions(dol, [{ ...one, slow: 0.2 }])).toThrow(LabError)
+    expect(() => D.zActions(dol, [{ ...one, slow: 0.95 }])).toThrow(LabError)
+    const nine = Array.from({ length: 9 }, (_, i) => ({ ...one, internal: `Character${i}`, taken: 1, size: 2, slow: 0.5 }))
     expect(() => D.zActions(dol, nine)).not.toThrow()
     const many = Array.from({ length: 20 }, (_, i) => ({ ...one, internal: `Character${i}` }))
     expect(() => D.zActions(dol, many)).toThrow(/no room/)
@@ -380,7 +391,7 @@ describe.skipIf(!ISO)('game', () => {
     expect(plans[effects.planKey('all', [true, true])].bytes).toBeLessThan(plans.all.bytes / 10)
     expect(plans.all.grey).toEqual([8192, 0])
     expect(plans[effects.planKey('all', [true, false])].grey).toEqual([0, 0])
-    expect(effects.tintLevel(plans, 'all', flames.cost({ ...imperfect.defaultFlames(), parts: ['r_hand'] }), [true, false])).toBe('all')
+    expect(effects.tintLevel(plans, 'all', trails.cost({ ...imperfect.defaultFlames(), parts: ['r_hand'] }, imperfect.defaultTrails()), [true, false])).toBe('all')
   })
 
   it('builds a hidden costume without growing the cache or borrowing the grey sprite', () => {
@@ -411,10 +422,10 @@ describe.skipIf(!ISO)('game', () => {
     c.mapping = auto.mapping
     c.overrides = auto.overrides
     c.gameplay = { lift: 'heavy' }
-    c.zButton = { stealth: { undetected: true, untouchable: false, visible: 0.5 }, costume: null, stats: null, size: null, requires: { energy: { seconds: 5, regen: false } } }
+    c.zButton = { stealth: { undetected: true, untouchable: false, visible: 0.5 }, costume: null, stats: null, size: null, bullet: null, requires: { energy: { seconds: 5, regen: false } } }
     const r = new Builder(src(), c).build()
     expect(r.adds.has('Bundles/synth.ngm')).toBe(true)
-    expect(equal(r.dol!, D.zActions(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt), [{ internal: 'Synth', seconds: 5, regen: false, undetected: true, untouchable: false, visible: 0.5, costume: false, damage: [null, null, null, null, null], taken: null, lift: null, size: null }]))).toBe(true)
+    expect(equal(r.dol!, D.zActions(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt), [{ internal: 'Synth', seconds: 5, regen: false, undetected: true, untouchable: false, visible: 0.5, costume: false, damage: [null, null, null, null, null], taken: null, lift: null, size: null, slow: null }]))).toBe(true)
     expect(report(c, r)).toContain('Stealth Mode')
     expect(r.adds.has('Bundles/synth_alt.tpl')).toBe(true)
     const t = new R.Templates(r.sets.get('Misc/Global.not')!)
@@ -432,7 +443,7 @@ describe.skipIf(!ISO)('game', () => {
     const auto = mapping.autoMap(new Model(c.glb), Skeleton.ofBase(new R.BaseCharacter(src(), c.base)))
     c.mapping = auto.mapping
     c.overrides = auto.overrides
-    c.zButton = { stealth: null, costume: { normal: {}, alt: { 0: 'alt' } }, stats: { attack_damage_3: 40, lift: 'light' }, size: 1.5, requires: {} }
+    c.zButton = { stealth: null, costume: { normal: {}, alt: { 0: 'alt' } }, stats: { attack_damage_3: 40, lift: 'light' }, size: 1.5, bullet: 0.4, requires: {} }
     const r = new Builder(src(), c).build()
     const parts = (name: string) => ngmtool.read(r.adds.get(name)!)[1][0].parts
     expect(parts('Bundles/synth.ngm')).toEqual(['Synth', 'Synth_z', 'Synth_zo'])
@@ -445,9 +456,9 @@ describe.skipIf(!ISO)('game', () => {
     expect(latin1(r.adds.get('Bundles/synth.ngt')!)).toContain('Synth_z\r\n')
     expect(latin1(r.adds.get('Bundles/synth_alt.ngt')!)).not.toContain('Synth_altz')
     const want = D.zActions(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt),
-      [{ internal: 'Synth', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, costume: true, damage: [null, null, 40, null, null], taken: null, lift: 'light', size: 1.5 }])
+      [{ internal: 'Synth', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, costume: true, damage: [null, null, 40, null, null], taken: null, lift: 'light', size: 1.5, slow: 0.4 }])
     expect(equal(r.dol!, want)).toBe(true)
-    expect(report(c, r)).toContain('Costume Change, Stat Change, Change Size')
+    expect(report(c, r)).toContain('Costume Change, Stat Change, Change Size, Bullet Time')
     c.materials = [...c.materials, { ...imperfect.newMaterial(1, 'cape', true, '_z', [64, 64]), texture: 'textures/skin.png' }]
     expect(() => new Builder(src(), c).build()).toThrow(/both be named synth_z/)
   })
@@ -555,16 +566,94 @@ describe.skipIf(!ISO)('game', () => {
     expect(models[0].attachments.some(([, kind]) => kind === flames.FLAME_KIND)).toBe(false)
   })
 
+  it('puts motion trails on the limbs\' joints', () => {
+    for (const base of ['wolverine', 'storm', 'megalith']) {
+      const c = tinted(base)
+      c.aura = { ...c.aura, mode: 'base' }
+      c.trails = { ...imperfect.defaultTrails(), parts: [...imperfect.TRAIL_PARTS] }
+      const r = new Builder(src(), c).build()
+      const sk = Skeleton.ofBase(new R.BaseCharacter(src(), base))
+      const bones = ['R.upper_arm', 'R.forearm', 'R.hand', 'L.upper_arm', 'L.forearm', 'L.hand', 'R.thigh', 'R.calf', 'R.foot', 'L.thigh', 'L.calf', 'L.foot', 'pelvis', 'neck', 'head']
+      for (const costume of ['', '_alt']) {
+        const [, models] = ngmtool.read(r.adds.get(`Bundles/synth${costume}.ngm`)!)
+        const marks = models[0].attachments.filter(([, kind]) => kind === trails.TRAIL_KIND).map(([node, , index]) => [node, index])
+        expect(marks, base).toEqual(bones.map((b, i) => [sk.node(b), i]))
+      }
+      const T = new R.Templates(r.sets.get('Misc/Global.not')!)
+      const names = ['plr_Synth', 'plr_altSynth'].map((t) => R.text(T.prop(t, R.P_EFFECT2))!)
+      expect(names[0]).toBe(names[1])
+      const items = nfxtool.readNfx(r.sets.get('Misc/game.nfx')!)
+      expect(nfxtool.problems(items)[0]).toEqual([])
+      const by = new Map(nfxtool.blocks(items).map((b) => [b.name, b]))
+      const values = (n: string) => by.get(n)!.records()[0].map((rec) => [nfxtool.KEYS[rec.key], rec.value])
+      const groups = values(names[0]).map(([, v]) => v as string)
+      expect(groups.length).toBe(3)
+      const pairs = groups.flatMap((g) => values(g).filter(([k]) => k !== 'effectname').map(([, v]) => v))
+      expect(pairs).toEqual(Object.values(trails.SEGMENTS).flat(2))
+      const ribbon = Object.fromEntries(values(values(groups[0])[0][1] as string))
+      expect(by.get(values(groups[0])[0][1] as string)!.type).toBe(nfxtool.TYPES.indexOf('trail'))
+      expect([ribbon.markertype, ribbon.endmarker, ribbon.startcol, ribbon.endcol, ribbon.part_life]).toEqual([68, 68, 0x60ffffff, 0x00ffffff, Math.fround(0.2)])
+      expect(r.adds.has('Misc/PLAYER_Synth.nvb')).toBe(false)
+      expect(D.readEffectCache(r.dol!)).toBe(nfxtool.CACHE_SIZE)
+    }
+  })
+
+  it('names flames and trails together, colored per costume', () => {
+    const c = tinted('daredevil')
+    c.aura = { ...c.aura, mode: 'base' }
+    c.flames = { ...imperfect.defaultFlames(), parts: ['head'] }
+    c.trails = { ...imperfect.defaultTrails(), parts: ['arms'], alt_color: '#FF000080', length: 0.5 }
+    const r = new Builder(src(), c).build()
+    const T = new R.Templates(r.sets.get('Misc/Global.not')!)
+    const [normal, alt] = ['plr_Synth', 'plr_altSynth'].map((t) => R.text(T.prop(t, R.P_EFFECT2))!)
+    expect(normal).not.toBe(alt)
+    const by = new Map(nfxtool.blocks(nfxtool.readNfx(r.sets.get('Misc/game.nfx')!)).map((b) => [b.name, b]))
+    const children = (n: string) => by.get(n)!.records()[0].filter((rec) => nfxtool.KEYS[rec.key] === 'effectname').map((rec) => rec.value as string)
+    const ribbon = (n: string) => Object.fromEntries(by.get(children(children(n)[1])[0])!.records()[0].map((rec) => [nfxtool.KEYS[rec.key], rec.value]))
+    expect(children(normal)[0]).toBe(children(alt)[0])
+    expect(children(children(normal)[0]).map((n) => by.get(n)!.type)).toEqual([nfxtool.TYPES.indexOf('partsys')])
+    expect([ribbon(normal).startcol, ribbon(alt).startcol, ribbon(alt).sampledelay, ribbon(alt).part_life]).toEqual([0x60ffffff, 0x80ff0000, Math.fround(0.01), 0.5])
+    expect(trails.label(c.flames, c.trails)).toBe('flames and motion trails')
+  })
+
+  it('leaves out the trails of a costume whose trail color is hidden', () => {
+    const c = tinted('daredevil')
+    c.aura = { ...c.aura, mode: 'base' }
+    c.trails = { ...imperfect.defaultTrails(), parts: ['arms'], alt_color: '#FF000000' }
+    let r = new Builder(src(), c).build()
+    let T = new R.Templates(r.sets.get('Misc/Global.not')!)
+    expect(R.text(T.prop('plr_Synth', R.P_EFFECT2))).toBeTruthy()
+    expect(T.get('plr_altSynth').get(R.P_EFFECT2)).toBeNull()
+    const marked = (costume: string) => ngmtool.read(r.adds.get(`Bundles/synth${costume}.ngm`)!)[1][0].attachments.some(([, kind]) => kind === trails.TRAIL_KIND)
+    expect([marked(''), marked('_alt')]).toEqual([true, false])
+    c.flames = { ...imperfect.defaultFlames(), parts: ['head'] }
+    r = new Builder(src(), c).build()
+    T = new R.Templates(r.sets.get('Misc/Global.not')!)
+    const by = new Map(nfxtool.blocks(nfxtool.readNfx(r.sets.get('Misc/game.nfx')!)).map((b) => [b.name, b]))
+    const children = (n: string) => by.get(n)!.records()[0].filter((rec) => nfxtool.KEYS[rec.key] === 'effectname').map((rec) => rec.value as string)
+    expect(children(R.text(T.prop('plr_Synth', R.P_EFFECT2))!)[0]).toBe(R.text(T.prop('plr_altSynth', R.P_EFFECT2)))
+    expect(trails.cost(imperfect.defaultFlames(), { ...c.trails, color: '#FFFFFF00' })).toBe(0)
+  })
+
+  it('counts motion trails in the effect memory', () => {
+    const t = { ...imperfect.defaultTrails(), parts: [...imperfect.TRAIL_PARTS], alt_color: '#00FF0040' }
+    const fx = new effects.Effects(src().entry('Misc/game.nfx'))
+    const before = fx.used()
+    trails.alwaysOn(fx, imperfect.defaultFlames(), t, 'Synth')
+    expect(Math.abs(fx.used() - before - trails.cost(imperfect.defaultFlames(), t))).toBeLessThan(16)
+    expect(trails.cost(imperfect.defaultFlames(), imperfect.defaultTrails())).toBe(0)
+  })
+
   it('counts flames in the memory a tint may take', () => {
     const f = { ...imperfect.defaultFlames(), parts: [...imperfect.FLAME_PARTS], color: '#FF0000', alt_color: '#0000FF' }
     const fx = new effects.Effects(src().entry('Misc/game.nfx'))
     const before = fx.used()
     flames.effectNames(fx, f, 'Synth')
-    expect(Math.abs(fx.used() - before - flames.cost(f))).toBeLessThan(16)
-    expect(flames.cost({ ...imperfect.defaultFlames(), body: true })).toBe(0)
+    expect(Math.abs(fx.used() - before - trails.cost(f, imperfect.defaultTrails()))).toBeLessThan(16)
+    expect(trails.cost({ ...imperfect.defaultFlames(), body: true }, imperfect.defaultTrails())).toBe(0)
     const plans = effects.tintPlans(src(), new R.BaseCharacter(src(), 'johnnyohm'))
     expect(effects.tintLevel(plans, 'all', 0)).toBe('all')
-    expect(effects.tintLevel(plans, 'all', flames.cost(f))).toBe('power')
+    expect(effects.tintLevel(plans, 'all', trails.cost(f, imperfect.defaultTrails()))).toBe('power')
     const c = tinted('johnnyohm')
     c.flames = f
     const r = new Builder(src(), c).build()
@@ -589,7 +678,7 @@ describe.skipIf(!ISO)('game', () => {
 
   it('builds two characters, the second on the first', () => {
     const a = tinted('johnnyohm')
-    const b = { ...tinted('humantorch'), internalName: 'Other', displayName: 'OTHER', zButton: { stealth: { undetected: true, untouchable: true, visible: null }, costume: null, stats: null, size: null, requires: {} } }
+    const b = { ...tinted('humantorch'), internalName: 'Other', displayName: 'OTHER', zButton: { stealth: { undetected: true, untouchable: true, visible: null }, costume: null, stats: null, size: null, bullet: null, requires: {} } }
     b.ui = { ...b.ui, ready_voice: 'FE_SFX_TORCH' }
     b.files = new Map([...b.files, ['ui/select_ready.png', pngBytes(200, 400)], ['ui/tile.png', pngBytes(64, 32)]])
     const r = buildBatch(src(), [a, b])

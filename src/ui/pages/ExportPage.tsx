@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import * as effects from '../../core/build/effects'
-import * as flames from '../../core/build/flames'
+import * as trails from '../../core/build/trails'
 import * as mapping from '../../core/model/mapping'
 import { copyCharacter, problems as characterProblems } from '../../core/package/imperfect'
 import { canSaveInPlace, download, downloadBlob, opfsFile, removeOpfs } from '../../io/files'
@@ -41,13 +41,13 @@ export function ExportPage() {
       if (fitProblem && !mapped.some(([level]) => level === 'error')) p.push(['error', fitProblem])
     }
     const hide = effects.hidden(c.aura.color, c.aura.alt_color)
-    const level = details ? effects.tintLevel(details.tint, c.aura.tint, flames.cost(c.flames), hide) : c.aura.tint
+    const level = details ? effects.tintLevel(details.tint, c.aura.tint, trails.cost(c.flames, c.trails), hide) : c.aura.tint
     const plan = details?.tint[effects.planKey(level, hide)]
     if (g && c.aura.mode === 'tint' && plan && !plan.roots.length && !plan.alt.length) {
       p.push(['error', `${s.base()?.label} has no effects to tint: choose another aura in the Aura step`])
     }
     if (g && c.aura.mode === 'tint' && level !== c.aura.tint) {
-      p.push(['warning', `${s.base()?.label}'s full tint${flames.hasAny(c.flames) ? ' with flames' : ''} needs more memory than a match can spare: only its idle and power-up effects are tinted`])
+      p.push(['warning', `${s.base()?.label}'s full tint${trails.label(c.flames, c.trails) ? ` with ${trails.label(c.flames, c.trails)}` : ''} needs more memory than a match can spare: only its idle and power-up effects are tinted`])
     }
     return p
     // eslint-disable-next-line react-hooks/exhaustive-deps

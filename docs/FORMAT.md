@@ -66,6 +66,7 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
   },
   "aura": {"mode": "swap", "tint": "all", "color": "#40A0FF", "alt_color": "#50FF50"},
   "flames": {"parts": ["head"], "body": false, "color": null, "alt_color": "#40A0FF", "size": 1.2, "base_effect": true},
+  "trails": {"parts": ["arms", "legs"], "color": "#FFFFFF60", "alt_color": "#40A0FF80", "length": 0.2},
   "stats": {"display": {"normal": [7, 4, 3, 6, 5, 4], "alt": [7, 4, 3, 6, 5, 4]}, "gameplay": {"damage_taken": 0.7, "lift": "medium", "wire_swing": false}},
   "ui": {"select": {"ready": {"scale": 0.8, "anchor": [210, 75], "glow": "#3CFF5A6E"}}, "fade": 36, "strip_scale": null, "ready_voice": null, "banner": true},
   "base_moves": {},
@@ -76,7 +77,7 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
   "move_idle": ["Run"],
   "cutscenes": { "finisher": "wolverine", "audio": { "finisher_1": "cutscenes/finisher_1.asf" } },
   "sounds": { "3": {"file": "sounds/sound3.dsp"}, "10": {"game": "spiderman:4"} },
-  "z_button": { "stealth": { "undetected": true, "untouchable": true, "visible": 0.2 }, "costume": { "normal": { "0": "alt" }, "alt": { "0": "textures/mat0_altz.png" } }, "stats": { "attack_damage_3": 40, "damage_taken": 0.5, "lift": "heavy" }, "size": 2, "requires": { "energy": { "seconds": 8, "regen": false } } },
+  "z_button": { "stealth": { "undetected": true, "untouchable": true, "visible": 0.2 }, "costume": { "normal": { "0": "alt" }, "alt": { "0": "textures/mat0_altz.png" } }, "stats": { "attack_damage_3": 40, "damage_taken": 0.5, "lift": "heavy" }, "size": 2, "bullet": 0.5, "requires": { "energy": { "seconds": 8, "regen": false } } },
   "files": {"model/model.glb": "<sha256>", "ui/select_ready.png": "<sha256>"}
 }
 ```
@@ -128,6 +129,14 @@ Optional; left out when every key has its default. Fire that burns on the charac
 - `base_effect` (default `true`): `false` removes the base's own always-on effect, such as Human Torch's body fire.
 
 Older ImperfectLab builds refuse a file with `flames`.
+
+### `trails`
+Optional; left out when `parts` is empty. See-through ribbons that trail behind body parts as they move, the game's blade trails (`trail` blocks) swept between joints:
+- `parts`: any of `arms legs body head`.
+- `color`, `alt_color` (default `#FFFFFF60`): the costume's trail color, `#RRGGBB` or `#RRGGBBAA`.
+- `length` (default `0.2`): 0.05-0.5, how long in seconds a ribbon lingers.
+
+Older ImperfectLab builds refuse a file with `trails`.
 
 ### `stats`
 - `display`: six integers 1-7 per costume: intel, strength, speed, durability, energy, skill. Shown on the
@@ -230,7 +239,7 @@ Optional, and left out when no sound changes. The index of a sound in the base's
 A `sounds/` member is a standard Nintendo `.dsp` file. ImperfectLab writes mono, unlooped files at the replaced sound's rate or lower.
 
 ### `z_button`
-Optional, left out when Z does nothing (default). Holding Z runs every action given, at least one of `stealth`, `costume`, `stats` and `size`.
+Optional, left out when Z does nothing (default). Holding Z runs every action given, at least one of `stealth`, `costume`, `stats`, `size` and `bullet`.
 - `action`: only in older files, where `stealth` is Stealth Mode. A reader takes it as `stealth`; a writer leaves it out.
 - `stealth`: optional, Stealth Mode's effects, at least one of them:
   - `undetected`: `true` when the CPU loses track of the character. Optional, `false` by default.
@@ -239,6 +248,7 @@ Optional, left out when Z does nothing (default). Holding Z runs every action gi
 - `costume`: optional, Costume Change. `normal` (costume 1) and `alt` (costume 2) each map a material's `gltf_material` to the texture it draws while Z is held: `normal` or `alt` (that costume's texture), `hue:<degrees>` (costume 1's, hue-shifted, as a material's `alt`) or a `textures/` member. A material left out switches to the other costume's texture.
 - `stats`: optional, Stat Change. The values that replace the character's own while Z is held, at least one of them: `attack_damage_1` to `_5` and `damage_taken`, with the ranges of `stats.gameplay`, and `lift`.
 - `size`: optional, Change Size. 0.1-3.0, the character's size while Z is held as a multiple of its own (`model.size` included). It grows or shrinks over a quarter of a second, and back on release.
+- `bullet`: optional, Bullet Time. 0.25-0.9, the speed everything but the character runs at while Z is held: opponents, CPU players, projectiles, thrown objects and effects. The world eases into it over at most a quarter of a second, and back on release. Older ImperfectLab builds refuse a file with it.
 - `requires`: optional, left out when empty. What the action needs.
   - `energy`: the action drains energy and can't start with none. `seconds` (1 to 60) is how long a full bar lasts. `regen` (optional, `false` by default) keeps the game's energy regeneration running while active, so the bar lasts longer.
 

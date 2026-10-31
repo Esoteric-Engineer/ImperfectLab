@@ -35,6 +35,7 @@ import * as reach from './reach'
 import * as shaders from './shaders'
 import * as sounds from './sounds'
 import * as templates from './templates'
+import * as trails from './trails'
 import * as tuning from './tuning'
 import * as ui from './ui'
 
@@ -267,6 +268,10 @@ export class Builder {
         const empty = flames.markers(render, sk, copy, c.flames.parts)
         if (!alt && empty.length) this.note(`flames: no part of the model follows the ${empty.join(', ')} bone, so its flame sits on the bone itself`)
       }
+      if (trails.hasAny(c.trails) && !effects.hidden(c.trails.color, c.trails.alt_color)[alt ? 1 : 0]) {
+        const empty = trails.markers(render, sk, copy, c.trails.parts)
+        if (empty.length) this.note(`motion trails: no part of the model follows the ${empty.join(', ')} bone, so its trail ends at the bone itself`)
+      }
       const [data] = bundle.buildNgm(ngm, render, renames, c.size)
       const otherNames = new Set(models.slice(1).map((m) => m.name.toLowerCase()))
       const missing = [...renames.keys()].filter((old) => !otherNames.has(old))
@@ -306,10 +311,10 @@ export class Builder {
   }
 
   // The aura tint's copies, the flames' blocks and the swapped and stretched moves' recolored lines, in one effect file.
-  effects(): [[string, string] | null, Map<number, string[]> | null, nottool.Template[], [string, string] | null] {
+  effects(): [[string, string] | null, Map<number, string[]> | null, nottool.Template[], [string | null, string | null] | null] {
     const c = this.c
-    const tinted = c.aura.mode === 'tint', fire = flames.hasAny(c.flames), theirs = Object.values(c.moveEffects).includes('theirs'), lined = paintsReach(c)
-    if (!tinted && !fire && !theirs && !lined) return [null, null, [], null]
+    const tinted = c.aura.mode === 'tint', fire = flames.hasAny(c.flames), trailed = trails.hasAny(c.trails), theirs = Object.values(c.moveEffects).includes('theirs'), lined = paintsReach(c)
+    if (!tinted && !fire && !trailed && !theirs && !lined) return [null, null, [], null]
     const fx = new effects.Effects(this.src.entry('Misc/game.nfx'))
     const before = fx.used()
     const prefixes: [string, string] = [effects.copyPrefix(c.internalName, false), effects.copyPrefix(c.internalName, true)]
@@ -327,8 +332,12 @@ export class Builder {
         this.note(`reach: ${paints.size} line effect${paints.size === 1 ? '' : 's'} recolored, in every move that draws ${paints.size === 1 ? 'it' : 'them'}`)
       }
     }
-    const effect2 = flames.effectNames(fx, c.flames, c.internalName)
+    const effect2 = trails.alwaysOn(fx, c.flames, c.trails, c.internalName)
     if (fire) this.note(`flames: ${c.flames.body ? "over the whole body (Human Torch's body fire)" : `on the ${c.flames.parts.join(', ')}`}`)
+    if (trailed) {
+      const hiddenIn = ['1', '2'].filter((_, i) => effects.hidden(c.trails.color, c.trails.alt_color)[i])
+      this.note(`motion trails: on the ${c.trails.parts.join(', ')}${hiddenIn.length ? `; costume ${hiddenIn[0]} has none` : ''}`)
+    }
     // the game's own body fire adds nothing
     if (fx.used() === before) return [effect1, power, extra, effect2]
     this.r.sets.set('Misc/game.nfx', fx.build())
@@ -342,7 +351,7 @@ export class Builder {
     const c = this.c, base = this.base
     const tun = new tuning.Tuning(this.src, base)
     const hide = effects.hidden(c.aura.color, c.aura.alt_color)
-    const level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, base), 'all', flames.cost(c.flames), hide) : c.aura.tint)
+    const level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, base), 'all', trails.cost(c.flames, c.trails), hide) : c.aura.tint)
     if (this.tint === null && level !== c.aura.tint) this.note(`aura tint: ${base.label}'s full tint needs more memory than a match can spare; its idle and power-up effects are tinted`)
     const [rootsN, rootsA] = effects.roots(fx, tun, base, level)
     if (!rootsN.length && !rootsA.length) throw new LabError(`${base.label} has no effects to tint; use the Base or Swap aura`)
@@ -445,7 +454,7 @@ export class Builder {
   }
 
   templates(effect1: [string, string] | null, description: string | null, extra: nottool.Template[], motionSet: string | null = null,
-    effect2: [string, string] | null = null) {
+    effect2: [string | null, string | null] | null = null) {
     const c = this.c, gp = c.gameplay
     let on = 0, off = 0
     if (gp.lift) {
@@ -597,7 +606,7 @@ export function zCharacters(chars: Character[]): D.ZCharacter[] {
       internal: c.internalName, seconds: z.requires.energy?.seconds ?? 0, regen: z.requires.energy?.regen ?? false,
       undetected: z.stealth?.undetected ?? false, untouchable: z.stealth?.untouchable ?? false, visible: z.stealth?.visible ?? 1,
       costume: z.costume !== null, damage: damage.KEYS.map((k) => st[k] ?? null), taken: st.damage_taken ?? null, lift: st.lift ?? null,
-      size: z.size,
+      size: z.size, slow: z.bullet,
     }]
   })
 }
@@ -668,9 +677,9 @@ export function report(characters: Character | Character[], result: Result): str
   if (chars.some(throwsDamage)) lines.push('main.dol: fn_800E1788 reads tuning field 217 for an animation\'s damage event with param 5 (the baton throw)')
   if (chars.some(ownSounds)) lines.push('main.dol: fn_80114420 loads a new character\'s own sound bank, and one bank per type ID')
   if (chars.some((c) => c.zButton)) {
-    const names: [keyof NonNullable<Character['zButton']>, string][] = [['stealth', 'Stealth Mode'], ['costume', 'Costume Change'], ['stats', 'Stat Change'], ['size', 'Change Size']]
+    const names: [keyof NonNullable<Character['zButton']>, string][] = [['stealth', 'Stealth Mode'], ['costume', 'Costume Change'], ['stats', 'Stat Change'], ['size', 'Change Size'], ['bullet', 'Bullet Time']]
     const used = names.filter(([k]) => chars.some((c) => c.zButton?.[k])).map(([, label]) => label)
-    lines.push(`main.dol: Z is bound for every human player; fn_80137494 and fn_80148B50 are rewritten to run ${used.join(', ')}, hooked from fn_800FB944, fn_80085F4C, fn_800E07A4, fn_80150200, fn_80461948, fn_8014F8BC and fn_801A479C; fn_800B1884 and fn_80086C80 are rewritten in place`)
+    lines.push(`main.dol: Z is bound for every human player; fn_80137494, fn_80148B50 and fn_80132838 are rewritten to run ${used.join(', ')}, hooked from fn_800FB944, fn_80085F4C, fn_800E07A4, fn_80150200, fn_80461948, fn_8014F8BC, fn_801A479C, fn_801AF790, fn_80094E04, fn_80074814, fn_800748A4, fn_80061A10, fn_800BD2D0 and fn_800BD3A8; fn_800B1884 and fn_80086C80 are rewritten in place`)
   }
   const cache = result.dol ? D.readEffectCache(result.dol) : null
   if (cache && cache !== nfxtool.CACHE_SIZE) lines.push(`main.dol: effect cache ${nfxtool.CACHE_SIZE} -> ${cache} bytes`)

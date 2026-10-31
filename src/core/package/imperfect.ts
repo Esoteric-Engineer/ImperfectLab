@@ -12,7 +12,7 @@ import { type DamageKey, KEYS as DAMAGE_KEYS } from '../build/damage'
 import { COSTS, type EnergyKey, FALLBACK, RECHARGE, type RechargeKey } from '../build/energy'
 import { LOW_ENERGY_STUN, MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
 import { DISTANCE, JUMP_DISTANCE, JUMPS, type Limb, LIMBS } from '../build/reach'
-import { Z_SECONDS, Z_SIZE, Z_VISIBLE } from '../game/dol'
+import { Z_SECONDS, Z_SIZE, Z_SLOW, Z_VISIBLE } from '../game/dol'
 import { BASES } from '../game/roster'
 import * as asftool from '../mnroi/asftool'
 import { GLB, type Json } from '../mnroi/gltf'
@@ -41,6 +41,8 @@ export const AURA_MODES = ['base', 'swap', 'tint']
 export const AURA_TINTS = ['all', 'power']
 export const FLAME_PARTS = ['head', 'chest', 'r_hand', 'l_hand', 'r_foot', 'l_foot']
 export const FLAME_SIZE: [number, number] = [0.5, 2.0]
+export const TRAIL_PARTS = ['arms', 'legs', 'body', 'head']
+export const TRAIL_LENGTH: [number, number] = [0.05, 0.5]
 export const SIZE: [number, number] = [0.1, 3.0]
 export const LIFT = ['light', 'medium', 'heavy']
 export const GAMEPLAY: Record<string, [number, number, boolean]> = {
@@ -136,6 +138,13 @@ export interface Flames {
   base_effect: boolean
 }
 
+export interface Trails {
+  parts: string[]
+  color: string
+  alt_color: string
+  length: number
+}
+
 export const MOVE_EFFECTS = ['theirs', 'none'] as const
 export type MoveEffect = (typeof MOVE_EFFECTS)[number]
 export interface MoveLines {
@@ -165,6 +174,7 @@ export interface ZButton {
   costume: Record<ZCostume, Record<number, string>> | null
   stats: ZStats | null
   size: number | null
+  bullet: number | null
   requires: { energy?: { seconds: number; regen: boolean } }
 }
 
@@ -188,6 +198,7 @@ export interface Character {
   materials: Material[]
   aura: { mode: string; tint: string; color: string; alt_color: string }
   flames: Flames
+  trails: Trails
   stats: { normal: number[]; alt: number[] }
   gameplay: Gameplay
   baseMoves: BaseMoves
@@ -209,6 +220,10 @@ export function defaultStats() {
 
 export function defaultFlames(): Flames {
   return { parts: [], body: false, color: null, alt_color: null, size: 1, base_effect: true }
+}
+
+export function defaultTrails(): Trails {
+  return { parts: [], color: '#FFFFFF60', alt_color: '#FFFFFF60', length: 0.2 }
 }
 
 export function hasCutscenes(c: Cutscenes): boolean {
@@ -238,6 +253,7 @@ export function newCharacter(): Character {
     materials: [],
     aura: { mode: 'base', tint: 'all', color: '#40A0FF', alt_color: '#50FF50' },
     flames: defaultFlames(),
+    trails: defaultTrails(),
     stats: defaultStats(),
     gameplay: {},
     baseMoves: {},
@@ -302,6 +318,7 @@ export function manifest(c: Character): Json {
     },
     aura: c.aura,
     flames: hasFlames(c.flames) ? c.flames : undefined,
+    trails: c.trails.parts.length ? c.trails : undefined,
     stats: { display: c.stats, gameplay: c.gameplay },
     ui: c.ui,
     base_moves: c.baseMoves,
@@ -312,11 +329,12 @@ export function manifest(c: Character): Json {
     move_idle: c.moveIdle.length ? c.moveIdle : undefined,
     cutscenes: hasCutscenes(c.cutscenes) ? { ...c.cutscenes, effects: Object.keys(c.cutscenes.effects).length ? c.cutscenes.effects : undefined } : undefined,
     sounds: Object.keys(c.sounds).length ? c.sounds : undefined,
-    z_button: z && (z.stealth || z.costume || zStats || z.size !== null) ? {
+    z_button: z && (z.stealth || z.costume || zStats || z.size !== null || z.bullet !== null) ? {
       stealth: z.stealth ? { undetected: z.stealth.undetected || undefined, untouchable: z.stealth.untouchable || undefined, visible: z.stealth.visible ?? undefined } : undefined,
       costume: z.costume ?? undefined,
       stats: zStats,
       size: z.size ?? undefined,
+      bullet: z.bullet ?? undefined,
       requires: Object.keys(z.requires).length ? z.requires : undefined,
     } : undefined,
     files: Object.fromEntries([...files].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, v]) => [k, sha(v)])),
@@ -459,7 +477,7 @@ function upgrade(m: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Character {
-  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'cutscenes', 'sounds', 'z_button', 'files'], 'the manifest')
+  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'trails', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'cutscenes', 'sounds', 'z_button', 'files'], 'the manifest')
   if (m.format !== FORMAT) throw new LabError('not a .imperfect file')
   upgrade(m)
   if (m.game !== GAME) throw new LabError(`this file is for ${m.game}, not ${GAME}`)
@@ -539,6 +557,16 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     base_effect: typed<boolean>(fl.base_effect ?? true, 'boolean', 'flames.base_effect'),
   }
   if (c.flames.body && c.flames.parts.length) throw new LabError('manifest: flames are on the whole body or on parts, not both')
+  const tr = keys(m.trails ?? {}, ['parts', 'color', 'alt_color', 'length'], 'trails')
+  const trailParts = typed<unknown[]>(tr.parts ?? [], 'array', 'trails.parts').map((p) => str(p, 'trails.parts', 10)!)
+  for (const p of trailParts) if (!TRAIL_PARTS.includes(p)) throw new LabError(`manifest: unknown trail part ${JSON.stringify(p)}`)
+  const dt = defaultTrails()
+  c.trails = {
+    parts: TRAIL_PARTS.filter((p) => trailParts.includes(p)),
+    color: color(tr.color ?? dt.color, 'trails.color'),
+    alt_color: color(tr.alt_color ?? dt.alt_color, 'trails.alt_color'),
+    length: num(tr.length ?? dt.length, 'trails.length', ...TRAIL_LENGTH, false)!,
+  }
   const st = keys(m.stats ?? {}, ['display', 'gameplay'], 'stats')
   const disp = keys(st.display ?? defaultStats(), ['normal', 'alt'], 'stats.display')
   for (const k of ['normal', 'alt'] as const) {
@@ -697,7 +725,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   }
   c.zButton = null
   if (m.z_button !== undefined && m.z_button !== null) {
-    const z = keys(m.z_button, ['action', 'stealth', 'costume', 'stats', 'size', 'requires'], 'z_button')
+    const z = keys(m.z_button, ['action', 'stealth', 'costume', 'stats', 'size', 'bullet', 'requires'], 'z_button')
     if (z.action !== undefined && z.action !== 'stealth') throw new LabError('manifest: z_button.action can only be stealth, as older files have it')
     let stealth: ZButton['stealth'] = null
     if (z.stealth !== undefined || z.action === 'stealth') {
@@ -742,9 +770,10 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
       if (!Object.keys(stats).length) throw new LabError('manifest: z_button.stats needs at least one value')
     }
     const size = num(z.size, 'z_button.size', ...Z_SIZE)
-    if (!stealth && !costume && !stats && size === null) throw new LabError('manifest: z_button needs at least one of stealth, costume, stats and size')
+    const bullet = num(z.bullet, 'z_button.bullet', ...Z_SLOW)
+    if (!stealth && !costume && !stats && size === null && bullet === null) throw new LabError('manifest: z_button needs at least one of stealth, costume, stats, size and bullet')
     const requires = keys(z.requires ?? {}, ['energy'], 'z_button.requires')
-    c.zButton = { stealth, costume, stats, size, requires: {} }
+    c.zButton = { stealth, costume, stats, size, bullet, requires: {} }
     if (requires.energy !== undefined) {
       const e = keys(requires.energy, ['seconds', 'regen'], 'z_button.requires.energy')
       c.zButton.requires.energy = { seconds: num(e.seconds, 'z_button.requires.energy.seconds', ...Z_SECONDS, false)!, regen: typed<boolean>(e.regen ?? false, 'boolean', 'z_button.requires.energy.regen') }

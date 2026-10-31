@@ -77,36 +77,42 @@ const PARTSYS = nfxtool.TYPES.indexOf('partsys'), CONTROLLER = nfxtool.TYPES.ind
 
 export const hasAny = (f: Flames) => f.body || f.parts.length > 0
 
-export function markers(render: ngmtool.Model, sk: Skeleton, tris: Map<number, Tri[]>, parts: string[]): string[] {
-  const empty: string[] = []
-  for (const part of parts) {
-    const p = PARTS[part]
-    const anchor = sk.node(p.anchor)
-    if (anchor === undefined) throw new LabError(`the base has no ${p.anchor} bone for the ${part} flame`)
-    const bones = new Set([anchor, ...p.roles.map((r) => sk.node(r)).filter((n) => n !== undefined),
-      ...sk.nodes.filter((n) => p.groups.includes(n.group)).map((n) => n.index)])
-    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
-    for (const list of tris.values()) {
-      for (const tri of list) {
-        for (const [pos, , , w] of tri) {
-          if (!w.length || !bones.has(w[0][0])) continue
-          for (let i = 0; i < 3; i++) {
-            lo[i] = Math.min(lo[i], pos[i])
-            hi[i] = Math.max(hi[i], pos[i])
-          }
+export function partMiddle(sk: Skeleton, tris: Map<number, Tri[]>, part: string, what: string): [number, number[] | null] {
+  const p = PARTS[part]
+  const anchor = sk.node(p.anchor)
+  if (anchor === undefined) throw new LabError(`the base has no ${p.anchor} bone for the ${what}`)
+  const bones = new Set([anchor, ...p.roles.map((r) => sk.node(r)).filter((n) => n !== undefined),
+    ...sk.nodes.filter((n) => p.groups.includes(n.group)).map((n) => n.index)])
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
+  for (const list of tris.values()) {
+    for (const tri of list) {
+      for (const [pos, , , w] of tri) {
+        if (!w.length || !bones.has(w[0][0])) continue
+        for (let i = 0; i < 3; i++) {
+          lo[i] = Math.min(lo[i], pos[i])
+          hi[i] = Math.max(hi[i], pos[i])
         }
       }
     }
-    const at = sk.nodes[anchor].pos
-    let off = [0, 0, 0]
-    if (lo[0] <= hi[0]) off = [0, 1, 2].map((i) => (lo[i] + hi[i]) / 2 - at[i])
-    else empty.push(part)
-    render.attachments.push([anchor, FLAME_KIND, markerIndex(part), [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, off[0], off[1], off[2], 1]])
+  }
+  const at = sk.nodes[anchor].pos
+  return [anchor, lo[0] <= hi[0] ? [0, 1, 2].map((i) => (lo[i] + hi[i]) / 2 - at[i]) : null]
+}
+
+export const attachment = (node: number, kind: number, index: number, off: number[]): ngmtool.Attachment =>
+  [node, kind, index, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, off[0], off[1], off[2], 1]]
+
+export function markers(render: ngmtool.Model, sk: Skeleton, tris: Map<number, Tri[]>, parts: string[]): string[] {
+  const empty: string[] = []
+  for (const part of parts) {
+    const [anchor, off] = partMiddle(sk, tris, part, `${part} flame`)
+    if (!off) empty.push(part)
+    render.attachments.push(attachment(anchor, FLAME_KIND, markerIndex(part), off ?? [0, 0, 0]))
   }
   return empty
 }
 
-function add(fx: Effects, type: number, body: string[], prefix: string): string {
+export function add(fx: Effects, type: number, body: string[], prefix: string): string {
   const same = fx.same(type, body)
   if (same) return same
   const [name] = fx.fresh(prefix)
@@ -129,13 +135,4 @@ export function effectNames(fx: Effects, f: Flames, internal: string): [string, 
     return add(fx, CONTROLLER, children.map((n) => `effectname ${n}`), prefix)
   }
   return [costume(f.color), costume(f.alt_color)]
-}
-
-export function cost(f: Flames): number {
-  if (!hasAny(f)) return 0
-  const fx = new Effects(new Uint8Array())
-  fx.append([new nfxtool.Block(PARTSYS, BODY, [`partsys ${BODY}`, 'material x', 'end'], true)])
-  const before = fx.used()
-  effectNames(fx, f, 'xx')
-  return fx.used() - before
 }

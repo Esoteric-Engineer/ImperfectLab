@@ -276,7 +276,7 @@ describe('round trip', () => {
   it('saves and loads the Z button actions', () => {
     const c = character()
     expect(imperfect.manifest(c).z_button).toBeUndefined()
-    const z: imperfect.ZButton = { stealth: { undetected: true, untouchable: false, visible: null }, costume: null, stats: null, size: null, requires: {} }
+    const z: imperfect.ZButton = { stealth: { undetected: true, untouchable: false, visible: null }, costume: null, stats: null, size: null, bullet: null, requires: {} }
     c.zButton = z
     expect(JSON.parse(JSON.stringify(imperfect.manifest(c).z_button))).toEqual({ stealth: { undetected: true } })
     expect(imperfect.load(imperfect.save(c)).zButton).toEqual(z)
@@ -297,6 +297,10 @@ describe('round trip', () => {
     z.stats = {}
     z.costume = null
     expect(imperfect.load(imperfect.save(c)).zButton).toEqual({ ...z, stats: null })
+    z.bullet = 0.35
+    expect(imperfect.manifest(c).z_button).toMatchObject({ size: 0.5, bullet: 0.35 })
+    expect(imperfect.load(imperfect.save(c)).zButton).toEqual({ ...z, stats: null })
+    z.bullet = null
     z.size = 1
     expect(imperfect.problems(c).some(([l, msg]) => l === 'warning' && msg.includes('Change Size'))).toBe(true)
     z.size = null
@@ -305,7 +309,7 @@ describe('round trip', () => {
 
     const m = imperfect.manifest(c) as Json
     const legacy = imperfect.fromManifest({ ...m, z_button: { action: 'stealth', stealth: { visible: 0.2 } } } as Json, new Map())
-    expect(legacy.zButton).toEqual({ stealth: { undetected: false, untouchable: false, visible: 0.2 }, costume: null, stats: null, size: null, requires: {} })
+    expect(legacy.zButton).toEqual({ stealth: { undetected: false, untouchable: false, visible: 0.2 }, costume: null, stats: null, size: null, bullet: null, requires: {} })
     const bad = (z: unknown) => expect(() => imperfect.fromManifest({ ...m, z_button: z } as Json, new Map())).toThrow(/z_button/)
     bad('stealth')
     bad({})
@@ -325,6 +329,8 @@ describe('round trip', () => {
     bad({ stats: {} })
     bad({ size: 4 })
     bad({ size: '2' })
+    bad({ bullet: 0.1 })
+    bad({ bullet: 1 })
     bad({ stats: { attack_damage_1: 0 } })
     bad({ stats: { lift: 'huge' } })
     bad({ stats: { health: 10 } })
@@ -463,6 +469,14 @@ describe('round trip', () => {
     expect(d.flames).toEqual({ ...c.flames, parts: ['head', 'r_hand'] })
   })
 
+  it('saves and loads motion trails, and leaves them out when off', () => {
+    const c = character()
+    expect(imperfect.manifest(c).trails).toBeUndefined()
+    expect(imperfect.load(imperfect.save(c)).trails).toEqual(imperfect.defaultTrails())
+    c.trails = { parts: ['legs', 'arms'], color: '#00FF8080', alt_color: '#FFFFFF', length: 0.35 }
+    expect(imperfect.load(imperfect.save(c)).trails).toEqual({ ...c.trails, parts: ['arms', 'legs'] })
+  })
+
   it('keeps flames to the body or to parts', () => {
     const c = character()
     c.flames = { ...imperfect.defaultFlames(), parts: ['head'], body: true }
@@ -557,6 +571,11 @@ describe('hostile files', () => {
       (m) => (m.flames = { size: 5 }),
       (m) => (m.flames = { color: 'orange' }),
       (m) => (m.flames = { glow: true }),
+      (m) => (m.trails = { parts: ['tail'] }),
+      (m) => (m.trails = { parts: 'arms' }),
+      (m) => (m.trails = { parts: ['arms'], length: 1 }),
+      (m) => (m.trails = { parts: ['arms'], color: 'white' }),
+      (m) => (m.trails = { parts: ['arms'], width: 2 }),
     ]
     for (const edit of cases) rejected(withManifest(files(), edit))
   })
