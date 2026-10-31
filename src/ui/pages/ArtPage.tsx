@@ -7,6 +7,7 @@ import { CropDialog } from '../components/CropDialog'
 import { GenerateArtDialog } from '../components/GenerateArtDialog'
 import { ImageView, Note } from '../components/common'
 import { PlacementDialog } from '../components/PlacementDialog'
+import { artName } from '../format'
 import type { Character } from '../../core/package/imperfect'
 import { store, useStore } from '../store'
 
@@ -58,10 +59,6 @@ function fallback(slot: string): string {
   if (slot.startsWith('hud_')) return files.has('ui/hud.png') ? 'the HUD portrait is used' : `${name}'s is used`
   if (slot === 'banner') return 'no banner (the game leaves it out)'
   return ''
-}
-
-function artName(c: Character): string {
-  return (c.displayName || c.internalName || 'character').replace(/[\\/:*?"<>|]+/g, '_')
 }
 
 function downloadAll() {
