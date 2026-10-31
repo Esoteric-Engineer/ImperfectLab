@@ -268,7 +268,10 @@ export class Builder {
         const empty = flames.markers(render, sk, copy, c.flames.parts)
         if (!alt && empty.length) this.note(`flames: no part of the model follows the ${empty.join(', ')} bone, so its flame sits on the bone itself`)
       }
-      if (trails.hasAny(c.trails)) trails.markers(render, sk, copy, c.trails.parts)
+      if (trails.hasAny(c.trails) && !effects.hidden(c.trails.color, c.trails.alt_color)[alt ? 1 : 0]) {
+        const empty = trails.markers(render, sk, copy, c.trails.parts)
+        if (empty.length) this.note(`motion trails: no part of the model follows the ${empty.join(', ')} bone, so its trail ends at the bone itself`)
+      }
       const [data] = bundle.buildNgm(ngm, render, renames, c.size)
       const otherNames = new Set(models.slice(1).map((m) => m.name.toLowerCase()))
       const missing = [...renames.keys()].filter((old) => !otherNames.has(old))
@@ -308,7 +311,7 @@ export class Builder {
   }
 
   // The aura tint's copies, the flames' blocks and the swapped and stretched moves' recolored lines, in one effect file.
-  effects(): [[string, string] | null, Map<number, string[]> | null, nottool.Template[], [string, string] | null] {
+  effects(): [[string, string] | null, Map<number, string[]> | null, nottool.Template[], [string | null, string | null] | null] {
     const c = this.c
     const tinted = c.aura.mode === 'tint', fire = flames.hasAny(c.flames), trailed = trails.hasAny(c.trails), theirs = Object.values(c.moveEffects).includes('theirs'), lined = paintsReach(c)
     if (!tinted && !fire && !trailed && !theirs && !lined) return [null, null, [], null]
@@ -331,7 +334,10 @@ export class Builder {
     }
     const effect2 = trails.alwaysOn(fx, c.flames, c.trails, c.internalName)
     if (fire) this.note(`flames: ${c.flames.body ? "over the whole body (Human Torch's body fire)" : `on the ${c.flames.parts.join(', ')}`}`)
-    if (trailed) this.note(`motion trails: on the ${c.trails.parts.join(', ')}`)
+    if (trailed) {
+      const hiddenIn = ['1', '2'].filter((_, i) => effects.hidden(c.trails.color, c.trails.alt_color)[i])
+      this.note(`motion trails: on the ${c.trails.parts.join(', ')}${hiddenIn.length ? `; costume ${hiddenIn[0]} has none` : ''}`)
+    }
     // the game's own body fire adds nothing
     if (fx.used() === before) return [effect1, power, extra, effect2]
     this.r.sets.set('Misc/game.nfx', fx.build())
@@ -448,7 +454,7 @@ export class Builder {
   }
 
   templates(effect1: [string, string] | null, description: string | null, extra: nottool.Template[], motionSet: string | null = null,
-    effect2: [string, string] | null = null) {
+    effect2: [string | null, string | null] | null = null) {
     const c = this.c, gp = c.gameplay
     let on = 0, off = 0
     if (gp.lift) {

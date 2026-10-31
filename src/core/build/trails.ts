@@ -5,7 +5,7 @@ import type * as ngmtool from '../mnroi/ngmtool'
 import type { Tri } from '../model/fit'
 import type { Skeleton } from '../model/skeleton'
 import type { Flames, Trails } from '../package/imperfect'
-import { Effects, hexAlpha, hexRgb, num } from './effects'
+import { Effects, hexAlpha, hexRgb, hidden, num } from './effects'
 import * as flames from './flames'
 
 export const TRAIL_KIND = 68 // unused by any shipped model or effect
@@ -27,14 +27,16 @@ export const SEGMENTS: Record<string, [number, number][]> = {
 
 const TRAIL = nfxtool.TYPES.indexOf('trail'), CONTROLLER = nfxtool.TYPES.indexOf('controller')
 
-export const hasAny = (t: Trails) => t.parts.length > 0
+export const hasAny = (t: Trails) => t.parts.length > 0 && hidden(t.color, t.alt_color).includes(false)
 
-export function markers(render: ngmtool.Model, sk: Skeleton, tris: Map<number, Tri[]>, parts: string[]) {
+export function markers(render: ngmtool.Model, sk: Skeleton, tris: Map<number, Tri[]>, parts: string[]): string[] {
+  const empty: string[] = []
   const joints = new Set(parts.flatMap((p) => SEGMENTS[p].flat()))
   for (const j of [...joints].sort((a, b) => a - b)) {
     const { bone, part } = JOINTS[j]
     if (part) {
-      const [anchor, off] = flames.partMiddle(sk, tris, part)
+      const [anchor, off] = flames.partMiddle(sk, tris, part, `${part} motion trail`)
+      if (!off) empty.push(part)
       render.attachments.push(flames.attachment(anchor, TRAIL_KIND, j, off ?? [0, 0, 0]))
       continue
     }
@@ -42,6 +44,7 @@ export function markers(render: ngmtool.Model, sk: Skeleton, tris: Map<number, T
     if (node === undefined) throw new LabError(`the base has no ${bone} bone for its motion trails`)
     render.attachments.push(flames.attachment(node, TRAIL_KIND, j, [0, 0, 0]))
   }
+  return empty
 }
 
 function ribbon(color: string, length: number): string[] {
@@ -61,24 +64,26 @@ function ribbon(color: string, length: number): string[] {
 
 const GROUPS = [['arms'], ['legs'], ['body', 'head']]
 
-export function effectNames(fx: Effects, t: Trails, internal: string): [string, string] | null {
+export function effectNames(fx: Effects, t: Trails, internal: string): [string | null, string | null] | null {
   if (!hasAny(t)) return null
   const prefix = `${internal.slice(0, 2).toLowerCase()}tr`
-  const costume = (color: string): string => {
+  const hide = hidden(t.color, t.alt_color)
+  const costume = (color: string, i: number): string | null => {
+    if (hide[i]) return null
     const trail = flames.add(fx, TRAIL, ribbon(color, t.length), prefix)
     const groups = GROUPS.map((g) => g.filter((p) => t.parts.includes(p))).filter((g) => g.length).map((g) =>
       flames.add(fx, CONTROLLER, g.flatMap((p) => SEGMENTS[p].flatMap(([a, b]) => [`effectname ${trail}`, `marker_index ${a}`, `endmarker_id ${b}`])), prefix))
     return groups.length === 1 ? groups[0] : flames.add(fx, CONTROLLER, groups.map((n) => `effectname ${n}`), prefix)
   }
-  return [costume(t.color), costume(t.alt_color)]
+  return [costume(t.color, 0), costume(t.alt_color, 1)]
 }
 
-export function alwaysOn(fx: Effects, f: Flames, t: Trails, internal: string): [string, string] | null {
+export function alwaysOn(fx: Effects, f: Flames, t: Trails, internal: string): [string | null, string | null] | null {
   const fire = flames.effectNames(fx, f, internal)
   const trails = effectNames(fx, t, internal)
   if (!fire || !trails) return fire ?? trails
   const prefix = `${internal.slice(0, 2).toLowerCase()}tr`
-  const both = (i: number) => flames.add(fx, CONTROLLER, [`effectname ${fire[i]}`, `effectname ${trails[i]}`], prefix)
+  const both = (i: number) => trails[i] === null ? fire[i] : flames.add(fx, CONTROLLER, [`effectname ${fire[i]}`, `effectname ${trails[i]}`], prefix)
   return [both(0), both(1)]
 }
 

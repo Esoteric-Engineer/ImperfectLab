@@ -616,6 +616,25 @@ describe.skipIf(!ISO)('game', () => {
     expect(trails.label(c.flames, c.trails)).toBe('flames and motion trails')
   })
 
+  it('leaves out the trails of a costume whose trail color is hidden', () => {
+    const c = tinted('daredevil')
+    c.aura = { ...c.aura, mode: 'base' }
+    c.trails = { ...imperfect.defaultTrails(), parts: ['arms'], alt_color: '#FF000000' }
+    let r = new Builder(src(), c).build()
+    let T = new R.Templates(r.sets.get('Misc/Global.not')!)
+    expect(R.text(T.prop('plr_Synth', R.P_EFFECT2))).toBeTruthy()
+    expect(T.get('plr_altSynth').get(R.P_EFFECT2)).toBeNull()
+    const marked = (costume: string) => ngmtool.read(r.adds.get(`Bundles/synth${costume}.ngm`)!)[1][0].attachments.some(([, kind]) => kind === trails.TRAIL_KIND)
+    expect([marked(''), marked('_alt')]).toEqual([true, false])
+    c.flames = { ...imperfect.defaultFlames(), parts: ['head'] }
+    r = new Builder(src(), c).build()
+    T = new R.Templates(r.sets.get('Misc/Global.not')!)
+    const by = new Map(nfxtool.blocks(nfxtool.readNfx(r.sets.get('Misc/game.nfx')!)).map((b) => [b.name, b]))
+    const children = (n: string) => by.get(n)!.records()[0].filter((rec) => nfxtool.KEYS[rec.key] === 'effectname').map((rec) => rec.value as string)
+    expect(children(R.text(T.prop('plr_Synth', R.P_EFFECT2))!)[0]).toBe(R.text(T.prop('plr_altSynth', R.P_EFFECT2)))
+    expect(trails.cost(imperfect.defaultFlames(), { ...c.trails, color: '#FFFFFF00' })).toBe(0)
+  })
+
   it('counts motion trails in the effect memory', () => {
     const t = { ...imperfect.defaultTrails(), parts: [...imperfect.TRAIL_PARTS], alt_color: '#00FF0040' }
     const fx = new effects.Effects(src().entry('Misc/game.nfx'))

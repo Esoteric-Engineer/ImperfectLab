@@ -77,10 +77,10 @@ const PARTSYS = nfxtool.TYPES.indexOf('partsys'), CONTROLLER = nfxtool.TYPES.ind
 
 export const hasAny = (f: Flames) => f.body || f.parts.length > 0
 
-export function partMiddle(sk: Skeleton, tris: Map<number, Tri[]>, part: string): [number, number[] | null] {
+export function partMiddle(sk: Skeleton, tris: Map<number, Tri[]>, part: string, what: string): [number, number[] | null] {
   const p = PARTS[part]
   const anchor = sk.node(p.anchor)
-  if (anchor === undefined) throw new LabError(`the base has no ${p.anchor} bone for the ${part}`)
+  if (anchor === undefined) throw new LabError(`the base has no ${p.anchor} bone for the ${what}`)
   const bones = new Set([anchor, ...p.roles.map((r) => sk.node(r)).filter((n) => n !== undefined),
     ...sk.nodes.filter((n) => p.groups.includes(n.group)).map((n) => n.index)])
   const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
@@ -105,7 +105,7 @@ export const attachment = (node: number, kind: number, index: number, off: numbe
 export function markers(render: ngmtool.Model, sk: Skeleton, tris: Map<number, Tri[]>, parts: string[]): string[] {
   const empty: string[] = []
   for (const part of parts) {
-    const [anchor, off] = partMiddle(sk, tris, part)
+    const [anchor, off] = partMiddle(sk, tris, part, `${part} flame`)
     if (!off) empty.push(part)
     render.attachments.push(attachment(anchor, FLAME_KIND, markerIndex(part), off ?? [0, 0, 0]))
   }

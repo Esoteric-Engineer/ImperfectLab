@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { MAX_BATCH, ordinal } from '../../core/build/batch'
 import { TINT_ALL_LIMIT } from '../../core/build/effects'
+import * as trails from '../../core/build/trails'
 import * as R from '../../core/game/roster'
 import { type Character, copyCharacter, load } from '../../core/package/imperfect'
 import { canSaveInPlace, download, downloadBlob, openCharacter, opfsFile, removeOpfs } from '../../io/files'
@@ -14,7 +15,8 @@ import { choosePatchTarget, OPFS_NAME } from '../target'
 const kb = (n: number) => `${Math.round(n / 1024).toLocaleString('en-US')} KB`
 
 function aura(c: Character): string {
-  const fire = c.flames.body ? ', flames over the whole body' : c.flames.parts.length ? `, flames on ${c.flames.parts.length} part${c.flames.parts.length > 1 ? 's' : ''}` : ''
+  const fire = (c.flames.body ? ', flames over the whole body' : c.flames.parts.length ? `, flames on ${c.flames.parts.length} part${c.flames.parts.length > 1 ? 's' : ''}` : '') +
+    (trails.hasAny(c.trails) ? `, motion trails on the ${c.trails.parts.join(', ')}` : '')
   if (c.aura.mode === 'tint') return `tinted (${c.aura.tint === 'all' ? 'all effects' : 'idle and power-up'})${fire}`
   return (c.aura.mode === 'swap' ? 'swapped' : "the base's") + fire
 }
