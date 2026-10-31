@@ -1,6 +1,6 @@
 import * as effects from '../../core/build/effects'
-import * as flames from '../../core/build/flames'
-import { FLAME_SIZE } from '../../core/package/imperfect'
+import * as trails from '../../core/build/trails'
+import { FLAME_SIZE, TRAIL_LENGTH } from '../../core/package/imperfect'
 import { ColorButton, Note, NumberInput, Warning } from '../components/common'
 import { store, useStore } from '../store'
 
@@ -24,6 +24,8 @@ const FLAME_MODES: [string, string][] = [
 const PARTS: [string, string][] = [
   ['head', 'Head'], ['chest', 'Chest'], ['r_hand', 'Right hand'], ['l_hand', 'Left hand'], ['r_foot', 'Right foot'], ['l_foot', 'Left foot'],
 ]
+
+const TRAIL_PARTS: [string, string][] = [['arms', 'Arms'], ['legs', 'Legs'], ['body', 'Body'], ['head', 'Head']]
 
 const kb = (n: number) => (n / 1024).toFixed(1)
 
@@ -49,34 +51,37 @@ export function AuraPage() {
   const tint = c.aura.mode === 'tint'
   const f = c.flames
   const flameMode = f.body ? 'body' : f.parts.length ? 'parts' : 'none'
-  const flameBytes = flames.cost(f)
+  const t = c.trails
+  const extraBytes = trails.cost(f, t)
+  const fireBytes = trails.cost(f, { ...t, parts: [] })
+  const extras = trails.label(f, t)
   const plans = details?.tint ?? {}
   const hide = effects.hidden(c.aura.color, c.aura.alt_color)
-  const tooBig = (level: string) => effects.tintLevel(plans, level, flameBytes, hide) !== level
+  const tooBig = (level: string) => effects.tintLevel(plans, level, extraBytes, hide) !== level
   const memory = (level: string) => {
     const p = plans[effects.planKey(level, hide)]
     if (!p) return ''
-    const extra = effects.planExtra(p, flameBytes)
+    const extra = effects.planExtra(p, extraBytes)
     if (tooBig(level)) return ` (needs ${kb(extra)} KB of game memory, more than a match can spare)`
     return extra ? ` (adds ${kb(extra)} KB of game memory)` : ' (fits the game\'s memory)'
   }
   let about = 'Choose your game disc to see what the base character\'s aura is.'
   let tintable = true
   let cost = ''
-  const level = effects.tintLevel(plans, c.aura.tint, flameBytes, hide)
+  const level = effects.tintLevel(plans, c.aura.tint, extraBytes, hide)
   const plan = plans[effects.planKey(level, hide)]
   if (base && details && plans.all) {
     tintable = plans.all.roots.length > 0 || plans.all.alt.length > 0
     about = `${base.label}'s effects: ${plans.power.roots.join(', ') || 'none'}. ${tintable ? '' : 'There is nothing to tint; Base and Swap still apply.'}`
     if (tintable && plan) {
-      const extra = effects.planExtra(plan, flameBytes)
+      const extra = effects.planExtra(plan, extraBytes)
       const copied = (hide[0] ? 0 : plan.roots.length) + (hide[1] ? 0 : plan.alt.length)
       const costumes = (on: (i: number) => unknown) => ['1', '2'].filter((_, i) => on(i)).join(' and ')
       const hiddenIn = costumes((i) => hide[i]), greyIn = costumes((i) => plan.grey[i])
       const what = [copied ? `copies ${copied} effects` : '', hiddenIn ? `hides costume ${hiddenIn}'s effects` : ''].filter(Boolean).join(' and ')
-      cost = (level !== c.aura.tint ? `${base.label}'s full tint${flameBytes ? ' with flames' : ''} needs more memory than a match can spare, so only the idle and power-up effects are tinted. ` : '') +
+      cost = (level !== c.aura.tint ? `${base.label}'s full tint${extras ? ` with ${extras}` : ''} needs more memory than a match can spare, so only the idle and power-up effects are tinted. ` : '') +
         `This tint ${what} (${plan.bytes} bytes); ` +
-        (extra ? `the patch adds ${extra} bytes to the game's effect memory for them${flameBytes ? ' and the flames' : ''}.` : 'they fit the game\'s effect memory.') +
+        (extra ? `the patch adds ${extra} bytes to the game's effect memory for them${extras ? ` and the ${extras}` : ''}.` : 'they fit the game\'s effect memory.') +
         (greyIn ? ` Its fire is redrawn on the grey fire sprite, which costume ${greyIn}'s bundle doesn't have, so the sprite is added to it: ${kb(Math.max(...plan.grey))} KB more of the memory the character loads into${plan.grey[0] && plan.grey[1] ? ', for each costume' : ''}.` : '')
     }
   }
@@ -87,6 +92,10 @@ export function AuraPage() {
   }
   const togglePart = (part: string, on: boolean) => {
     f.parts = PARTS.map(([p]) => p).filter((p) => (p === part ? on : f.parts.includes(p)))
+    edited()
+  }
+  const toggleTrail = (part: string, on: boolean) => {
+    t.parts = TRAIL_PARTS.map(([p]) => p).filter((p) => (p === part ? on : t.parts.includes(p)))
     edited()
   }
   return (
@@ -156,7 +165,29 @@ export function AuraPage() {
         <NumberInput value={f.size} min={FLAME_SIZE[0]} max={FLAME_SIZE[1]} step={0.1} disabled={flameMode === 'none'} onChange={(v) => { f.size = v; edited() }} />
       </div>
       <p>
-        {flameMode === 'none' ? '' : flameBytes ? `The flames add ${flameBytes} bytes to the game's effect memory.` : 'The flames use the game\'s own effect, which takes no more memory.'}
+        {flameMode === 'none' ? '' : fireBytes ? `The flames add ${fireBytes} bytes to the game's effect memory.` : 'The flames use the game\'s own effect, which takes no more memory.'}
+      </p>
+      <h3>Motion Trails</h3>
+      <Note>
+        Colored trails that show while the character is moving.
+      </Note>
+      <div>
+        {TRAIL_PARTS.map(([part, text]) => (
+          <label key={part} className="check">
+            <input type="checkbox" checked={t.parts.includes(part)} onChange={(e) => toggleTrail(part, e.target.checked)} /> {text}
+          </label>
+        ))}
+      </div>
+      <div className="form">
+        <label>Costume 1 trails</label>
+        <ColorButton color={t.color} alpha disabled={!t.parts.length} onChange={(v) => { t.color = v; edited() }} />
+        <label>Costume 2 trails</label>
+        <ColorButton color={t.alt_color} alpha disabled={!t.parts.length} onChange={(v) => { t.alt_color = v; edited() }} />
+        <label>Trail length (seconds)</label>
+        <NumberInput value={t.length} min={TRAIL_LENGTH[0]} max={TRAIL_LENGTH[1]} step={0.05} disabled={!t.parts.length} onChange={(v) => { t.length = v; edited() }} />
+      </div>
+      <p>
+        {t.parts.length ? `The trails add ${extraBytes - fireBytes} bytes to the game's effect memory.` : ''}
       </p>
       <h3>Always-On Effect</h3>
       <label className="check block">

@@ -66,6 +66,7 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
   },
   "aura": {"mode": "swap", "tint": "all", "color": "#40A0FF", "alt_color": "#50FF50"},
   "flames": {"parts": ["head"], "body": false, "color": null, "alt_color": "#40A0FF", "size": 1.2, "base_effect": true},
+  "trails": {"parts": ["arms", "legs"], "color": "#FFFFFF60", "alt_color": "#40A0FF80", "length": 0.2},
   "stats": {"display": {"normal": [7, 4, 3, 6, 5, 4], "alt": [7, 4, 3, 6, 5, 4]}, "gameplay": {"damage_taken": 0.7, "lift": "medium", "wire_swing": false}},
   "ui": {"select": {"ready": {"scale": 0.8, "anchor": [210, 75], "glow": "#3CFF5A6E"}}, "fade": 36, "strip_scale": null, "ready_voice": null, "banner": true},
   "base_moves": {},
@@ -128,6 +129,14 @@ Optional; left out when every key has its default. Fire that burns on the charac
 - `base_effect` (default `true`): `false` removes the base's own always-on effect, such as Human Torch's body fire.
 
 Older ImperfectLab builds refuse a file with `flames`.
+
+### `trails`
+Optional; left out when `parts` is empty. See-through ribbons that trail behind body parts as they move, the game's blade trails (`trail` blocks) swept between joints:
+- `parts`: any of `arms legs body head`.
+- `color`, `alt_color` (default `#FFFFFF60`): the costume's trail color, `#RRGGBB` or `#RRGGBBAA`.
+- `length` (default `0.2`): 0.05-0.5, how long in seconds a ribbon lingers.
+
+Older ImperfectLab builds refuse a file with `trails`.
 
 ### `stats`
 - `display`: six integers 1-7 per costume: intel, strength, speed, durability, energy, skill. Shown on the

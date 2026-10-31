@@ -469,6 +469,14 @@ describe('round trip', () => {
     expect(d.flames).toEqual({ ...c.flames, parts: ['head', 'r_hand'] })
   })
 
+  it('saves and loads motion trails, and leaves them out when off', () => {
+    const c = character()
+    expect(imperfect.manifest(c).trails).toBeUndefined()
+    expect(imperfect.load(imperfect.save(c)).trails).toEqual(imperfect.defaultTrails())
+    c.trails = { parts: ['legs', 'arms'], color: '#00FF8080', alt_color: '#FFFFFF', length: 0.35 }
+    expect(imperfect.load(imperfect.save(c)).trails).toEqual({ ...c.trails, parts: ['arms', 'legs'] })
+  })
+
   it('keeps flames to the body or to parts', () => {
     const c = character()
     c.flames = { ...imperfect.defaultFlames(), parts: ['head'], body: true }
@@ -563,6 +571,11 @@ describe('hostile files', () => {
       (m) => (m.flames = { size: 5 }),
       (m) => (m.flames = { color: 'orange' }),
       (m) => (m.flames = { glow: true }),
+      (m) => (m.trails = { parts: ['tail'] }),
+      (m) => (m.trails = { parts: 'arms' }),
+      (m) => (m.trails = { parts: ['arms'], length: 1 }),
+      (m) => (m.trails = { parts: ['arms'], color: 'white' }),
+      (m) => (m.trails = { parts: ['arms'], width: 2 }),
     ]
     for (const edit of cases) rejected(withManifest(files(), edit))
   })

@@ -35,6 +35,7 @@ import * as reach from './reach'
 import * as shaders from './shaders'
 import * as sounds from './sounds'
 import * as templates from './templates'
+import * as trails from './trails'
 import * as tuning from './tuning'
 import * as ui from './ui'
 
@@ -267,6 +268,7 @@ export class Builder {
         const empty = flames.markers(render, sk, copy, c.flames.parts)
         if (!alt && empty.length) this.note(`flames: no part of the model follows the ${empty.join(', ')} bone, so its flame sits on the bone itself`)
       }
+      if (trails.hasAny(c.trails)) trails.markers(render, sk, copy, c.trails.parts)
       const [data] = bundle.buildNgm(ngm, render, renames, c.size)
       const otherNames = new Set(models.slice(1).map((m) => m.name.toLowerCase()))
       const missing = [...renames.keys()].filter((old) => !otherNames.has(old))
@@ -308,8 +310,8 @@ export class Builder {
   // The aura tint's copies, the flames' blocks and the swapped and stretched moves' recolored lines, in one effect file.
   effects(): [[string, string] | null, Map<number, string[]> | null, nottool.Template[], [string, string] | null] {
     const c = this.c
-    const tinted = c.aura.mode === 'tint', fire = flames.hasAny(c.flames), theirs = Object.values(c.moveEffects).includes('theirs'), lined = paintsReach(c)
-    if (!tinted && !fire && !theirs && !lined) return [null, null, [], null]
+    const tinted = c.aura.mode === 'tint', fire = flames.hasAny(c.flames), trailed = trails.hasAny(c.trails), theirs = Object.values(c.moveEffects).includes('theirs'), lined = paintsReach(c)
+    if (!tinted && !fire && !trailed && !theirs && !lined) return [null, null, [], null]
     const fx = new effects.Effects(this.src.entry('Misc/game.nfx'))
     const before = fx.used()
     const prefixes: [string, string] = [effects.copyPrefix(c.internalName, false), effects.copyPrefix(c.internalName, true)]
@@ -327,8 +329,9 @@ export class Builder {
         this.note(`reach: ${paints.size} line effect${paints.size === 1 ? '' : 's'} recolored, in every move that draws ${paints.size === 1 ? 'it' : 'them'}`)
       }
     }
-    const effect2 = flames.effectNames(fx, c.flames, c.internalName)
+    const effect2 = trails.alwaysOn(fx, c.flames, c.trails, c.internalName)
     if (fire) this.note(`flames: ${c.flames.body ? "over the whole body (Human Torch's body fire)" : `on the ${c.flames.parts.join(', ')}`}`)
+    if (trailed) this.note(`motion trails: on the ${c.trails.parts.join(', ')}`)
     // the game's own body fire adds nothing
     if (fx.used() === before) return [effect1, power, extra, effect2]
     this.r.sets.set('Misc/game.nfx', fx.build())
@@ -342,7 +345,7 @@ export class Builder {
     const c = this.c, base = this.base
     const tun = new tuning.Tuning(this.src, base)
     const hide = effects.hidden(c.aura.color, c.aura.alt_color)
-    const level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, base), 'all', flames.cost(c.flames), hide) : c.aura.tint)
+    const level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, base), 'all', trails.cost(c.flames, c.trails), hide) : c.aura.tint)
     if (this.tint === null && level !== c.aura.tint) this.note(`aura tint: ${base.label}'s full tint needs more memory than a match can spare; its idle and power-up effects are tinted`)
     const [rootsN, rootsA] = effects.roots(fx, tun, base, level)
     if (!rootsN.length && !rootsA.length) throw new LabError(`${base.label} has no effects to tint; use the Base or Swap aura`)

@@ -41,6 +41,8 @@ export const AURA_MODES = ['base', 'swap', 'tint']
 export const AURA_TINTS = ['all', 'power']
 export const FLAME_PARTS = ['head', 'chest', 'r_hand', 'l_hand', 'r_foot', 'l_foot']
 export const FLAME_SIZE: [number, number] = [0.5, 2.0]
+export const TRAIL_PARTS = ['arms', 'legs', 'body', 'head']
+export const TRAIL_LENGTH: [number, number] = [0.05, 0.5]
 export const SIZE: [number, number] = [0.1, 3.0]
 export const LIFT = ['light', 'medium', 'heavy']
 export const GAMEPLAY: Record<string, [number, number, boolean]> = {
@@ -136,6 +138,13 @@ export interface Flames {
   base_effect: boolean
 }
 
+export interface Trails {
+  parts: string[]
+  color: string
+  alt_color: string
+  length: number
+}
+
 export const MOVE_EFFECTS = ['theirs', 'none'] as const
 export type MoveEffect = (typeof MOVE_EFFECTS)[number]
 export interface MoveLines {
@@ -189,6 +198,7 @@ export interface Character {
   materials: Material[]
   aura: { mode: string; tint: string; color: string; alt_color: string }
   flames: Flames
+  trails: Trails
   stats: { normal: number[]; alt: number[] }
   gameplay: Gameplay
   baseMoves: BaseMoves
@@ -210,6 +220,10 @@ export function defaultStats() {
 
 export function defaultFlames(): Flames {
   return { parts: [], body: false, color: null, alt_color: null, size: 1, base_effect: true }
+}
+
+export function defaultTrails(): Trails {
+  return { parts: [], color: '#FFFFFF60', alt_color: '#FFFFFF60', length: 0.2 }
 }
 
 export function hasCutscenes(c: Cutscenes): boolean {
@@ -239,6 +253,7 @@ export function newCharacter(): Character {
     materials: [],
     aura: { mode: 'base', tint: 'all', color: '#40A0FF', alt_color: '#50FF50' },
     flames: defaultFlames(),
+    trails: defaultTrails(),
     stats: defaultStats(),
     gameplay: {},
     baseMoves: {},
@@ -303,6 +318,7 @@ export function manifest(c: Character): Json {
     },
     aura: c.aura,
     flames: hasFlames(c.flames) ? c.flames : undefined,
+    trails: c.trails.parts.length ? c.trails : undefined,
     stats: { display: c.stats, gameplay: c.gameplay },
     ui: c.ui,
     base_moves: c.baseMoves,
@@ -461,7 +477,7 @@ function upgrade(m: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Character {
-  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'cutscenes', 'sounds', 'z_button', 'files'], 'the manifest')
+  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'trails', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'cutscenes', 'sounds', 'z_button', 'files'], 'the manifest')
   if (m.format !== FORMAT) throw new LabError('not a .imperfect file')
   upgrade(m)
   if (m.game !== GAME) throw new LabError(`this file is for ${m.game}, not ${GAME}`)
@@ -541,6 +557,16 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     base_effect: typed<boolean>(fl.base_effect ?? true, 'boolean', 'flames.base_effect'),
   }
   if (c.flames.body && c.flames.parts.length) throw new LabError('manifest: flames are on the whole body or on parts, not both')
+  const tr = keys(m.trails ?? {}, ['parts', 'color', 'alt_color', 'length'], 'trails')
+  const trailParts = typed<unknown[]>(tr.parts ?? [], 'array', 'trails.parts').map((p) => str(p, 'trails.parts', 10)!)
+  for (const p of trailParts) if (!TRAIL_PARTS.includes(p)) throw new LabError(`manifest: unknown trail part ${JSON.stringify(p)}`)
+  const dt = defaultTrails()
+  c.trails = {
+    parts: TRAIL_PARTS.filter((p) => trailParts.includes(p)),
+    color: color(tr.color ?? dt.color, 'trails.color'),
+    alt_color: color(tr.alt_color ?? dt.alt_color, 'trails.alt_color'),
+    length: num(tr.length ?? dt.length, 'trails.length', ...TRAIL_LENGTH, false)!,
+  }
   const st = keys(m.stats ?? {}, ['display', 'gameplay'], 'stats')
   const disp = keys(st.display ?? defaultStats(), ['normal', 'alt'], 'stats.display')
   for (const k of ['normal', 'alt'] as const) {

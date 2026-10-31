@@ -12,6 +12,7 @@ import * as shaders from '../src/core/build/shaders'
 import { buildBatch, checkBatch, ordinal } from '../src/core/build/batch'
 import { Builder, report } from '../src/core/build/patch'
 import * as templates from '../src/core/build/templates'
+import * as trails from '../src/core/build/trails'
 import * as tuning from '../src/core/build/tuning'
 import * as ui from '../src/core/build/ui'
 import { equal, latin1, u32be } from '../src/core/bytes'
@@ -390,7 +391,7 @@ describe.skipIf(!ISO)('game', () => {
     expect(plans[effects.planKey('all', [true, true])].bytes).toBeLessThan(plans.all.bytes / 10)
     expect(plans.all.grey).toEqual([8192, 0])
     expect(plans[effects.planKey('all', [true, false])].grey).toEqual([0, 0])
-    expect(effects.tintLevel(plans, 'all', flames.cost({ ...imperfect.defaultFlames(), parts: ['r_hand'] }), [true, false])).toBe('all')
+    expect(effects.tintLevel(plans, 'all', trails.cost({ ...imperfect.defaultFlames(), parts: ['r_hand'] }, imperfect.defaultTrails()), [true, false])).toBe('all')
   })
 
   it('builds a hidden costume without growing the cache or borrowing the grey sprite', () => {
@@ -565,16 +566,75 @@ describe.skipIf(!ISO)('game', () => {
     expect(models[0].attachments.some(([, kind]) => kind === flames.FLAME_KIND)).toBe(false)
   })
 
+  it('puts motion trails on the limbs\' joints', () => {
+    for (const base of ['wolverine', 'storm', 'megalith']) {
+      const c = tinted(base)
+      c.aura = { ...c.aura, mode: 'base' }
+      c.trails = { ...imperfect.defaultTrails(), parts: [...imperfect.TRAIL_PARTS] }
+      const r = new Builder(src(), c).build()
+      const sk = Skeleton.ofBase(new R.BaseCharacter(src(), base))
+      const bones = ['R.upper_arm', 'R.forearm', 'R.hand', 'L.upper_arm', 'L.forearm', 'L.hand', 'R.thigh', 'R.calf', 'R.foot', 'L.thigh', 'L.calf', 'L.foot', 'pelvis', 'neck', 'head']
+      for (const costume of ['', '_alt']) {
+        const [, models] = ngmtool.read(r.adds.get(`Bundles/synth${costume}.ngm`)!)
+        const marks = models[0].attachments.filter(([, kind]) => kind === trails.TRAIL_KIND).map(([node, , index]) => [node, index])
+        expect(marks, base).toEqual(bones.map((b, i) => [sk.node(b), i]))
+      }
+      const T = new R.Templates(r.sets.get('Misc/Global.not')!)
+      const names = ['plr_Synth', 'plr_altSynth'].map((t) => R.text(T.prop(t, R.P_EFFECT2))!)
+      expect(names[0]).toBe(names[1])
+      const items = nfxtool.readNfx(r.sets.get('Misc/game.nfx')!)
+      expect(nfxtool.problems(items)[0]).toEqual([])
+      const by = new Map(nfxtool.blocks(items).map((b) => [b.name, b]))
+      const values = (n: string) => by.get(n)!.records()[0].map((rec) => [nfxtool.KEYS[rec.key], rec.value])
+      const groups = values(names[0]).map(([, v]) => v as string)
+      expect(groups.length).toBe(3)
+      const pairs = groups.flatMap((g) => values(g).filter(([k]) => k !== 'effectname').map(([, v]) => v))
+      expect(pairs).toEqual(Object.values(trails.SEGMENTS).flat(2))
+      const ribbon = Object.fromEntries(values(values(groups[0])[0][1] as string))
+      expect(by.get(values(groups[0])[0][1] as string)!.type).toBe(nfxtool.TYPES.indexOf('trail'))
+      expect([ribbon.markertype, ribbon.endmarker, ribbon.startcol, ribbon.endcol, ribbon.part_life]).toEqual([68, 68, 0x60ffffff, 0x00ffffff, Math.fround(0.2)])
+      expect(r.adds.has('Misc/PLAYER_Synth.nvb')).toBe(false)
+      expect(D.readEffectCache(r.dol!)).toBe(nfxtool.CACHE_SIZE)
+    }
+  })
+
+  it('names flames and trails together, colored per costume', () => {
+    const c = tinted('daredevil')
+    c.aura = { ...c.aura, mode: 'base' }
+    c.flames = { ...imperfect.defaultFlames(), parts: ['head'] }
+    c.trails = { ...imperfect.defaultTrails(), parts: ['arms'], alt_color: '#FF000080', length: 0.5 }
+    const r = new Builder(src(), c).build()
+    const T = new R.Templates(r.sets.get('Misc/Global.not')!)
+    const [normal, alt] = ['plr_Synth', 'plr_altSynth'].map((t) => R.text(T.prop(t, R.P_EFFECT2))!)
+    expect(normal).not.toBe(alt)
+    const by = new Map(nfxtool.blocks(nfxtool.readNfx(r.sets.get('Misc/game.nfx')!)).map((b) => [b.name, b]))
+    const children = (n: string) => by.get(n)!.records()[0].filter((rec) => nfxtool.KEYS[rec.key] === 'effectname').map((rec) => rec.value as string)
+    const ribbon = (n: string) => Object.fromEntries(by.get(children(children(n)[1])[0])!.records()[0].map((rec) => [nfxtool.KEYS[rec.key], rec.value]))
+    expect(children(normal)[0]).toBe(children(alt)[0])
+    expect(children(children(normal)[0]).map((n) => by.get(n)!.type)).toEqual([nfxtool.TYPES.indexOf('partsys')])
+    expect([ribbon(normal).startcol, ribbon(alt).startcol, ribbon(alt).sampledelay, ribbon(alt).part_life]).toEqual([0x60ffffff, 0x80ff0000, Math.fround(0.01), 0.5])
+    expect(trails.label(c.flames, c.trails)).toBe('flames and motion trails')
+  })
+
+  it('counts motion trails in the effect memory', () => {
+    const t = { ...imperfect.defaultTrails(), parts: [...imperfect.TRAIL_PARTS], alt_color: '#00FF0040' }
+    const fx = new effects.Effects(src().entry('Misc/game.nfx'))
+    const before = fx.used()
+    trails.alwaysOn(fx, imperfect.defaultFlames(), t, 'Synth')
+    expect(Math.abs(fx.used() - before - trails.cost(imperfect.defaultFlames(), t))).toBeLessThan(16)
+    expect(trails.cost(imperfect.defaultFlames(), imperfect.defaultTrails())).toBe(0)
+  })
+
   it('counts flames in the memory a tint may take', () => {
     const f = { ...imperfect.defaultFlames(), parts: [...imperfect.FLAME_PARTS], color: '#FF0000', alt_color: '#0000FF' }
     const fx = new effects.Effects(src().entry('Misc/game.nfx'))
     const before = fx.used()
     flames.effectNames(fx, f, 'Synth')
-    expect(Math.abs(fx.used() - before - flames.cost(f))).toBeLessThan(16)
-    expect(flames.cost({ ...imperfect.defaultFlames(), body: true })).toBe(0)
+    expect(Math.abs(fx.used() - before - trails.cost(f, imperfect.defaultTrails()))).toBeLessThan(16)
+    expect(trails.cost({ ...imperfect.defaultFlames(), body: true }, imperfect.defaultTrails())).toBe(0)
     const plans = effects.tintPlans(src(), new R.BaseCharacter(src(), 'johnnyohm'))
     expect(effects.tintLevel(plans, 'all', 0)).toBe('all')
-    expect(effects.tintLevel(plans, 'all', flames.cost(f))).toBe('power')
+    expect(effects.tintLevel(plans, 'all', trails.cost(f, imperfect.defaultTrails()))).toBe('power')
     const c = tinted('johnnyohm')
     c.flames = f
     const r = new Builder(src(), c).build()

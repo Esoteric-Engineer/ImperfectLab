@@ -1,4 +1,4 @@
-// Misc/game.nfx: recolored copies of the base's effects for the aura tint, and the blocks flames.ts adds.
+// Misc/game.nfx: recolored copies of the base's effects for the aura tint, and the blocks flames.ts and trails.ts add.
 // A tree of effect blocks (a block and every block its effectname/effect0-3 keys name) is copied under new names with every color turned to the chosen hue/lightness.
 // The copies are appended; nothing of the base's changes. Memory limits: docs/LIMITATIONS.md.
 import { latin1 } from '../bytes'
@@ -9,10 +9,11 @@ import type { GameSource } from '../game/source'
 import { readTpl, roundHalfEven } from '../mnroi/gxtex'
 import * as nfxtool from '../mnroi/nfxtool'
 import * as nvbtool from '../mnroi/nvbtool'
-import { AURA_TINTS, type Flames } from '../package/imperfect'
+import { AURA_TINTS, type Flames, type Trails } from '../package/imperfect'
 import { hlsToRgb, rgbToHls } from './colorsys'
 import * as flames from './flames'
 import * as templates from './templates'
+import * as trails from './trails'
 import * as tuning from './tuning'
 
 const REFERENCES = ['effectname', 'effect0', 'effect1', 'effect2', 'effect3']
@@ -101,7 +102,7 @@ export function tintPlans(source: GameSource, base: BaseCharacter): Record<strin
 }
 
 // How much several characters' tints and flames grow the cache together.
-export function sharedExtra(source: GameSource, tints: [BaseCharacter, string | null, Hidden?][], fires: (Flames | null)[] = [], more: (fx: Effects) => void = () => {}): number {
+export function sharedExtra(source: GameSource, tints: [BaseCharacter, string | null, Hidden?][], fires: [Flames, Trails][] = [], more: (fx: Effects) => void = () => {}): number {
   const fx = new Effects(source.entry('Misc/game.nfx'))
   tints.forEach(([base, level, hide = [false, false]], i) => {
     if (level === null) return
@@ -109,9 +110,7 @@ export function sharedExtra(source: GameSource, tints: [BaseCharacter, string | 
     fx.tinted(normal, stand(hide[0]), copyPrefix(`x${i}`, false))
     fx.tinted(alt, stand(hide[1]), copyPrefix(`x${i}`, true))
   })
-  fires.forEach((f, i) => {
-    if (f) flames.effectNames(fx, f, `x${i}`)
-  })
+  fires.forEach(([f, t], i) => trails.alwaysOn(fx, f, t, `x${i}`))
   more(fx)
   return cacheSize(fx.used()) - nfxtool.CACHE_SIZE
 }
