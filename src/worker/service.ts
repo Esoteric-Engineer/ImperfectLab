@@ -200,6 +200,14 @@ export class Service {
     return cutscenes.pcm(this.src(), base, kind, key)
   }
 
+  cutsceneAnimation(base: string, kind: imperfect.CutsceneKind, key: string): Uint8Array {
+    return cutscenes.animationGlb(this.src(), base, kind, key)
+  }
+
+  checkCutsceneAnimation(base: string, kind: imperfect.CutsceneKind, key: string, glb: Uint8Array): string[] {
+    return cutscenes.checkAnimation(this.src(), base, kind, key, glb)
+  }
+
   // `channels` are already at asftool.RATE.
   encodeCutsceneAudio(channels: Int16Array[], samples: number): Uint8Array {
     return asftool.build(asftool.encode(channels.map((c) => {

@@ -57,6 +57,8 @@ const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
 // glTF's quaternions are (x, y, z, w), ngbtool's are (w, x, y, z)
 const toGltf = ([w, x, y, z]: Quat) => [x, y, z, w]
 const kind = (t: cuttool.Track) => u32le(t.head, 4)
+// A performer's bone word with flags in its high half is a second track on its node. Those tracks stay as they are.
+const flagged = (t: cuttool.Track) => cuttool.bone(t) > 0xffff
 const actorIn = (ch: cuttool.Chunk, name: string) => ch.actors.find((a) => cuttool.recordName(a.record).toLowerCase() === name.toLowerCase()) ?? null
 
 function rest(nodes: ngmtool.Node[]): Vec3[] {
@@ -152,8 +154,10 @@ export function toGlb(cut: cuttool.Cut, rigs: Rigs): Uint8Array {
   for (const r of cut.records) {
     const name = cuttool.recordName(r)
     if (CAMERA.test(name)) {
+      // the game's field of view is across the width of its 4:3 frame
       const fov = cuttool.fov(cut.chunks.find((c) => actorIn(c, name)) ?? cut.chunks[0])
-      const camera = g.json.cameras.push({ name, type: 'perspective', perspective: { yfov: (fov * Math.PI) / 180, znear: 0.05, aspectRatio: 4 / 3 } }) - 1
+      const yfov = 2 * Math.atan(Math.tan((fov * Math.PI) / 360) * 0.75)
+      const camera = g.json.cameras.push({ name, type: 'perspective', perspective: { yfov, znear: 0.05, aspectRatio: 4 / 3 } }) - 1
       const node = g.node({ name, camera })
       g.json.scenes[0].nodes.push(node)
       for (const bone of used(name, 0)) animate(node, 'rotation', timeline(cut, name, bone, 0, (p) => toGltf(ngbtool.matQuat(mul(M, ngbtool.qmat(ngbtool.quat(p))))), [0, 0, 0, 1]))
@@ -362,19 +366,42 @@ function rotations(qs: Quat[]): ngbtool.Packed[] {
 
 const angle = (r: Mat3) => Math.acos(Math.max(-1, Math.min(1, (r[0][0] + r[1][1] + r[2][2] - 1) / 2)))
 
+// A chunk's record holds where its actor starts, and the game shows the actor there as the chunk starts.
+// Re-keyed actors' records follow their keys.
+function place(a: cuttool.Actor, offset: Vec3, camera = false) {
+  const first = (ch: number) => {
+    const t = a.tracks.find((t) => (camera || cuttool.bone(t) === 0) && kind(t) === ch)
+    return t?.keys.length ? cuttool.keys(t)[0][1] : null
+  }
+  const r = first(0), p = first(1)
+  const R: Mat3 = r ? ngbtool.qmat(ngbtool.quat(r)) : [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+  cuttool.setPlacement(a.record, R, add(p ? ngbtool.translation(p) : [0, 0, 0], offset))
+}
+
+function placeAll(cut: cuttool.Cut, name: string, offset: Vec3, camera = false) {
+  const actors = cut.chunks.map((c) => actorIn(c, name)).filter((a) => a !== null)
+  for (const a of actors) place(a, offset, camera)
+  const own = cut.records.find((r) => cuttool.recordName(r).toLowerCase() === name.toLowerCase())
+  if (own && actors.length) own.set(actors[actors.length - 1].record.subarray(0x50, 0x90), 0x50)
+}
+
 export interface Imported {
   cut: cuttool.Cut
+  keyed: string[]
   notes: string[]
 }
 
 // The template with its cameras' and rigged actors' tracks keyed from glTF.
 export function fromGlb(data: Uint8Array, template: cuttool.Cut, rigs: Rigs): Imported {
+  if (data.length < 20 || data[0] !== 0x67 || data[1] !== 0x6c || data[2] !== 0x54 || data[3] !== 0x46) throw new LabError('not a binary glTF (.glb) file')
   const scene = new Scene(data)
   const cut = cuttool.read(cuttool.build(template))
-  const notes: string[] = []
+  const notes: string[] = [], keyed: string[] = []
   const total = cut.chunks.reduce((s, c) => s + cuttool.frames(c), 0)
   const end = Math.max(0, ...[...scene.channels.values()].flatMap((c) => Object.values(c).map((s) => s.times[s.times.length - 1])))
-  if (Math.abs(end * RATE - total) > 1) notes.push(`the glTF's animation runs ${(end * RATE).toFixed(1)} frames, the cutscene ${total}: only the cutscene's length is read`)
+  const frames = end * RATE
+  if (frames > total + 1) notes.push(`the glTF's animation runs ${frames.toFixed(0)} frames, the cutscene ${total}: the rest is left out`)
+  else if (frames < total - 1) notes.push(`the glTF's animation runs ${frames.toFixed(0)} frames, the cutscene ${total}: its last pose is held`)
 
   for (const r of cut.records) {
     const name = cuttool.recordName(r)
@@ -385,6 +412,7 @@ export function fromGlb(data: Uint8Array, template: cuttool.Cut, rigs: Rigs): Im
         continue
       }
       const node = found[0], keys = scene.times([node])
+      keyed.push(name)
       let start = 0
       cut.chunks.forEach((chunk) => {
         const a = actorIn(chunk, name), len = cuttool.frames(chunk)
@@ -398,6 +426,7 @@ export function fromGlb(data: Uint8Array, template: cuttool.Cut, rigs: Rigs): Im
         }
         start += len
       })
+      placeAll(cut, name, [0, 0, 0], true)
       continue
     }
     const rg = rigs.get(name.toLowerCase())
@@ -411,6 +440,7 @@ export function fromGlb(data: Uint8Array, template: cuttool.Cut, rigs: Rigs): Im
       continue
     }
     const nodes = joints.map((j) => j[0])
+    keyed.push(name)
     const q = rg.nodes.map(([o]) => [o[0], o[1], o[2]] as Vec3)
     const parentOf = (i: number) => (rg.nodes[i][2] >= 0 && rg.nodes[i][2] < i ? rg.nodes[i][2] : -1)
     const restTurn = nodes.map((n) => tr(mul(mul(M, split(scene.restWorld(n))[0]), M)))
@@ -433,27 +463,29 @@ export function fromGlb(data: Uint8Array, template: cuttool.Cut, rigs: Rigs): Im
             return [mul(tr(PR), R), sub(apply(tr(PR), sub(p, pp)), q[k])] as [Mat3, Vec3]
           })
         })
-        const want = new Set(a.tracks.map((t) => `${cuttool.bone(t)}.${kind(t)}`))
-        for (let b = 0; b < rg.nodes.length; b++) {
-          if (!want.has(`${b}.0`) && local.some((l) => angle(l[b][0]) > TOL)) want.add(`${b}.0`)
-          if (!want.has(`${b}.1`) && local.some((l) => Math.hypot(...l[b][1]) > TOL)) want.add(`${b}.1`)
-        }
-        const old = new Map(a.tracks.map((t) => [`${cuttool.bone(t)}.${kind(t)}`, t]))
-        const order = [...a.tracks.map((t) => `${cuttool.bone(t)}.${kind(t)}`), ...[...want].filter((k) => !old.has(k)).sort((x, y) => parseFloat(x) - parseFloat(y))]
-        a.tracks = order.map((k) => {
-          const [b, ch] = k.split('.').map(Number)
-          const t = old.get(k)
-          if (b >= rg.nodes.length) return t!
+        const rekey = (b: number, ch: number, like?: cuttool.Track): cuttool.Track => {
           const packed = ch === 0 ? rotations(local.map((l) => ngbtool.matQuat(l[b][0]))) : local.map((l) => ngbtool.encodeTranslation(l[b][1]))
-          return { head: trackHead(b, ch, t), keys: keyBytes(times.map(([f], j) => [f, packed[j]])) }
-        })
+          return { head: trackHead(b, ch, like), keys: keyBytes(times.map(([f], j) => [f, packed[j]])) }
+        }
+        // the bones the glTF moves that had no track get one
+        const had = new Set(a.tracks.filter((t) => !flagged(t)).map((t) => `${cuttool.bone(t)}.${kind(t)}`))
+        const added: [number, number][] = []
+        for (let b = 0; b < rg.nodes.length; b++) {
+          if (!had.has(`${b}.0`) && local.some((l) => angle(l[b][0]) > TOL)) added.push([b, 0])
+          if (!had.has(`${b}.1`) && local.some((l) => Math.hypot(...l[b][1]) > TOL)) added.push([b, 1])
+        }
+        a.tracks = [
+          ...a.tracks.map((t) => (flagged(t) || cuttool.bone(t) >= rg.nodes.length ? t : rekey(cuttool.bone(t), kind(t), t))),
+          ...added.map(([b, ch]) => rekey(b, ch)),
+        ]
       }
       start += len
     })
+    placeAll(cut, name, rg.nodes[0][0].slice(0, 3) as Vec3)
   }
   cut.chunks.forEach((c, i) => {
     const n = cuttool.buildChunk(c).length
     if (n > cuttool.LIMIT) throw new LabError(`chunk ${i + 1} of the cutscene is ${n} bytes, more than the ${cuttool.LIMIT} the game streams`)
   })
-  return { cut, notes }
+  return { cut, keyed, notes }
 }

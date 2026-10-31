@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as eaxa from '../src/core/audio/eaxa'
 import { buildBatch, checkBatch } from '../src/core/build/batch'
+import * as cutanim from '../src/core/build/cutanim'
 import * as cutscenes from '../src/core/build/cutscenes'
 import { EFFECT_FIELDS, VICTIM_SLOTS } from '../src/core/build/effectslots'
 import { Builder } from '../src/core/build/patch'
@@ -9,6 +10,7 @@ import { equal, u32le } from '../src/core/bytes'
 import * as R from '../src/core/game/roster'
 import * as asftool from '../src/core/mnroi/asftool'
 import * as cuttool from '../src/core/mnroi/cuttool'
+import { GLB, type Json } from '../src/core/mnroi/gltf'
 import * as ngbtool from '../src/core/mnroi/ngbtool'
 import * as ngmtool from '../src/core/mnroi/ngmtool'
 import * as nvbtool from '../src/core/mnroi/nvbtool'
@@ -62,7 +64,7 @@ describe('EA-XA', () => {
 describe('new cutscene audio', () => {
   it('drops audio that does not fit where a kind is taken from', () => {
     const slot = (key: string, seconds: number) => ({ key, label: key, stream: `${key}.asf`, seconds, samples: Math.round(seconds * asftool.RATE) })
-    const kinds = (intro: cutscenes.AudioSlot[]) => ({ intro: { cuts: [], slots: intro }, victory: { cuts: [], slots: [] }, finisher: { cuts: [], slots: [] } })
+    const kinds = (intro: cutscenes.AudioSlot[]) => ({ intro: { cuts: [], slots: intro, animations: [] }, victory: { cuts: [], slots: [], animations: [] }, finisher: { cuts: [], slots: [], animations: [] } })
     const cat: cutscenes.Catalog = { wolverine: { body: 'male', kinds: kinds([slot('intro_1', 2), slot('intro_2', 2)]) }, thing: { body: 'brute', kinds: kinds([slot('intro_1', 1)]) } }
     const c = imperfect.newCharacter()
     c.base = 'wolverine'
@@ -75,6 +77,17 @@ describe('new cutscene audio', () => {
     expect(c.files.has('cutscenes/intro_2.asf')).toBe(false)
     c.files.set('cutscenes/intro_1.asf', clip(1.5))
     expect(cutscenes.dropUnfitAudio(c, cat, 'intro')).toEqual(['intro_1'])
+  })
+})
+
+describe('new cutscene animations', () => {
+  it('drops a kind\'s animations and their files', () => {
+    const c = imperfect.newCharacter()
+    c.cutscenes.animation = { intro_1: 'cutscenes/intro_1.glb', intro_2: 'cutscenes/intro_2.glb', victory_1: 'cutscenes/victory_1.glb' }
+    c.files = new Map(Object.values(c.cutscenes.animation).map((m) => [m, new Uint8Array(4)]))
+    expect(cutscenes.dropAnimations(c, 'intro')).toEqual(['intro_1', 'intro_2'])
+    expect(Object.keys(c.cutscenes.animation)).toEqual(['victory_1'])
+    expect([...c.files.keys()]).toEqual(['cutscenes/victory_1.glb'])
   })
 })
 
@@ -160,7 +173,7 @@ describe.skipIf(!ISO)('cutscenes', () => {
 
   it('gives Daredevil Wolverine\'s cutscenes with only tuning strings', () => {
     const c = character('daredevil')
-    c.cutscenes = { intro: 'wolverine', victory: 'wolverine', finisher: 'wolverine', audio: {}, effects: {} }
+    c.cutscenes = { intro: 'wolverine', victory: 'wolverine', finisher: 'wolverine', audio: {}, effects: {}, animation: {} }
     const p = cutscenes.plan(src(), new R.BaseCharacter(src(), 'daredevil'), c)
     expect(p.files.size).toBe(0)
     const wl = new tuning.Tuning(src(), new R.BaseCharacter(src(), 'wolverine'))
@@ -178,7 +191,7 @@ describe.skipIf(!ISO)('cutscenes', () => {
 
   it('remaps the Thing\'s finisher onto a male skeleton', () => {
     const c = character('daredevil')
-    c.cutscenes = { finisher: 'thing', audio: {}, effects: {} }
+    c.cutscenes = { finisher: 'thing', audio: {}, effects: {}, animation: {} }
     const p = cutscenes.plan(src(), new R.BaseCharacter(src(), 'daredevil'), c)
     expect([...p.files.keys()]).toEqual(['Cutscenes/synth_finisher1.cut', 'Cutscenes/synth_finisher2.cut', 'Cutscenes/synth_finisher3.cut'])
     expect(p.fields.get(206)![0]).toBe('synth_finisher1')
@@ -195,7 +208,7 @@ describe.skipIf(!ISO)('cutscenes', () => {
 
   it('keeps flagged tracks when it remaps, and pads short audio to the stream it replaces', () => {
     const c = character('daredevil')
-    c.cutscenes = { victory: 'megalith', audio: { victory_1: 'cutscenes/v.asf' }, effects: {} }
+    c.cutscenes = { victory: 'megalith', audio: { victory_1: 'cutscenes/v.asf' }, effects: {}, animation: {} }
     c.files.set('cutscenes/v.asf', clip(1))
     const p = cutscenes.plan(src(), new R.BaseCharacter(src(), 'daredevil'), c)
     const theirs = cuttool.read(src().entry('Cutscenes/mp_ml_ext_1.cut'))
@@ -212,7 +225,7 @@ describe.skipIf(!ISO)('cutscenes', () => {
 
   it('points copies of the cutscenes at new audio, for both costumes and both sides', () => {
     const c = character('daredevil')
-    c.cutscenes = { intro: 'wolverine', audio: { intro_2: 'cutscenes/intro_2.asf', finisher_1: 'cutscenes/finisher_1.asf' }, effects: {} }
+    c.cutscenes = { intro: 'wolverine', audio: { intro_2: 'cutscenes/intro_2.asf', finisher_1: 'cutscenes/finisher_1.asf' }, effects: {}, animation: {} }
     c.files.set('cutscenes/intro_2.asf', clip(1))
     c.files.set('cutscenes/finisher_1.asf', clip(2))
     const p = cutscenes.plan(src(), new R.BaseCharacter(src(), 'daredevil'), c)
@@ -252,7 +265,7 @@ describe.skipIf(!ISO)('cutscenes', () => {
 
   it('plays Iron Man\'s effects in his finisher on Daredevil', () => {
     const c = character('daredevil')
-    c.cutscenes = { finisher: 'ironman', audio: {}, effects: { finisher: 'theirs' } }
+    c.cutscenes = { finisher: 'ironman', audio: {}, effects: { finisher: 'theirs' }, animation: {} }
     const dd = new R.BaseCharacter(src(), 'daredevil')
     const p = cutscenes.plan(src(), dd, c)
     expect(p.files.size).toBe(3)
@@ -282,7 +295,7 @@ describe.skipIf(!ISO)('cutscenes', () => {
 
   it('plays no effects in Megalith\'s intro on Daredevil when told to', () => {
     const c = character('daredevil')
-    c.cutscenes = { intro: 'megalith', audio: {}, effects: { intro: 'none' } }
+    c.cutscenes = { intro: 'megalith', audio: {}, effects: { intro: 'none' }, animation: {} }
     const p = cutscenes.plan(src(), new R.BaseCharacter(src(), 'daredevil'), c)
     const fx = (cut: cuttool.Cut) => cut.chunks.flatMap((ch) => ch.actors.filter((a) => cuttool.recordName(a.record).toLowerCase() === 'megalith'))
       .flatMap((a) => Array.from({ length: a.events.length / 12 }, (_, i) => a.events[12 * i + 4] | (a.events[12 * i + 5] << 8)))
@@ -297,7 +310,7 @@ describe.skipIf(!ISO)('cutscenes', () => {
   })
 
   it('says how many effects have room before and after they are chosen', () => {
-    const none: imperfect.Cutscenes = { audio: {}, effects: {} }
+    const none: imperfect.Cutscenes = { audio: {}, effects: {}, animation: {} }
     expect(cutscenes.effectFit(src(), 'daredevil', choices(none))).toEqual({})
     const dd = cutscenes.effectFit(src(), 'daredevil', choices({ ...none, finisher: 'ironman', intro: 'wolverine' }))
     expect(dd.finisher!.chosen).toBe(false)
@@ -308,7 +321,7 @@ describe.skipIf(!ISO)('cutscenes', () => {
     // Johnny Ohm has room for Iron Man's finisher alone, but not along with his intro and victory
     const alone = cutscenes.effectFit(src(), 'johnnyohm', choices({ ...none, finisher: 'ironman', effects: { finisher: 'theirs' } }))
     expect(alone.finisher!.fit).toBe(alone.finisher!.total)
-    const all: imperfect.Cutscenes = { intro: 'ironman', victory: 'ironman', finisher: 'ironman', audio: {}, effects: { intro: 'theirs', victory: 'theirs', finisher: 'theirs' } }
+    const all: imperfect.Cutscenes = { intro: 'ironman', victory: 'ironman', finisher: 'ironman', audio: {}, effects: { intro: 'theirs', victory: 'theirs', finisher: 'theirs' }, animation: {} }
     const jo = cutscenes.effectFit(src(), 'johnnyohm', choices(all))
     expect(jo.finisher!.chosen).toBe(true)
     expect(jo.finisher!.fit).toBeLessThan(jo.finisher!.total)
@@ -318,12 +331,87 @@ describe.skipIf(!ISO)('cutscenes', () => {
     expect(note).toContain(`${jo.finisher!.fit} of Iron Man's effects, ${jo.finisher!.total - jo.finisher!.fit} more left as Johnny Ohm's`)
   })
 
+  it('lists each kind\'s cutscenes to animate, downloads them for Blender and checks uploads', () => {
+    const wl = cutscenes.catalog(src()).wolverine.kinds
+    expect(wl.intro.animations.map((a) => [a.key, a.label, a.cut])).toEqual([['intro_1', 'Intro 1', 'mp_wl_int_1'], ['intro_2', 'Intro 2', 'mp_wl_int_2']])
+    expect(wl.finisher.animations.map((a) => a.label)).toEqual(['Finisher on a male opponent', 'Finisher on a female opponent', 'Finisher on a brute opponent'])
+    const j = (d: Uint8Array) => new GLB(d).j
+    const fin = j(cutscenes.animationGlb(src(), 'wolverine', 'finisher', 'finisher_2'))
+    expect(fin.skins.map((s: Json) => s.name).sort()).toEqual(['victim', 'wolverine'])
+    expect(fin.cameras.length).toBe(1)
+    const intro = cutscenes.animationGlb(src(), 'wolverine', 'intro', 'intro_1')
+    expect(j(intro).cameras.map((c: Json) => c.name).sort()).toEqual(['nis_camera', 'nis_camera2'])
+    expect(cutscenes.checkAnimation(src(), 'wolverine', 'intro', 'intro_1', intro)).toEqual([])
+    // Johnny Ohm's other costume has a longer first intro
+    const jo = cutscenes.animationGlb(src(), 'johnnyohm', 'intro', 'intro_1')
+    expect(cutscenes.checkAnimation(src(), 'johnnyohm', 'intro', 'intro_1', jo)).toEqual(["the other costume's copy: the glTF's animation runs 164 frames, the cutscene 198: its last pose is held"])
+    expect(() => cutscenes.animationGlb(src(), 'wolverine', 'intro', 'intro_3')).toThrow(/no cutscene intro_3/)
+    expect(() => cutscenes.checkAnimation(src(), 'wolverine', 'intro', 'intro_1', pngBytes())).toThrow(/not a binary glTF/)
+    expect(() => cutscenes.checkAnimation(src(), 'wolverine', 'intro', 'intro_1', makeGlb())).toThrow(/nothing in the glTF matches/)
+  })
+
+  it('re-animates both costumes\' copies of a cutscene from a glTF', () => {
+    const wolverine = new R.BaseCharacter(src(), 'wolverine')
+    // the first intro with its main camera a metre higher
+    const raised = cuttool.read(src().entry('Cutscenes/mp_wl_int_1.cut'))
+    for (const ch of raised.chunks) {
+      for (const a of ch.actors) {
+        if (cuttool.recordName(a.record).toLowerCase() !== 'nis_camera') continue
+        const rec = cuttool.record(a)
+        rec.tracks = rec.tracks.map(([b, k, keys]) => [b, k, k !== 1 ? keys : keys.map(([f, p]): ngbtool.Key => {
+          const [x, y, z] = ngbtool.translation(p)
+          return [f, ngbtool.encodeTranslation([x, y, z + 1])]
+        })])
+        cuttool.setRecord(a, rec)
+      }
+    }
+    const c = character('wolverine')
+    c.cutscenes.animation = { intro_1: 'cutscenes/intro_1.glb' }
+    c.files.set('cutscenes/intro_1.glb', cutanim.toGlb(raised, new Map([['wolverine', cutanim.rig(wolverine)]])))
+    const p = cutscenes.plan(src(), wolverine, c)
+    const intro = p.fields.get(170)!
+    expect([intro[0], intro[5]]).toEqual(['synth_intro1', 'synth_intro2'])
+    expect(p.fields.get(172)).toEqual(intro)
+    expect(p.fields.get(171)![0]).toBe('mp_wl_int_2')
+    expect(p.notes.some((n) => n.includes('intro') && n.includes('1 new animation'))).toBe(true)
+    const camera = (cut: cuttool.Cut, name: string, chunk: number) => {
+      const a = cut.chunks[chunk].actors.find((x) => cuttool.recordName(x.record).toLowerCase() === name)!
+      return cuttool.keys(a.tracks.find((t) => t.head[4] === 1)!).map(([f, k]): [number, ngbtool.Vec3] => [f, ngbtool.translation(k)])
+    }
+    const orig = cuttool.read(src().entry('Cutscenes/mp_wl_int_1.cut'))
+    const mine = cuttool.read(p.files.get('Cutscenes/synth_intro1.cut')!)
+    const alt = cuttool.read(p.files.get('Cutscenes/synth_intro2.cut')!)
+    for (const [i] of orig.chunks.entries()) {
+      for (const [k, [f, [x, y, z]]] of camera(orig, 'nis_camera', i).entries()) {
+        const [g, [x2, y2, z2]] = camera(mine, 'nis_camera', i)[k]
+        expect(g).toBeCloseTo(f, 2)
+        expect(Math.hypot(x2 - x, y2 - y, z2 - z - 1)).toBeLessThan(2e-3)
+      }
+      expect(camera(mine, 'nis_camera2', i).every(([, v], k) => Math.hypot(...v.map((x, n) => x - camera(orig, 'nis_camera2', i)[k][1][n])) < 2e-3)).toBe(true)
+      expect(camera(alt, 'nis_camera', i)).toEqual(camera(mine, 'nis_camera', i))
+    }
+    c.files.delete('cutscenes/intro_1.glb')
+    expect(() => cutscenes.plan(src(), wolverine, c)).toThrow(/animation for cutscene intro 1 is missing/)
+  })
+
+  it('re-animates a cutscene taken from another body class before remapping it', () => {
+    const c = character('daredevil')
+    c.cutscenes = { finisher: 'thing', audio: {}, effects: {}, animation: { finisher_1: 'cutscenes/f.glb' } }
+    c.files.set('cutscenes/f.glb', cutscenes.animationGlb(src(), 'thing', 'finisher', 'finisher_1'))
+    expect(cutscenes.checkAnimation(src(), 'thing', 'finisher', 'finisher_1', c.files.get('cutscenes/f.glb')!)).toEqual([])
+    const p = cutscenes.plan(src(), new R.BaseCharacter(src(), 'daredevil'), c)
+    expect(p.notes.some((n) => n.includes("Thing's") && n.includes('1 new animation') && n.includes('approximate'))).toBe(true)
+    const nodes = ngmtool.read(new R.BaseCharacter(src(), 'daredevil').bundleFiles()[0])[1][0].nodes.length
+    const own = cuttool.read(p.files.get(`Cutscenes/${p.fields.get(206)![0]}.cut`)!)
+    for (const ch of own.chunks) for (const a of ch.actors) if (cuttool.recordName(a.record).toLowerCase() === 'thing') expect(a.tracks.every((t) => (cuttool.bone(t) & 0xffff) < nodes)).toBe(true)
+  })
+
   it('patches two characters with cutscenes together', () => {
     const a = character('daredevil')
-    a.cutscenes = { finisher: 'thing', audio: { finisher_1: 'cutscenes/f.asf' }, effects: {} }
+    a.cutscenes = { finisher: 'thing', audio: { finisher_1: 'cutscenes/f.asf' }, effects: {}, animation: {} }
     a.files.set('cutscenes/f.asf', clip(1))
     const b = character('storm', 'Other')
-    b.cutscenes = { victory: 'elektra', audio: {}, effects: {} }
+    b.cutscenes = { victory: 'elektra', audio: {}, effects: {}, animation: {} }
     const [check] = checkBatch(src(), [a, b])
     expect(check.problems.filter(([l]) => l === 'error')).toEqual([])
     const r = buildBatch(src(), [a, b])

@@ -16,6 +16,7 @@ A ZIP archive (deflate). Only these members may appear, and nothing else is read
 | `textures/<name>.png` | textures that replace or complement the model's own (`<name>`: 1-48 of `A-Z a-z 0-9 _ -`) |
 | `ui/<slot>.png` | select-screen, loading-screen, tile and HUD pictures (slots below) |
 | `cutscenes/<name>.asf` | new cutscene audio ([`cutscenes`](#cutscenes); `<name>`: 1-48 of `A-Z a-z 0-9 _ -`) |
+| `cutscenes/<name>.glb` | new cutscene animation, binary glTF 2.0 ([`cutscenes`](#cutscenes)) |
 | `sounds/<name>.dsp` | sounds that replace the base's (`<name>`: 1-48 of `A-Z a-z 0-9 _ -`; [`sounds`](#sounds)) |
 
 Readers must reject:
@@ -228,6 +229,9 @@ Optional, and left out when the character keeps its base's cutscenes and audio.
 - `intro`, `victory`, `finisher`: the base (not the character's own) whose cutscenes of that kind the character uses. Each is optional.
 - `effects`: kind -> `theirs` (that base's effects) or `none` (no effects), for kinds taken from another base. Optional; a kind left out plays the character's base's effects.
 - `audio`: audio slot -> a `cutscenes/` member that replaces that audio. A slot is `<kind>_<n>`, numbered from 1 as the **Cutscenes** page lists them. A member is no longer than the stream it replaces and serves both costumes, and a shorter one is padded with silence when patching.
+- `animation`: cutscene -> a `cutscenes/` `.glb` that re-animates it. A cutscene is `<kind>_<n>`, numbered from 1 as the **Cutscenes** page lists them under **Animation**.
+
+A `cutscenes/` `.glb` is what the page's download gives, edited: binary glTF 2.0 at 30 frames a second (frame 0 at 0 seconds) with, by node name, each camera (`nis_camera`, `nis_camera2`) and each character as a skinned armature whose joints are named as the page names that body class's bones (a finisher's opponent is `victim`). Each joint's world pose is taken relative to its rest pose, so its rest orientation may differ from the download's.
 
 A `cutscenes/` member is an EA `SCHl` audio stream like the game's own (`Sounds/ASF/english/*.asf`): a `PT` header, `SCCl`, `SCDl` blocks of EA-XA ADPCM and `SCEl`. ImperfectLab writes stereo at 32000 Hz, in blocks of 2,156 samples and then 2,128. See [`LIMITATIONS.md`](LIMITATIONS.md) for what the patch can and cannot do.
 

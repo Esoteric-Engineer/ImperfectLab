@@ -83,4 +83,60 @@ describe.skipIf(!ISO)('cutscene animation', () => {
       expect(cuttool.read(cuttool.build(back.cut)).chunks.length).toBe(cut.chunks.length)
     }
   })
+
+  it('keeps flagged tracks\' flags and motion', () => {
+    const src = gameSource()
+    const rigs: cutanim.Rigs = new Map([['megalith', cutanim.rig(new R.BaseCharacter(src, 'megalith'))]])
+    const cut = cuttool.read(src.entry('Cutscenes/mp_ml_ext_1.cut'))
+    const back = cutanim.fromGlb(cutanim.toGlb(cut, rigs), cut, rigs)
+    expect(back.keyed.map((n) => n.toLowerCase()).sort()).toEqual(['megalith', 'nis_camera'])
+    let flagged = 0
+    cut.chunks.forEach((ch, i) => ch.actors.forEach((a, k) => {
+      if (cutanim.CAMERA.test(cuttool.recordName(a.record))) return
+      const b = back.cut.chunks[i].actors[k]
+      expect(b.tracks.slice(0, a.tracks.length).map((t) => [cuttool.bone(t), t.head[4]])).toEqual(a.tracks.map((t) => [cuttool.bone(t), t.head[4]]))
+      a.tracks.forEach((t, n) => {
+        if (cuttool.bone(t) <= 0xffff) return
+        flagged++
+        expect(b.tracks[n]).toEqual(t)
+      })
+    }))
+    expect(flagged).toBeGreaterThan(30)
+  })
+
+  it('places each chunk\'s performer and camera where it starts', () => {
+    const src = gameSource()
+    const rigs: cutanim.Rigs = new Map([['wolverine', cutanim.rig(new R.BaseCharacter(src, 'wolverine'))]])
+    const cut = cuttool.read(src.entry('Cutscenes/mp_wl_int_1.cut'))
+    const shift: ngbtool.Vec3 = [1.5, -0.5, 0]
+    const moved = cuttool.read(cuttool.build(cut))
+    for (const ch of moved.chunks) {
+      for (const a of ch.actors) {
+        const name = cuttool.recordName(a.record).toLowerCase()
+        if (name !== 'wolverine' && name !== 'nis_camera') continue
+        const t = a.tracks.find((t) => (name === 'nis_camera' || cuttool.bone(t) === 0) && t.head[4] === 1)!
+        const keys = cuttool.keys(t).map(([f, p]) => [f, ngbtool.encodeTranslation(ngbtool.translation(p).map((v, k) => v + shift[k]) as ngbtool.Vec3)] as const)
+        const out = new Uint8Array(12 * keys.length), dv = new DataView(out.buffer)
+        keys.forEach(([f, p], k) => { dv.setFloat32(12 * k, f, true); p.forEach((x, j) => dv.setInt16(12 * k + 4 + 2 * j, x, true)) })
+        t.keys = out
+      }
+    }
+    const near = (a: number[], b: number[]) => a.every((v, k) => Math.abs(v - b[k]) < 2e-3)
+    const same = cutanim.fromGlb(cutanim.toGlb(cut, rigs), cut, rigs).cut
+    const back = cutanim.fromGlb(cutanim.toGlb(moved, rigs), cut, rigs).cut
+    let checked = 0
+    cut.chunks.forEach((ch, i) => ch.actors.forEach((a, k) => {
+      if (!['wolverine', 'nis_camera'].includes(cuttool.recordName(a.record).toLowerCase())) return
+      const [R, T] = cuttool.placement(a.record)
+      const [R2, T2] = cuttool.placement(same.chunks[i].actors[k].record)
+      expect(near(T2, T), `chunk ${i}`).toBe(true)
+      expect(near(R2.flat(), R.flat()), `chunk ${i}`).toBe(true)
+      expect(near(cuttool.placement(back.chunks[i].actors[k].record)[1], T.map((v, j) => v + shift[j])), `chunk ${i}`).toBe(true)
+      checked++
+    }))
+    expect(checked).toBe(2 * cut.chunks.length)
+    const own = (c: cuttool.Cut) => c.records.find((r) => cuttool.recordName(r).toLowerCase() === 'wolverine')!
+    const lastChunk = back.chunks[back.chunks.length - 1].actors.find((a) => cuttool.recordName(a.record).toLowerCase() === 'wolverine')!
+    expect(cuttool.placement(own(back))).toEqual(cuttool.placement(lastChunk.record))
+  })
 })

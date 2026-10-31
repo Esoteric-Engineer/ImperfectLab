@@ -1,6 +1,6 @@
 // In-engine cutscenes (Cutscenes/*.cut), ported from mnroi tools/cuttool.py, which documents the layout.
 // Little-endian. Actors' animations are .ngb-style tracks {u32 bone, u32 channel, u32 key count, u32 pointer} with 12-byte keys.
-import { ByteWriter, cstring, encodeLatin1, f32le, putU32le, u32le } from '../bytes'
+import { ByteWriter, cstring, encodeLatin1, f32le, putF32le, putU32le, u32le } from '../bytes'
 import { LabError } from '../errors'
 import type * as ngbtool from './ngbtool'
 
@@ -40,6 +40,21 @@ export interface Cut {
 }
 
 export const recordName = (r: Uint8Array) => cstring(r, 8, 0x50)
+
+// A record's placement, at 0x50: a 4x4 matrix of row vectors, the turned x, y and z axes, then the position.
+// Some cameras' axes are scaled (by 3 to 35), which is kept.
+const PLACEMENT = 0x50
+export const placement = (r: Uint8Array): [ngbtool.Mat3, ngbtool.Vec3] => [
+  [0, 1, 2].map((i) => [0, 1, 2].map((j) => f32le(r, PLACEMENT + 16 * j + 4 * i))) as ngbtool.Mat3,
+  [0, 1, 2].map((j) => f32le(r, PLACEMENT + 48 + 4 * j)) as ngbtool.Vec3,
+]
+
+export function setPlacement(r: Uint8Array, R: ngbtool.Mat3, T: ngbtool.Vec3) {
+  const k = Math.hypot(...placement(r)[0].map((row) => row[0])) || 1
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) putF32le(r, PLACEMENT + 16 * j + 4 * i, k * R[i][j])
+  for (let j = 0; j < 3; j++) putF32le(r, PLACEMENT + 48 + 4 * j, T[j])
+}
+
 export const bone = (t: Track) => u32le(t.head, 0)
 export const fps = (cut: Cut) => f32le(cut.header, 0x10)
 export const frames = (c: Chunk) => f32le(c.head, 8)

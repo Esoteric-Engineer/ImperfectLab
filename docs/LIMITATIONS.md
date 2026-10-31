@@ -69,6 +69,7 @@ A Daredevil-based character's `holster` (`base_moves`, [`FORMAT.md`](FORMAT.md))
 - **Only power-on and power-off reach for it.** Any other move that has the prop somewhere else than the move before it (the ranged attack outside power mode, or a move set in hand outside it) slides it between the back and the hand while the game fades into the animation.
 - **The arm reach is approximate.** Power-on and power-off keep their length (Wolverine's power-on is 10 frames), so the reach is quick and the arm can pass through the head or shoulder. The prop jumps from the back to the hand.
 - **Animations that aren't the character's own** show the prop where the club would be: cutscenes, and the victim's side of an opponent's throw.
+- **Intros keep the prop on the back**, unless the intro has a new animation, which carries it on the club bone (`R Forearm prop`).
 - **Daredevil's own power-on** has flagged torso tracks (bone words `0x10000` and up) that the holster ignores, so the prop may sit a little off the back early in it.
 - **The cable must be off**, since it is drawn from the forearm to the club.
 - **The fingers keep their grip** from the `IKClaws` clip, which the game plays over every animation, even with the prop on the back.
@@ -177,6 +178,9 @@ Cutscenes and audio changed on the **Cutscenes** page (`cutscenes`, [`FORMAT.md`
 - **Projectiles and sounds stay the base's.**
 - **Other body classes are approximate.** Their animations are mapped bone by bone, but limbs differ, as for swapped moves. The victim's side of a finisher is unchanged.
 - **New audio replaces the whole mix** (voice, music and sounds) and can be no longer than the track it replaces; a shorter one is padded with silence, because the cutscene keeps time with its audio.
+- **A new animation keeps the cutscene's length**, audio, effects and fields of view. Animation past the end is cut and a shorter one holds its last pose.
+- **Extra tracks stay as they are.** Most cutscenes carry a second set of tracks on some bones (flagged in the bone word; purpose unknown). They are left out of the download and kept unchanged, though edits to those bones still show in the game.
+- **Blender bakes on whole frames**, so a jump in pose between two chunks is smoothed over one frame. Camera cuts stay sharp only with **Sampling Animations** off when exporting.
 
 ## Sounds
 
