@@ -1427,7 +1427,7 @@ describe.skipIf(!ISO)('moves', () => {
     expect(alone.total).toBe(3)
     expect(alone.fit).toBe(2)
     const c = { moves: { SuperThrow: 'spiderman' }, moveEffects: { SuperThrow: 'theirs' as const }, moveLines: lines,
-      cutscenes: { finisher: 'ironman', audio: {}, effects: { finisher: 'theirs' as const } } }
+      cutscenes: { finisher: 'ironman', audio: {}, effects: { finisher: 'theirs' as const }, animation: {} } }
     const cuts = cutscenes.effectFit(src(), 'johnnyohm', c)
     expect(cuts.finisher!.fit).toBe(0)
     expect(cutscenes.effectFit(src(), 'johnnyohm', { ...c, moveEffects: {} }).finisher!.fit).toBeGreaterThan(0)

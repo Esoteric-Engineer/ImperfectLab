@@ -11,7 +11,7 @@ import { Service } from './service'
 declare const self: DedicatedWorkerGlobalScope
 
 const service = new Service()
-const FRESH = new Set(['preview', 'holsterPreview', 'materialThumbs', 'materialPngs', 'compose', 'layout', 'bases', 'stripOutlines', 'cutscenePcm', 'encodeCutsceneAudio', 'decodeCutsceneAudio', 'soundPcm', 'encodeSound'])
+const FRESH = new Set(['preview', 'holsterPreview', 'materialThumbs', 'materialPngs', 'compose', 'layout', 'bases', 'stripOutlines', 'cutscenePcm', 'cutsceneAnimation', 'encodeCutsceneAudio', 'decodeCutsceneAudio', 'soundPcm', 'encodeSound'])
 
 function fileReader(file: Blob): ReadAt {
   const reader = new FileReaderSync()
@@ -82,6 +82,8 @@ const handlers: Record<string, (progress: (stage: string, done?: number, total?:
   cutsceneEffects: (_p, base: string, c: EffectChoices) => service.cutsceneEffects(base, c),
   moveEffects: (_p, base: string, c: EffectChoices) => service.moveEffects(base, c),
   cutscenePcm: (_p, base: string, kind: CutsceneKind, key: string) => service.cutscenePcm(base, kind, key),
+  cutsceneAnimation: (_p, base: string, kind: CutsceneKind, key: string) => service.cutsceneAnimation(base, kind, key),
+  checkCutsceneAnimation: (_p, base: string, kind: CutsceneKind, key: string, glb: Uint8Array) => service.checkCutsceneAnimation(base, kind, key, glb),
   encodeCutsceneAudio: (_p, channels: Int16Array[], samples: number) => service.encodeCutsceneAudio(channels, samples),
   decodeCutsceneAudio: (_p, data: Uint8Array) => service.decodeCutsceneAudio(data),
   soundCatalog: () => service.soundCatalog(),

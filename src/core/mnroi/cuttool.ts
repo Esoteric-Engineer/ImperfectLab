@@ -1,6 +1,6 @@
 // In-engine cutscenes (Cutscenes/*.cut), ported from mnroi tools/cuttool.py, which documents the layout.
 // Little-endian. Actors' animations are .ngb-style tracks {u32 bone, u32 channel, u32 key count, u32 pointer} with 12-byte keys.
-import { ByteWriter, cstring, encodeLatin1, f32le, putU32le, u32le } from '../bytes'
+import { ByteWriter, cstring, encodeLatin1, f32le, putF32le, putU32le, u32le } from '../bytes'
 import { LabError } from '../errors'
 import type * as ngbtool from './ngbtool'
 
@@ -40,15 +40,34 @@ export interface Cut {
 }
 
 export const recordName = (r: Uint8Array) => cstring(r, 8, 0x50)
+
+// A record's placement, at 0x50: a 4x4 matrix of row vectors, the turned x, y and z axes, then the position.
+// Some cameras' axes are scaled (by 3 to 35), which is kept.
+const PLACEMENT = 0x50
+export const placement = (r: Uint8Array): [ngbtool.Mat3, ngbtool.Vec3] => [
+  [0, 1, 2].map((i) => [0, 1, 2].map((j) => f32le(r, PLACEMENT + 16 * j + 4 * i))) as ngbtool.Mat3,
+  [0, 1, 2].map((j) => f32le(r, PLACEMENT + 48 + 4 * j)) as ngbtool.Vec3,
+]
+
+export function setPlacement(r: Uint8Array, R: ngbtool.Mat3, T: ngbtool.Vec3) {
+  const k = Math.hypot(...placement(r)[0].map((row) => row[0])) || 1
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) putF32le(r, PLACEMENT + 16 * j + 4 * i, k * R[i][j])
+  for (let j = 0; j < 3; j++) putF32le(r, PLACEMENT + 48 + 4 * j, T[j])
+}
+
 export const bone = (t: Track) => u32le(t.head, 0)
+export const fps = (cut: Cut) => f32le(cut.header, 0x10)
+export const frames = (c: Chunk) => f32le(c.head, 8)
+export const fov = (c: Chunk) => f32le(c.head, 0xc)
+
+export function keys(t: Track): ngbtool.Key[] {
+  const v = new DataView(t.keys.buffer, t.keys.byteOffset, t.keys.length)
+  return Array.from({ length: t.keys.length / 12 }, (_, k): ngbtool.Key => [v.getFloat32(12 * k, true), [4, 6, 8, 10].map((j) => v.getInt16(12 * k + j, true)) as ngbtool.Packed])
+}
 
 // An actor's animation as an .ngb record, without its events.
 export function record(a: Actor): ngbtool.Record {
-  const tracks = a.tracks.map((t): ngbtool.Track => {
-    const v = new DataView(t.keys.buffer, t.keys.byteOffset, t.keys.length)
-    const keys = Array.from({ length: t.keys.length / 12 }, (_, k): ngbtool.Key => [v.getFloat32(12 * k, true), [4, 6, 8, 10].map((j) => v.getInt16(12 * k + j, true)) as ngbtool.Packed])
-    return [bone(t), u32le(t.head, 4), keys]
-  })
+  const tracks = a.tracks.map((t): ngbtool.Track => [bone(t), u32le(t.head, 4), keys(t)])
   return { name: cstring(a.header, 0, 0x20), length: f32le(a.header, 0x28), head: a.header.slice(0x20), pointers: a.tracks.map((t) => u32le(t.head, 12)), tracks, events: [], extra: [] }
 }
 
@@ -140,9 +159,13 @@ export function buildChunk(c: Chunk): Uint8Array {
     }
     for (const t of a.tracks) out.bytes(t.keys)
   }
+  // +0x0 is where the event counts start (so in every shipped chunk).
+  const counts = out.length
   for (const a of c.actors) out.byte(a.events.length / 12).bytes(a.eventWord)
   for (const a of c.actors) out.bytes(a.events)
-  return out.finish()
+  const d = out.finish()
+  putU32le(d, 0, counts)
+  return d
 }
 
 // `sizes` overrides the computed chunk sizes (mov_8.cut's table is off).

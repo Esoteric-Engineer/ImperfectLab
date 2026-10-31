@@ -1,4 +1,4 @@
-import { dropUnfitAudio } from '../../core/build/cutscenes'
+import { dropAnimations, dropUnfitAudio } from '../../core/build/cutscenes'
 import { RANGE_GRAB, WALL_JUMPS } from '../../core/build/moves'
 import * as R from '../../core/game/roster'
 import * as mapping from '../../core/model/mapping'
@@ -22,6 +22,7 @@ export function CharacterPage() {
     if (key === c.base) return
     await store.edit(async () => {
       const old = s.game ? s.skeleton(c.base) : null
+      const shown = Object.fromEntries(CUTSCENE_KINDS.map((k) => [k, c.cutscenes[k] ?? c.base]))
       c.base = key
       const grabbed = c.baseMoves.range_grab
       for (const k of Object.keys(c.baseMoves) as (keyof BaseMoves)[]) if (!(BASE_MOVES[key] ?? []).includes(k)) delete c.baseMoves[k]
@@ -44,6 +45,8 @@ export function CharacterPage() {
       }
       for (const kind of CUTSCENE_KINDS) if (c.cutscenes[kind] === key) delete c.cutscenes[kind]
       for (const kind of CUTSCENE_KINDS) if (c.cutscenes[kind] === undefined) delete c.cutscenes.effects[kind]
+      const reanimated = CUTSCENE_KINDS.filter((k) => (c.cutscenes[k] ?? key) !== shown[k]).flatMap((k) => dropAnimations(c, k))
+      if (reanimated.length) store.message(`${reanimated.length} new cutscene animation${reanimated.length === 1 ? '' : 's'} removed: ${reanimated.length === 1 ? 'it was' : 'they were'} made for other cutscenes than ${R.label(key)}'s`)
       if (s.game && Object.keys(c.cutscenes.audio).length) {
         const cat = await s.readCutscenes().catch(() => null)
         const dropped = cat ? CUTSCENE_KINDS.flatMap((kind) => dropUnfitAudio(c, cat, kind)) : []

@@ -29,7 +29,7 @@ const STAT_RANGE = [1, 7]
 
 export const UI_SLOTS = ['select_rest', 'select_ready', 'select_readyalt', 'load_wide', 'load_narrow', 'load_wide_alt',
   'load_narrow_alt', 'tile', 'tile_selected', 'hud', 'hud_rage', 'hud_alt', 'hud_alt_rage', 'banner']
-export const MEMBER = new RegExp(`^(manifest\\.json|model/model\\.glb|textures/[A-Za-z0-9_-]{1,48}\\.png|ui/(${UI_SLOTS.join('|')})\\.png|cutscenes/[A-Za-z0-9_-]{1,48}\\.asf|sounds/[A-Za-z0-9_-]{1,48}\\.dsp)$`)
+export const MEMBER = new RegExp(`^(manifest\\.json|model/model\\.glb|textures/[A-Za-z0-9_-]{1,48}\\.png|ui/(${UI_SLOTS.join('|')})\\.png|cutscenes/[A-Za-z0-9_-]{1,48}\\.(asf|glb)|sounds/[A-Za-z0-9_-]{1,48}\\.dsp)$`)
 const SOUND_FILE = /^sounds\/[A-Za-z0-9_-]{1,48}\.dsp$/
 const GAME_SOUND = /^[a-z]+:\d{1,3}$/
 export const MAX_SOUND_SECONDS = 30
@@ -77,8 +77,9 @@ export const defaultHolster = (): Holster => ({ position: [0, -0.17, 0.05], rota
 export const POSES = ['rest', 'ready', 'readyalt'] as const
 export const CUTSCENE_KINDS = ['intro', 'victory', 'finisher'] as const
 export type CutsceneKind = (typeof CUTSCENE_KINDS)[number]
-const AUDIO_SLOT = /^(intro|victory|finisher)_[1-9]$/
+const CUTSCENE_SLOT = /^(intro|victory|finisher)_[1-9]$/
 const AUDIO_MEMBER = /^cutscenes\/[A-Za-z0-9_-]{1,48}\.asf$/
+const ANIMATION_MEMBER = /^cutscenes\/[A-Za-z0-9_-]{1,48}\.glb$/
 export const MAX_AUDIO_SECONDS = 60
 export type Pose = (typeof POSES)[number]
 
@@ -159,7 +160,7 @@ export interface MoveReach {
 
 export const CUTSCENE_EFFECTS = ['theirs', 'none'] as const
 export type CutsceneEffects = (typeof CUTSCENE_EFFECTS)[number]
-export type Cutscenes = Partial<Record<CutsceneKind, string>> & { audio: Record<string, string>; effects: Partial<Record<CutsceneKind, CutsceneEffects>> }
+export type Cutscenes = Partial<Record<CutsceneKind, string>> & { audio: Record<string, string>; effects: Partial<Record<CutsceneKind, CutsceneEffects>>; animation: Record<string, string> }
 
 export type SoundSource = { game: string } | { file: string }
 
@@ -227,7 +228,7 @@ export function defaultTrails(): Trails {
 }
 
 export function hasCutscenes(c: Cutscenes): boolean {
-  return CUTSCENE_KINDS.some((k) => c[k] !== undefined) || Object.keys(c.audio).length > 0
+  return CUTSCENE_KINDS.some((k) => c[k] !== undefined) || Object.keys(c.audio).length > 0 || Object.keys(c.animation).length > 0
 }
 
 export function hasFlames(f: Flames): boolean {
@@ -262,7 +263,7 @@ export function newCharacter(): Character {
     moveLines: { color: null, alt_color: null },
     moveReach: {},
     moveIdle: [],
-    cutscenes: { audio: {}, effects: {} },
+    cutscenes: { audio: {}, effects: {}, animation: {} },
     sounds: {},
     zButton: null,
     ui: { select: {}, fade: 36, strip_scale: null, ready_voice: null, banner: true },
@@ -327,7 +328,7 @@ export function manifest(c: Character): Json {
     move_lines: c.moveLines.color !== null || c.moveLines.alt_color !== null ? c.moveLines : undefined,
     move_reach: Object.keys(c.moveReach).length ? c.moveReach : undefined,
     move_idle: c.moveIdle.length ? c.moveIdle : undefined,
-    cutscenes: hasCutscenes(c.cutscenes) ? { ...c.cutscenes, effects: Object.keys(c.cutscenes.effects).length ? c.cutscenes.effects : undefined } : undefined,
+    cutscenes: hasCutscenes(c.cutscenes) ? { ...c.cutscenes, effects: Object.keys(c.cutscenes.effects).length ? c.cutscenes.effects : undefined, animation: Object.keys(c.cutscenes.animation).length ? c.cutscenes.animation : undefined } : undefined,
     sounds: Object.keys(c.sounds).length ? c.sounds : undefined,
     z_button: z && (z.stealth || z.costume || zStats || z.size !== null || z.bullet !== null) ? {
       stealth: z.stealth ? { undetected: z.stealth.undetected || undefined, untouchable: z.stealth.untouchable || undefined, visible: z.stealth.visible ?? undefined } : undefined,
@@ -416,8 +417,12 @@ export function problems(c: Character): Problem[] {
   }
   for (const kind of CUTSCENE_KINDS) if (c.cutscenes.effects[kind] && c.cutscenes[kind] === undefined) out.push(['error', `the ${kind} cutscenes are the base's own, so their effects can't be changed`])
   for (const [slot, member] of Object.entries(c.cutscenes.audio)) {
-    if (!AUDIO_SLOT.test(slot)) out.push(['error', `there is no cutscene audio ${slot}`])
+    if (!CUTSCENE_SLOT.test(slot)) out.push(['error', `there is no cutscene audio ${slot}`])
     else if (!c.files.has(member)) out.push(['error', `the new cutscene audio for ${slot.replace('_', ' ')} is missing`])
+  }
+  for (const [slot, member] of Object.entries(c.cutscenes.animation)) {
+    if (!CUTSCENE_SLOT.test(slot)) out.push(['error', `there is no cutscene ${slot}`])
+    else if (!c.files.has(member)) out.push(['error', `the new animation for cutscene ${slot.replace('_', ' ')} is missing`])
   }
   for (const [slot, from] of Object.entries(c.sounds)) {
     if ('file' in from && !c.files.has(from.file)) out.push(['error', `the new sound for sound ${Number(slot) + 1} is missing`])
@@ -684,8 +689,8 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     if (c.moves[id]) throw new LabError(`manifest: move_idle names ${id}, which is taken from another base`)
     c.moveIdle.push(id)
   }
-  const cs = keys(m.cutscenes ?? {}, [...CUTSCENE_KINDS, 'audio', 'effects'], 'cutscenes')
-  c.cutscenes = { audio: {}, effects: {} }
+  const cs = keys(m.cutscenes ?? {}, [...CUTSCENE_KINDS, 'audio', 'effects', 'animation'], 'cutscenes')
+  c.cutscenes = { audio: {}, effects: {}, animation: {} }
   for (const kind of CUTSCENE_KINDS) {
     if (cs[kind] === undefined) continue
     const key = str(cs[kind], `cutscenes.${kind}`, 20)!
@@ -694,10 +699,16 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     c.cutscenes[kind] = key
   }
   for (const [slot, member] of Object.entries(typed<Record<string, unknown>>(cs.audio ?? {}, 'object', 'cutscenes.audio'))) {
-    if (!AUDIO_SLOT.test(slot)) throw new LabError(`manifest: unknown cutscene audio ${JSON.stringify(slot.slice(0, 40))}`)
+    if (!CUTSCENE_SLOT.test(slot)) throw new LabError(`manifest: unknown cutscene audio ${JSON.stringify(slot.slice(0, 40))}`)
     const file = str(member, `cutscenes.audio.${slot}`, 80, AUDIO_MEMBER)!
     if (!files.has(file)) throw new LabError(`manifest: cutscenes.audio.${slot} names ${file}, which the file lacks`)
     c.cutscenes.audio[slot] = file
+  }
+  for (const [slot, member] of Object.entries(typed<Record<string, unknown>>(cs.animation ?? {}, 'object', 'cutscenes.animation'))) {
+    if (!CUTSCENE_SLOT.test(slot)) throw new LabError(`manifest: unknown cutscene ${JSON.stringify(slot.slice(0, 40))} in cutscenes.animation`)
+    const file = str(member, `cutscenes.animation.${slot}`, 80, ANIMATION_MEMBER)!
+    if (!files.has(file)) throw new LabError(`manifest: cutscenes.animation.${slot} names ${file}, which the file lacks`)
+    c.cutscenes.animation[slot] = file
   }
   // a list of kinds is the first form, all `theirs`
   const fx = Array.isArray(cs.effects) ? Object.fromEntries(cs.effects.map((k) => [k, 'theirs'])) : (cs.effects ?? {})

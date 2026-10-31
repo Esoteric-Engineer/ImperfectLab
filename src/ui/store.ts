@@ -331,8 +331,8 @@ class Store {
 
   effectFit(): EffectFit | null {
     const c = this.character
-    if (!this.game || !Object.keys(c.cutscenes).some((k) => k !== 'audio' && k !== 'effects')) return null
-    const picked = { moves: c.moves, moveEffects: c.moveEffects, moveLines: c.moveLines, cutscenes: { ...c.cutscenes, audio: {} } }
+    if (!this.game || !Object.keys(c.cutscenes).some((k) => k !== 'audio' && k !== 'effects' && k !== 'animation')) return null
+    const picked = { moves: c.moves, moveEffects: c.moveEffects, moveLines: c.moveLines, cutscenes: { ...c.cutscenes, audio: {}, animation: {} } }
     const key = JSON.stringify([c.base, picked])
     const d = this.effectFits.get(key)
     if (d === undefined) {
@@ -352,7 +352,7 @@ class Store {
   moveEffectFit(): Record<string, MoveEffectFit> | null {
     const c = this.character
     if (!this.game || !Object.keys(c.moves).length) return null
-    const picked = { moves: c.moves, moveEffects: c.moveEffects, moveLines: c.moveLines, cutscenes: { ...c.cutscenes, audio: {} } }
+    const picked = { moves: c.moves, moveEffects: c.moveEffects, moveLines: c.moveLines, cutscenes: { ...c.cutscenes, audio: {}, animation: {} } }
     const key = JSON.stringify([c.base, picked])
     const d = this.moveFits.get(key)
     if (d === undefined) {

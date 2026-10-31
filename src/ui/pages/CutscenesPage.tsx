@@ -1,4 +1,4 @@
-import { type AudioSlot, type Catalog, dropUnfitAudio, LABELS, removeAudio } from '../../core/build/cutscenes'
+import { type AnimationSlot, type AudioSlot, type Catalog, dropAnimations, dropUnfitAudio, LABELS, removeAnimation, removeAudio } from '../../core/build/cutscenes'
 import { keys, label } from '../../core/game/roster'
 import * as asftool from '../../core/mnroi/asftool'
 import { type CutsceneEffects, CUTSCENE_KINDS, type CutsceneKind, MAX_AUDIO_SECONDS } from '../../core/package/imperfect'
@@ -9,6 +9,7 @@ import { engine } from '../engine'
 import { store, useStore } from '../store'
 
 const AUDIO = 'audio/*,.wav,.mp3,.ogg,.m4a,.flac'
+const GLB = '.glb,model/gltf-binary'
 const seconds = (s: number) => `${s.toFixed(1)} s`
 
 const source = (kind: CutsceneKind) => store.character.cutscenes[kind] ?? store.character.base
@@ -43,7 +44,7 @@ export function CutscenesPage() {
     <div className="page">
       <h3>Cutscenes</h3>
       <Note>
-        Use another character's intro, victory, or finisher, and replace their audio.<br /><br />
+        Use another character's intro, victory, or finisher, replace their audio, and re-animate them in Blender.<br /><br />
         A cutscene taken from another character starts {label(c.base)}'s effects at its cues, which may not suit it.<br />
         Use the <b>Effects</b> choice to play the other character's instead, as far as {label(c.base)} has room for them (the page says how many fit), or None. Projectiles and sounds stay {label(c.base)}'s.<br /><br />
         New audio replaces the whole track (voice, music and sounds), for both costumes. It always lasts exactly as long as the audio it replaces, since the cutscene keeps time with its audio: a shorter file is padded with silence, a longer one cut.
@@ -62,6 +63,44 @@ export function CutscenesPage() {
             <b>Effects.</b> A custom character has room for only a few effects besides its own; each <b>Effects</b> choice says how many fit. Projectiles and sounds in a cutscene are always the custom character's, and an aura tint does not recolor the other character's effects.
           </li>
         </ul>
+      </details>
+      <details>
+        <summary><b>Animating a cutscene in Blender</b></summary>
+        <ol>
+          <li>Download a cutscene from this page as <code>.glb</code>.</li>
+          <li>Open Blender and set the scene to <b>30 fps</b> via Output Properties &gt; Frame Rate.</li>
+          <li>Go to File &gt; Import &gt; glTF 2.0, and import the downloaded cutscene.</li>
+          <li>Make your desired changes to the cutscene.</li>
+          <li>
+            Export via File &gt; Export &gt; glTF 2.0 (.glb):
+            <ul>
+              <li>Ensure <b>Format</b> is set to <code>glTF Binary (.glb)</code>.</li>
+              <li>Under <b>Include &gt; Data</b>, ensure <b>Cameras</b> is checked.</li>
+              <li>Under <b>Animation</b>, ensure <b>Sampling Animations</b> is unchecked.</li>
+            </ul>
+          </li>
+          <li>Upload the modified <code>.glb</code> below.</li>
+        </ol>
+        <Note>
+          Good to Know:
+          <ul>
+            <li>The downloaded <code>.glb</code> holds:
+              <ul>
+                <li>the character as an armature</li>
+                <li><code>nis_camera</code>: the main camera</li>
+                <li><code>nis_camera2</code>: only for intros, the camera for player 2's side</li>
+                <li><code>victim</code>: only for finishers, the opponent's armature</li>
+              </ul>
+            </li>
+            <li>Don't rename any object names or bone names. This will break the import.</li>
+            <li>Move the character up/down by it's Pelvis, not it's Root. The root is ignored for some reason.</li>
+            <li>The edited cutscene must be the same duration as the original cutscene. Anything past the end of the original is left out, and if the new cutscene is shorter, it stays on the last frame for the remaining duration.</li>
+            <li>Audio and effect swapping is not done in the menu below, not in the <code>.glb</code>.</li>
+            <li>Each shot keeps the original's field of view. Camera changes aren't supported yet.</li>
+            <li>The small shapes on the joints are only there so that Blender makes an armature.</li>
+            <li>Don't ask me for help with animating. <a href="https://youtu.be/gFAuKtT_o-0" target='_blank'>You can almost certainly do it better than I can.</a></li>
+          </ul>
+        </Note>
       </details>
       {cross.length > 0 && (
         <Warning title="Cutscenes from another body class are approximate">
@@ -84,6 +123,8 @@ function Kind({ cat, kind }: { cat: Catalog; kind: CutsceneKind }) {
   const info = cat[from]?.kinds[kind]
   const slots = info?.slots ?? []
   const stale = Object.keys(c.cutscenes.audio).filter((k) => k.startsWith(kind + '_') && !slots.some((s) => s.key === k))
+  const anims = info?.animations ?? []
+  const staleAnims = Object.keys(c.cutscenes.animation).filter((k) => k.startsWith(kind + '_') && !anims.some((s) => s.key === k))
 
   const pick = (key: string) => {
     if (key === c.base) {
@@ -92,6 +133,9 @@ function Kind({ cat, kind }: { cat: Catalog; kind: CutsceneKind }) {
     } else c.cutscenes[kind] = key
     const dropped = dropUnfitAudio(c, cat, kind)
     if (dropped.length) store.message(`${dropped.length} new audio track${dropped.length === 1 ? '' : 's'} removed: ${dropped.length === 1 ? 'it does' : 'they do'} not fit ${label(key)}'s ${LABELS[kind].toLowerCase()}`)
+    // the select only reports a change, so any animation was made for the cutscenes it left
+    const reanimated = dropAnimations(store.character, kind)
+    if (reanimated.length) store.message(`${reanimated.length} new animation${reanimated.length === 1 ? '' : 's'} removed: ${reanimated.length === 1 ? 'it was' : 'they were'} made for the ${LABELS[kind].toLowerCase()} taken before`)
     store.touch('character')
   }
 
@@ -140,7 +184,73 @@ function Kind({ cat, kind }: { cat: Catalog; kind: CutsceneKind }) {
           ))}
         </tbody>
       </table>
+      <table className="gameplay">
+        <thead><tr><th>Animation</th><th>{label(from)}'s</th><th>New</th></tr></thead>
+        <tbody>
+          {anims.map((s) => <AnimationRow key={s.key} kind={kind} slot={s} />)}
+          {staleAnims.map((k) => (
+            <tr key={k}>
+              <td>{k.replace('_', ' ')}</td>
+              <td className="muted">not in {label(from)}'s {LABELS[kind].toLowerCase()}</td>
+              <td><button onClick={() => { removeAnimation(c, k); store.touch('character') }}>Remove</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </>
+  )
+}
+
+function AnimationRow({ kind, slot }: { kind: CutsceneKind; slot: AnimationSlot }) {
+  const c = store.character
+  const member = c.cutscenes.animation[slot.key]
+  const body = member ? c.files.get(member) : undefined
+  const glb = (data: Uint8Array, name: string) => download(data, name, 'model/gltf-binary')
+
+  const original = async () => {
+    try {
+      glb(await engine.call<Uint8Array>('cutsceneAnimation', [source(kind), kind, slot.key]), `${slot.cut.replace(/\.cut$/i, '')}.glb`)
+    } catch (e) {
+      store.fail(e)
+    }
+  }
+
+  const upload = async () => {
+    const file = await pickFile(GLB)
+    if (!file) return
+    await store.edit(async () => {
+      const data = new Uint8Array(await file.arrayBuffer())
+      let notes: string[]
+      try {
+        notes = await engine.call<string[]>('checkCutsceneAnimation', [source(kind), kind, slot.key, data])
+      } catch (e) {
+        store.fail(`The animation could not be used:\n${(e as Error).message}`)
+        return
+      }
+      const name = `cutscenes/${slot.key}.glb`
+      c.files.set(name, data)
+      c.cutscenes.animation[slot.key] = name
+      if (notes.length) store.message(`${slot.label}: ${notes.join('; ')}`)
+      store.touch('character')
+    })
+  }
+
+  return (
+    <tr>
+      <td title={slot.cut}>{slot.label}</td>
+      <td><button title="Download as .glb, to open in Blender" onClick={original}>⤓ .glb</button></td>
+      <td>
+        {body ? (
+          <>
+            <button title="Download as .glb" onClick={() => glb(body, `${c.internalName}_${slot.key}.glb`)}>⤓</button>{' '}
+            <button onClick={upload}>Replace...</button>{' '}
+            <button onClick={() => { removeAnimation(c, slot.key); store.touch('character') }}>Remove</button>
+          </>
+        ) : (
+          <button onClick={upload}>Upload...</button>
+        )}
+      </td>
+    </tr>
   )
 }
 
