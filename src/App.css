@@ -831,6 +831,12 @@ table.credits input {
   gap: 4px;
 }
 
+.material .thumb-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
 .slot {
   position: relative;
 }

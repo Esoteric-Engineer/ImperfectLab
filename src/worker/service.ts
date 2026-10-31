@@ -12,7 +12,7 @@ import { LabError } from '../core/errors'
 import { FolderDisc, ImageDisc, type ReadAt, type Sink } from '../core/game/disc'
 import * as R from '../core/game/roster'
 import { GameSource } from '../core/game/source'
-import { decodePng } from '../core/image/png'
+import { decodePng, encodePng } from '../core/image/png'
 import { resizeNearest } from '../core/image/resample'
 import { RgbaImage } from '../core/image/rgba'
 import * as asftool from '../core/mnroi/asftool'
@@ -382,17 +382,20 @@ export class Service {
     }
   }
 
-  materialThumbs(c: imperfect.Character): [RgbaImage | null, RgbaImage | null][] {
+  private materialSource(c: imperfect.Character, x: imperfect.Material): RgbaImage | null {
     const m = this.model
+    try {
+      if (x.texture && c.files.has(x.texture)) return imperfect.image(c.files.get(x.texture)!)
+      if (m && x.gltfMaterial < m.materials.length && m.materials[x.gltfMaterial].image !== null) return m.image(m.materials[x.gltfMaterial].image!)
+    } catch (e) {
+      if (!(e instanceof LabError)) throw e
+    }
+    return null
+  }
+
+  materialThumbs(c: imperfect.Character): [RgbaImage | null, RgbaImage | null][] {
     return c.materials.map((x) => {
-      let im: RgbaImage | null = null
-      try {
-        if (x.texture && c.files.has(x.texture)) im = imperfect.image(c.files.get(x.texture)!)
-        else if (m && x.gltfMaterial < m.materials.length && m.materials[x.gltfMaterial].image !== null) im = m.image(m.materials[x.gltfMaterial].image!)
-      } catch (e) {
-        if (!(e instanceof LabError)) throw e
-      }
-      const small = shrink(im, 128)
+      const small = shrink(this.materialSource(c, x), 128)
       let alt = small
       try {
         if (small) alt = shrink(costumeImage(small, x.alt, c.files), 128)
@@ -400,6 +403,21 @@ export class Service {
         if (!(e instanceof LabError)) throw e
       }
       return [small, alt]
+    })
+  }
+
+  materialPngs(c: imperfect.Character, index: number | null): [Uint8Array | null, Uint8Array | null][] {
+    return c.materials.map((x, i) => {
+      if (index !== null && i !== index) return [null, null]
+      const im = this.materialSource(c, x)
+      if (!im) return [null, null]
+      let alt: Uint8Array | null = null
+      try {
+        if (x.alt !== 'same') alt = encodePng(costumeImage(im, x.alt, c.files))
+      } catch (e) {
+        if (!(e instanceof LabError)) throw e
+      }
+      return [encodePng(im), alt]
     })
   }
 
