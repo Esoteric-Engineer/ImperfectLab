@@ -1415,6 +1415,38 @@ describe.skipIf(!ISO)('moves', () => {
     expect(r.notes.some((n) => n.includes('Super throw') && n.includes('no effects'))).toBe(true)
   })
 
+  const descending = (base: string, from: string, how?: imperfect.MoveEffect) => {
+    const c = tinted(base)
+    c.aura = { ...c.aura, mode: 'base' }
+    c.moves = { SuperJumpAttackDesc: from }
+    if (how) c.moveEffects = { SuperJumpAttackDesc: how }
+    const r = new Builder(src(), c).build()
+    const anim = nmstool.parse(r.adds.get('Motions/Synth.nms')!).motions().get('superjumpattackdesc')!.anim.toLowerCase()
+    return { r, anim, rec: records(r.adds.get('Bundles/synth.ngb')!).get(anim)! }
+  }
+  const picks = (rec: ngbtool.Record) => rec.events.filter(([, t]) => t === 0x4e)
+
+  it('launches Spider-Man\'s web from Human Torch\'s super jump attack', () => {
+    const { r, anim, rec } = descending('spiderman', 'humantorch')
+    expect(anim).not.toBe('torch_superpeakattack.nad')
+    expect(picks(rec).map(([, , k]) => k)).toEqual([1])
+    expect(r.notes.some((n) => n.includes('Super jump attack descending') && n.includes("launches Spider-Man's projectile"))).toBe(true)
+    expect(picks(descending('spiderman', 'humantorch', 'none').rec).map(([, , k]) => k)).toEqual([1])
+  })
+
+  it('launches the base\'s own projectile from a taken move', () => {
+    expect(picks(descending('ironman', 'humantorch').rec).map(([, , k]) => k)).toEqual([1])
+    expect(picks(descending('humantorch', 'ironman').rec)).toEqual([[0, 0x4e, 3, 0]])
+  })
+
+  it('leaves a taken projectile alone on a base without any', () => {
+    const { r, anim, rec } = descending('wolverine', 'humantorch')
+    expect(anim).toBe('torch_superpeakattack.nad')
+    const torch = records(src().entry('Bundles/torch.ngb')).get(anim)!
+    expect(rec.events).toEqual(torch.events)
+    expect(r.notes.some((n) => n.includes("Human Torch's projectile has nothing to launch on Wolverine"))).toBe(true)
+  })
+
   it('gives taken moves\' effects free slots before cutscenes\'', () => {
     const jo = new R.BaseCharacter(src(), 'johnnyohm')
     const moved = moves.movedEffects(src(), jo, { SuperThrow: 'spiderman' })

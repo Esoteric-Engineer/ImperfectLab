@@ -206,6 +206,7 @@ With `stats.gameplay.wall_climb` or `wall_run`, `moves` also adds states the bas
 
 ### `move_effects`
 Optional, and left out when every taken move plays the base's effects. Move id (one in `moves`) -> `theirs` (the effects that base's version of the move starts, such as Daredevil's cable on his super throw) or `none` (no effects). A move left out starts the base's effects in their place.
+Whatever the choice, a taken move that shoots launches the base's projectile: the one the base's own version of the move launches, or else the base's first one.
 
 ### `move_lines`
 Optional. `color` and `alt_color` (each `null` or `#RRGGBB`/`#RRGGBBAA`, AA scaling the opacity, so `00` hides the line): the color, per costume, of the lines (`constraint` effects such as Daredevil's cable or Spider-Man's web) that `theirs` and stretched (`move_reach`) moves draw. `null` keeps the line as it is.

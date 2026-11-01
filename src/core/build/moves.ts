@@ -19,6 +19,7 @@ import * as energy from './energy'
 import * as holster from './holster'
 import type { Effects } from './effects'
 import { EFFECT_FIELDS, effectNames, OWN_EFFECTS, Slots } from './effectslots'
+import * as projectiles from './projectiles'
 import * as reach from './reach'
 import { scaleMotionSet, scaleRecord, strides } from './size'
 import * as tuning from './tuning'
@@ -564,6 +565,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     own.rename(main[at].name, rec.name)
     main[at] = rec
   }
+  const shots = Object.keys(moves).length ? projectiles.filled(new tuning.Tuning(src, base)) : []
   for (const [id, from] of Object.entries(moves)) {
     const move = MOVE_IDS.get(id)
     if (!move) throw new LabError(`there is no move ${id}`)
@@ -575,7 +577,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       if (!to?.size) return rec
       return { ...rec, events: rec.events.map(([f, t, k, v]): ngbtool.Event => [f, t, OWN_EFFECTS.has(t) ? (to.get(k) ?? k) : k, v]) }
     }
-    let copied = 0
+    let copied = 0, shot = '', blank = false
     for (const state of move.states) {
       const m = theirs.get(state.toLowerCase()), old = mine.get(state.toLowerCase())
       if (!m) {
@@ -583,9 +585,20 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
         continue
       }
       if (old) displaced.add(old.anim.toLowerCase())
+      const ownRec = old && [...bundles.values()].flat().find((r) => r.name.toLowerCase() === old.anim.toLowerCase())
+      const aimed = (rec: ngbtool.Record): ngbtool.Record => {
+        const to = projectiles.target(rec, ownRec, shots)
+        if (to === null) {
+          blank ||= rec.events.some(([, t]) => t === projectiles.PICK)
+          return rec
+        }
+        const out = projectiles.repick(rec, to)
+        if (out !== rec) shot = `; launches ${base.label}'s projectile`
+        return out
+      }
       const found = SLOTS.flatMap((slot): [string, ngbtool.Record, ngbtool.Record][] => {
         const rec = theirBundles.get(slot)?.find((r) => r.name.toLowerCase() === m.anim.toLowerCase())
-        return rec ? [[slot, rec, VICTIM.test(state) ? rec : effects(sizedRec(remapRecord(rec, map)))]] : []
+        return rec ? [[slot, rec, VICTIM.test(state) ? rec : aimed(effects(sizedRec(remapRecord(rec, map))))]] : []
       })
       // One name in every slot: the set names one animation, and the game loads the slot for the opponent's body class, whose record can differ.
       const changed = found.find(([, rec, moved]) => !ngbtool.sameMotion(moved, rec))
@@ -606,7 +619,8 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     let fx = ''
     if (how === 'none') fx = '; no effects'
     else if (how === 'theirs' && fit?.total) fx = `; ${fit.fit} of ${other.label}'s effects${fit.total > fit.fit ? `, ${fit.total - fit.fit} more left as ${base.label}'s (no free effect slot)` : ''}`
-    notes.push(`moves: ${move.label} from ${other.label} (${copied} animation${copied === 1 ? '' : 's'} copied${cross}${fx})`)
+    if (blank) shot = `; ${other.label}'s projectile has nothing to launch on ${base.label}`
+    notes.push(`moves: ${move.label} from ${other.label} (${copied} animation${copied === 1 ? '' : 's'} copied${cross}${fx}${shot})`)
   }
   if (idle.length) {
     const now = resolved(src, own, holds(bundles))
