@@ -203,7 +203,7 @@ const BINDING = 0x50
 const GAME_BINDINGS = 18
 const Z_BUTTON = 5
 const Z_LOGICAL = 19
-export const Z_ACTIONS = ['stealth', 'costume', 'stats', 'size', 'bullet'] as const
+export const Z_ACTIONS = ['stealth', 'costume', 'stats', 'size', 'bullet', 'gun'] as const
 export type ZAction = (typeof Z_ACTIONS)[number]
 export const Z_SECONDS: [number, number] = [1, 60]
 export const Z_SIZE: [number, number] = [0.1, 3.0]
@@ -293,6 +293,7 @@ export interface ZCharacter {
   lift: string | null
   size: number | null
   slow: number | null
+  gun: boolean
 }
 
 const LIFT_BITS: Record<string, number> = { light: 0, medium: 0x10, heavy: 0x20 }
@@ -325,7 +326,7 @@ function zTable(chars: ZCharacter[]): Uint8Array {
     const at = (stats ? 40 : 12) + (c.size !== null ? 4 : 0) + (c.slow !== null ? 4 : 0)
     const entry = new Uint8Array(at + ((names.length + 3) & ~3))
     putF32be(entry, 0, c.seconds)
-    putU32be(entry, 4, (c.regen ? 1 : 0) | (c.undetected ? 2 : 0) | (c.untouchable ? 4 : 0) | (c.costume ? 8 : 0) | (stats ? 16 : 0) | (c.size !== null ? 32 : 0) | (c.slow !== null ? 64 : 0))
+    putU32be(entry, 4, (c.regen ? 1 : 0) | (c.undetected ? 2 : 0) | (c.untouchable ? 4 : 0) | (c.costume ? 8 : 0) | (stats ? 16 : 0) | (c.size !== null ? 32 : 0) | (c.slow !== null ? 64 : 0) | (c.gun ? 128 : 0))
     putF32be(entry, 8, c.visible)
     if (stats) {
       c.damage.forEach((v, i) => putF32be(entry, 12 + 4 * i, v ?? -1))
@@ -370,6 +371,97 @@ export function zActions(dol: Uint8Array, chars: ZCharacter[]): Uint8Array {
   put(out, fileOffset(out, fn), fromHex(old), next)
   for (const [site, instruction, target] of Z_HOOKS) put(out, fileOffset(out, site), fromHex(instruction), word(branch(site, target, true)))
   for (const [fva, before, after] of [Z_TUNING, Z_TAKEN]) put(out, fileOffset(out, fva), fromHex(before), fromHex(after))
+  return out
+}
+
+// gun.s, in a text section of its own where the arena started (the arena then starts after it), then its table.
+const GUN_CODE =
+  '9421ffc07c0802a690010044bf21002483bf00087fdcf3783d80801a398cd5e07d8903a64e800421480004f9389dff887c9d2378480004b17d3b4b7941820180813c000088090009895b00037c0050404180016c835c0064881b0000540030327f3a02147fa4eb7838a000803d808013' +
+  '398c77c07d8903a64e8004212c00000041820030893b0001552930327d3a4a143929fffc3959fffc380000107c0903a684090004940a00044200fff8480000b4893b0002552930327d3a4a14395b00187f2bcb78380000047c0903a6c02a0000c04a0004c06a0008c0090000ec810032' +
+  'c0090010ec82203ac0090020ec83203ac0090004eca10032c0090014eca2283ac0090024eca3283ac0090008ecc10032c0090018ecc2303ac0090028ecc3303a4240001cd08b0000d0ab0004d0cb0008394a000c396b00104bffff94c0090030ec84002ac0090034eca5002ac0090038' +
+  'ecc6002ad08b0000d0ab0004d0cb0008813c00a8881b0000540020367d290214c03b000cc05b0010c07b0014394000007c19542eec810032396a00107c195c2eec82203a396a00207c195c2eec83203a396a00307c195c2eec84002a7c89552e394a00042c0a000c4180ffc8bb210024' +
+  '800100447c0803a6382100404e8000202804006041800010280400634081002848000124280400274180011c28040040418101142804003a4182010c2804003d418201049421ffc07c0802a690010044bfa10034906100089081000c90a1001090c10014d0210018d041001cd0610020' +
+  '480002f180810008480002ad7d3f4b79418200988081000838a000803d808013398c77c07d8903a64e8004212c000000418200783bc0014e8001000c2800003640810018280000604182001028000061418200083bc0014f80610008c03f00083d808008398c4b687d8903a64e800421' +
+  '2c0300003860ffff4182007080610008c03f00083d808008398c4a607d8903a64e800421808100084800021d8001000c900b000893c1000c806100088081000c80a1001080c10014c0210018c041001cc0610020bba10034800100447c0803a6382100409421ffb83d808009398c7cec' +
+  '7d8903a64e800420bba10034800100447c0803a6382100404e80002028040001418000f428040002418100ec9421ffe07c0802a690010024bf8100107c7f1b787c9c2378480001cd7fe3fb783d80800d398cc5e07d8903a64e8004217c7e1b787c641b78480001717d3d4b7941820090' +
+  '7fc4f37838a000803d808013398c77c07d8903a64e8004212c000000418200702c1c0001418200507fc3f378480001252c03014e418200402c03014f41820038881d000470000001418200447fe3fb78388000013d80800d398cc1487d8903a64e8004212c0300004182002438600001' +
+  '4800000838600000bb810010800100247c0803a6382100204e8000207fe3fb787f84e378bb810010800100247c0803a6382100209421ffe03d80800d398cc0c07d8903a64e8004203804ffff2c00005641820024386000002c0000004d800020386000032c0000034d8100207c030378' +
+  '4e8000203800000090030414386000564e8000209421fff07c0802a69001001493e1000c7c7f1b78480000492c03014e4182000c2c03014f408200247fe4fb78480000452c09000041820014800b00082c000000418200087c03037883e1000c800100147c0803a6382100104e800020' +
+  '9421fff03d80800a398cb0507d8903a64e8004207d4802a6480001717d4803a6396b0004380000047c0903a6812b00007c0920004082000c812b00044e800020396b000c4200ffe8392000004e8000209421ffd07c0802a690010034bf210014480001297d7f5b783d20805980093c2c' +
+  '813f00007c004800418200fc901f00003bc000002c1e0004408000ec1f9e000c7f9cfa143b2000003b4000003c608055386321103d808043398c49007d8903a64e8004217c1e1800408000983c608055386321107fc4f3783d808043398c17bc7d8903a64e8004217c7d1b783d808043' +
+  '398cff2c7d8903a64e8004217c791b78837f00343b5f00382c1b000040810050387d0004389a00483d808017398c26547d8903a64e8004212c03000041820034387d0004389a00683d808017398c26547d8903a64e8004212c030000418200143b5a00883b7bffff4bffffb03b400000' +
+  '801c00047c00c8004182000c38000000901c000c933c0004935c00083bde00014bffff14bb210014800100347c0803a6382100304e8000207c0802a6429f00057d6802a67c0803a6396b00104e800020'
+export const GUN_POSE = 0, GUN_PLAY = 0x1d0, GUN_PRESSED = 0x32c, GUN_PICK = 0x438, GUN_MOTION = 0x474, GUN_DATA = 0x670
+const GUN_PLAYERS = 4
+// {actor, entry, the attack its shot plays for} per player, then the count and the entries
+export const GUN_COUNT = 4 + 12 * GUN_PLAYERS, GUN_ENTRIES = GUN_COUNT + 4
+export const GUN_ENTRY_SIZE = 0x88
+// fn_801A479C's bl fn_8019D5E0, and the first instructions of fn_80097CE8, fn_800CC0BC and fn_8009B04C.
+const GUN_POSE_SITE: [number, string] = [0x801a4a08, '4bff8bd9']
+const GUN_PLAY_SITE: [number, string] = [0x80097ce8, '9421ffb8']
+const GUN_PRESSED_SITE: [number, string] = [0x800cc0bc, '9421ffe0']
+const GUN_MOTION_SITE: [number, string] = [0x8009b04c, '9421fff0']
+// fn_800E1788's event 0x4E (the projectile pick) asks gun_pick instead.
+const GUN_PICK_SITE: [number, string] = [0x800e1efc, '813f00103809ffff2c0000004180001c813f00103809ffff2c00000340810008380000034800000838000000']
+// Event 0x4E with this value picks tuning field 176 (90 + 86), which no character sets, for the bullet.
+export const GUN_PICK_VALUE = 87
+export const GUN_FIELD = 176
+export const GUN_MOTIONS = { ground: 'action1', air: 'action2' }
+
+export interface GunCharacter {
+  internal: string
+  bone: number
+  hand: number
+  thigh: number
+  nodes: number
+  automatic: boolean
+  energy: number
+  bind: [number, number, number]
+  // 4x3 row-vector transform from the thigh's skin matrix to the gun's
+  k: number[]
+}
+
+function gunTable(guns: GunCharacter[]): Uint8Array {
+  const out = new Uint8Array(GUN_ENTRIES + GUN_ENTRY_SIZE * guns.length)
+  putU32be(out, GUN_COUNT, guns.length)
+  guns.forEach((g, i) => {
+    const o = GUN_ENTRIES + GUN_ENTRY_SIZE * i
+    if (g.k.length !== 12) throw new LabError('a gun holster is a 4x3 matrix')
+    out.set([g.bone, g.hand, g.thigh, g.nodes, g.automatic ? 1 : 0], o)
+    putF32be(out, o + 8, g.energy)
+    g.bind.forEach((v, j) => putF32be(out, o + 0xc + 4 * j, v))
+    g.k.forEach((v, j) => putF32be(out, o + 0x18 + 4 * j, v))
+    entityNames(g.internal).forEach((name, j) => out.set(field(name), o + 0x48 + 0x20 * j))
+  })
+  return out
+}
+
+// Needs zActions first: the gun is drawn while the character's Z slot is live (gun.s calls its stealth_test).
+export function gun(dol: Uint8Array, guns: GunCharacter[]): Uint8Array {
+  if (guns.length > GUN_PLAYERS) throw new LabError(`main.dol has room for ${GUN_PLAYERS} characters' guns, not ${guns.length}`)
+  const slot = (() => {
+    for (let i = 2; i < 7; i++) if (!u32be(dol, 0x90 + 4 * i)) return i
+    throw new LabError('main.dol has no free text section')
+  })()
+  const body = concat([fromHex(GUN_CODE), gunTable(guns)])
+  const size = (body.length + 0x1f) & ~0x1f
+  const lo = arenaLo(dol)
+  const at = (dol.length + 0x1f) & ~0x1f
+  const out = new Uint8Array(at + size)
+  out.set(dol)
+  out.set(body, at)
+  putU32be(out, 4 * slot, at)
+  putU32be(out, 0x48 + 4 * slot, lo)
+  putU32be(out, 0x90 + 4 * slot, size)
+  for (const [lis, addi] of ARENA_REFS) retarget(out, lis, addi, address(out, lis, addi), lo + size)
+  const [pose, poseOld] = GUN_POSE_SITE
+  put(out, fileOffset(out, pose), fromHex(poseOld), word(branch(pose, lo + GUN_POSE, true)))
+  for (const [[site, old], to] of [[GUN_PLAY_SITE, GUN_PLAY], [GUN_PRESSED_SITE, GUN_PRESSED], [GUN_MOTION_SITE, GUN_MOTION]] as const) {
+    put(out, fileOffset(out, site), fromHex(old), word(branch(site, lo + to, false)))
+  }
+  const [pick, pickOld] = GUN_PICK_SITE
+  const next = concat([fromHex('7e639b78809f0010'), word(branch(pick + 8, lo + GUN_PICK, true)), fromHex('7c601b784800001c'), fromHex('60000000'.repeat(6))])
+  put(out, fileOffset(out, pick), fromHex(pickOld), next)
   return out
 }
 

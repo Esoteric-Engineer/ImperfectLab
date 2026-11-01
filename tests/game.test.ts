@@ -4,6 +4,7 @@ import * as damage from '../src/core/build/damage'
 import * as effects from '../src/core/build/effects'
 import { EFFECT_FIELDS } from '../src/core/build/effectslots'
 import * as flames from '../src/core/build/flames'
+import * as gun from '../src/core/build/gun'
 import * as holster from '../src/core/build/holster'
 import * as basemoves from '../src/core/build/basemoves'
 import * as moves from '../src/core/build/moves'
@@ -102,12 +103,12 @@ describe.skipIf(!ISO)('main.dol', () => {
 
   it('binds Z to its actions', () => {
     const dol = gameSource().dol
-    const none = { costume: false, damage: [null, null, null, null, null], taken: null, lift: null, size: null, slow: null }
+    const none = { costume: false, damage: [null, null, null, null, null], taken: null, lift: null, size: null, slow: null, gun: false }
     const out = D.zActions(dol, [
       { internal: 'Synth', seconds: 8, regen: true, undetected: false, untouchable: true, visible: 0.25, ...none },
       { internal: 'Other', seconds: 0, regen: false, undetected: true, untouchable: false, visible: 1, ...none, costume: true, damage: [null, 30, null, null, 2.5], taken: 0.5, lift: 'heavy', size: 2.5, slow: 0.5 },
       { internal: 'Small', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, ...none, size: 0.5 },
-      { internal: 'Quick', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, ...none, slow: 0.25 },
+      { internal: 'Quick', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, ...none, slow: 0.25, gun: true },
     ])
     const at = (va: number) => D.fileOffset(dol, va)
     const block = at(0x804cc810), z = at(0x804cc810 + 18 * 0x50)
@@ -140,7 +141,7 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect([u32be(out, small + 4), u32be(out, small + 12)]).toEqual([32, 0x3f000000])
     expect(latin1(out, small + 16, small + 40)).toBe('plr_small\0plr_altSmall\0\0')
     const quick = small + 40
-    expect([u32be(out, quick + 4), u32be(out, quick + 12)]).toEqual([64, 0x3e800000])
+    expect([u32be(out, quick + 4), u32be(out, quick + 12)]).toEqual([64 | 128, 0x3e800000])
     expect(latin1(out, quick + 16, quick + 40)).toBe('plr_quick\0plr_altQuick\0\0')
     const sites = [[0x804cc80c, 4], [0x804cc810 + 18 * 0x50, 0x50], [0x80137494, 0x858], [0x80138868, 0x1bc], [0x80148b50, 0x1e0], [0x80132838, 0x274], [0x80085f4c, 0x30],
       [0x800b1884, 0x68], [0x80086c80, 0x5c], [0x800fba50, 4], [0x800e09cc, 4], [0x80150240, 4], [0x804619b0, 4], [0x8014fa14, 4], [0x801a483c, 4],
@@ -161,6 +162,45 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(() => D.zActions(dol, nine)).not.toThrow()
     const many = Array.from({ length: 20 }, (_, i) => ({ ...one, internal: `Character${i}` }))
     expect(() => D.zActions(dol, many)).toThrow(/no room/)
+  })
+
+  it("adds the gun's code in a text section of its own and hooks the posing, motions, presses and projectile pick", () => {
+    const dol = D.zActions(gameSource().dol, [{ internal: 'Synth', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, costume: false,
+      damage: [null, null, null, null, null], taken: null, lift: null, size: null, slow: null, gun: true }])
+    const guns: D.GunCharacter[] = [
+      { internal: 'Synth', bone: 39, hand: 27, thigh: 65, nodes: 66, automatic: true, energy: 7.5, bind: [0.5, 0, 1.5], k: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0.2, 0.3] },
+      { internal: 'Other', bone: 81, hand: 27, thigh: 58, nodes: 82, automatic: false, energy: 0, bind: [0, 0, 1], k: new Array(12).fill(0) },
+    ]
+    for (const before of [dol, D.patchMany(dol, [1, 2].map((i) => ({ internal: `C${i}`, display: `C${i}`, stats: [1, 1, 1, 1, 1, 1], altStats: [1, 1, 1, 1, 1, 1] })))]) {
+      const lo = D.arenaLo(before)
+      const out = D.gun(before, guns)
+      const slot = [2, 3, 4, 5, 6].find((i) => u32be(out, 0x90 + 4 * i))!
+      expect(u32be(out, 0x48 + 4 * slot)).toBe(lo)
+      const size = u32be(out, 0x90 + 4 * slot), at = u32be(out, 4 * slot)
+      expect(size % 0x20).toBe(0)
+      expect(D.arenaLo(out)).toBe(lo + size)
+      const target = (from: number) => (from + ((((u32be(out, D.fileOffset(out, from)) << 6) >> 6) & ~3))) >>> 0
+      expect(target(0x801a4a08)).toBe(lo)
+      expect(u32be(out, D.fileOffset(out, 0x801a4a08)) & 1).toBe(1)
+      for (const [site, to] of [[0x80097ce8, D.GUN_PLAY], [0x800cc0bc, D.GUN_PRESSED], [0x8009b04c, D.GUN_MOTION]]) {
+        expect(target(site)).toBe(lo + to)
+        expect(u32be(out, D.fileOffset(out, site)) & 1).toBe(0)
+      }
+      expect(target(0x800e1f04)).toBe(lo + D.GUN_PICK)
+      expect(u32be(out, D.fileOffset(out, 0x800e1f0c))).toBe(0x4800001c)
+      const table = at + D.GUN_DATA
+      expect(u32be(out, table + D.GUN_COUNT)).toBe(2)
+      const first = table + D.GUN_ENTRIES
+      expect([...out.subarray(first, first + 8)]).toEqual([39, 27, 65, 66, 1, 0, 0, 0])
+      expect([0x8, 0xc, 0x18, 0x3c, 0x44].map((o) => u32be(out, first + o))).toEqual([0x40f00000, 0x3f000000, 0x3f800000, 0x3dcccccd, 0x3e99999a])
+      expect(out[first + D.GUN_ENTRY_SIZE + 4]).toBe(0)
+      expect(latin1(out, first + 0x48, first + 0x88)).toBe('plr_synth' + '\0'.repeat(23) + 'plr_altSynth' + '\0'.repeat(20))
+      const changed = [...out.subarray(0, before.length)].flatMap((b, i) => (b !== before[i] ? [i] : []))
+      const sites = [[0x801a4a08, 4], [0x80097ce8, 4], [0x800cc0bc, 4], [0x8009b04c, 4], [0x800e1efc, 0x2c]].map(([va, n]) => [D.fileOffset(out, va), D.fileOffset(out, va) + n])
+      expect(changed.every((i) => i < 0x100 || sites.some(([a, b]) => i >= a && i < b) || [0x177bc4, 0x177bc8, 0x177bfc, 0x177c00].some((r) => i >= r && i < r + 4))).toBe(true)
+      expect(() => D.gun(out, guns)).toThrow(LabError)
+    }
+    expect(() => D.gun(dol, Array.from({ length: 5 }, () => guns[0]))).toThrow(/room/)
   })
 
   it('refuses a patched main.dol', () => {
@@ -422,10 +462,10 @@ describe.skipIf(!ISO)('game', () => {
     c.mapping = auto.mapping
     c.overrides = auto.overrides
     c.gameplay = { lift: 'heavy' }
-    c.zButton = { stealth: { undetected: true, untouchable: false, visible: 0.5 }, costume: null, stats: null, size: null, bullet: null, requires: { energy: { seconds: 5, regen: false } } }
+    c.zButton = { stealth: { undetected: true, untouchable: false, visible: 0.5 }, costume: null, stats: null, size: null, bullet: null, gun: null, requires: { energy: { seconds: 5, regen: false } } }
     const r = new Builder(src(), c).build()
     expect(r.adds.has('Bundles/synth.ngm')).toBe(true)
-    expect(equal(r.dol!, D.zActions(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt), [{ internal: 'Synth', seconds: 5, regen: false, undetected: true, untouchable: false, visible: 0.5, costume: false, damage: [null, null, null, null, null], taken: null, lift: null, size: null, slow: null }]))).toBe(true)
+    expect(equal(r.dol!, D.zActions(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt), [{ internal: 'Synth', seconds: 5, regen: false, undetected: true, untouchable: false, visible: 0.5, costume: false, damage: [null, null, null, null, null], taken: null, lift: null, size: null, slow: null, gun: false }]))).toBe(true)
     expect(report(c, r)).toContain('Stealth Mode')
     expect(r.adds.has('Bundles/synth_alt.tpl')).toBe(true)
     const t = new R.Templates(r.sets.get('Misc/Global.not')!)
@@ -443,7 +483,7 @@ describe.skipIf(!ISO)('game', () => {
     const auto = mapping.autoMap(new Model(c.glb), Skeleton.ofBase(new R.BaseCharacter(src(), c.base)))
     c.mapping = auto.mapping
     c.overrides = auto.overrides
-    c.zButton = { stealth: null, costume: { normal: {}, alt: { 0: 'alt' } }, stats: { attack_damage_3: 40, lift: 'light' }, size: 1.5, bullet: 0.4, requires: {} }
+    c.zButton = { stealth: null, costume: { normal: {}, alt: { 0: 'alt' } }, stats: { attack_damage_3: 40, lift: 'light' }, size: 1.5, bullet: 0.4, gun: null, requires: {} }
     const r = new Builder(src(), c).build()
     const parts = (name: string) => ngmtool.read(r.adds.get(name)!)[1][0].parts
     expect(parts('Bundles/synth.ngm')).toEqual(['Synth', 'Synth_z', 'Synth_zo'])
@@ -456,7 +496,7 @@ describe.skipIf(!ISO)('game', () => {
     expect(latin1(r.adds.get('Bundles/synth.ngt')!)).toContain('Synth_z\r\n')
     expect(latin1(r.adds.get('Bundles/synth_alt.ngt')!)).not.toContain('Synth_altz')
     const want = D.zActions(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt),
-      [{ internal: 'Synth', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, costume: true, damage: [null, null, 40, null, null], taken: null, lift: 'light', size: 1.5, slow: 0.4 }])
+      [{ internal: 'Synth', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, costume: true, damage: [null, null, 40, null, null], taken: null, lift: 'light', size: 1.5, slow: 0.4, gun: false }])
     expect(equal(r.dol!, want)).toBe(true)
     expect(report(c, r)).toContain('Costume Change, Stat Change, Change Size, Bullet Time')
     c.materials = [...c.materials, { ...imperfect.newMaterial(1, 'cape', true, '_z', [64, 64]), texture: 'textures/skin.png' }]
@@ -678,7 +718,7 @@ describe.skipIf(!ISO)('game', () => {
 
   it('builds two characters, the second on the first', () => {
     const a = tinted('johnnyohm')
-    const b = { ...tinted('humantorch'), internalName: 'Other', displayName: 'OTHER', zButton: { stealth: { undetected: true, untouchable: true, visible: null }, costume: null, stats: null, size: null, bullet: null, requires: {} } }
+    const b = { ...tinted('humantorch'), internalName: 'Other', displayName: 'OTHER', zButton: { stealth: { undetected: true, untouchable: true, visible: null }, costume: null, stats: null, size: null, bullet: null, gun: null, requires: {} } }
     b.ui = { ...b.ui, ready_voice: 'FE_SFX_TORCH' }
     b.files = new Map([...b.files, ['ui/select_ready.png', pngBytes(200, 400)], ['ui/tile.png', pngBytes(64, 32)]])
     const r = buildBatch(src(), [a, b])
@@ -1715,5 +1755,108 @@ describe.skipIf(!ISO)('size', () => {
     const r = new Builder(src(), thing(1)).build()
     expect(r.adds.has('Motions/Synth.nms')).toBe(false)
     expect(R.f32(new R.Templates(r.sets.get('Misc/Global.not')!).prop('act_Synth', R.P_RADIUS))).toBeCloseTo(0.55, 5)
+  })
+})
+
+describe.skipIf(!ISO)('gun', () => {
+  const src = () => gameSource()
+  const tunedValues = (nvb: Uint8Array, fid: number) => {
+    const t = Object.create(tuning.Tuning.prototype) as tuning.Tuning
+    t.fields = nvbtool.parseNdb(src().entry('Misc/defaults.ndb')).fields('PLAYER')
+    t.nvb = nvbtool.parseNvb(nvb)
+    return Array.from({ length: tuning.SLOTS }, (_, s) => t.value(fid, s))
+  }
+  const armed = (base: string, side: imperfect.GunSide = 'right', internal = 'Synth') => {
+    const c = { ...tinted(base), internalName: internal, displayName: internal.toUpperCase() }
+    c.aura = { ...c.aura, mode: 'base' }
+    c.zButton = { stealth: null, costume: null, stats: null, size: null, bullet: null, requires: {}, gun: { ...imperfect.defaultGun(side), damage: 25, bullets: 3, energy: 7.5, automatic: true } }
+    c.materials[0].bind = imperfect.gunBone(base, side)
+    return c
+  }
+  const motions = (r: { adds: Map<string, Uint8Array> }, internal = 'Synth') => nmstool.parse(r.adds.get(`Motions/${internal}.nms`)!).motions()
+  const records = (r: { adds: Map<string, Uint8Array> }, stem = 'synth') => new Map(ngbtool.parse(r.adds.get(`Bundles/${stem}.ngb`)!).map((x) => [x.name.toLowerCase(), x]))
+
+  it('puts the gun on the bone the manifest names, on every base', () => {
+    for (const key of R.keys()) {
+      const base = new R.BaseCharacter(src(), key)
+      const model = ngmtool.read(base.bundleFiles()[0])[1][0]
+      for (const side of imperfect.GUN_SIDES) expect(gun.bone(model, base.body, side === 'right' ? 'R' : 'L')[0], `${key} ${side}`).toBe(imperfect.gunBone(key, side))
+    }
+  })
+
+  it('leaves tuning field 176 and motions action1 and action2 to the gun', () => {
+    for (const key of R.keys()) {
+      const base = new R.BaseCharacter(src(), key)
+      expect(new tuning.Tuning(src(), base).value(gun.FIELD, 0) ?? '').toBe('')
+      const set = nmstool.parse(src().entry(`Motions/${moves.motionSetOf(base)}`)).motions()
+      for (const state of Object.values(D.GUN_MOTIONS)) expect(set.has(state)).toBe(false)
+    }
+  })
+
+  it("takes Elektra's two-shot throws", () => {
+    const elektra = new R.BaseCharacter(src(), gun.DONOR)
+    const set = nmstool.parse(src().entry(`Motions/${moves.motionSetOf(elektra)}`)).motions()
+    const recs = new Map(ngbtool.parse(src().entry(`Bundles/${moves.stemOf(moves.motionSetOf(elektra))}.ngb`)).map((r) => [r.name.toLowerCase(), r]))
+    for (const state of [gun.DONOR_GROUND, gun.DONOR_AIR]) expect(gun.shotsOf(recs.get(set.get(state)!.anim.toLowerCase())!).length).toBe(2)
+  })
+
+  it('builds Wolverine with a gun Z draws, its shots under their own motions and the super attacks left alone', () => {
+    const r = new Builder(src(), armed('wolverine')).build()
+    expect(tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, gun.FIELD)).toEqual(new Array(tuning.SLOTS).fill('proj_SynthGun'))
+    const T = new R.Templates(r.sets.get('Misc/Global.not')!)
+    const bullet = T.get('proj_SynthGun')
+    expect(R.u32(bullet.get(0x4b))).toBe(25)
+    expect(bullet.get(R.P_MODEL)).toBeNull()
+    const by = new Map(nfxtool.blocks(nfxtool.readNfx(r.sets.get('Misc/game.nfx')!)).map((b) => [b.name, b]))
+    expect(by.get(R.text(bullet.get(R.P_EFFECT1))!)!.lines[0]).toMatch(/^controller /)
+    const set = motions(r), recs = records(r)
+    const wolverine = nmstool.parse(src().entry(`Motions/${moves.motionSetOf(new R.BaseCharacter(src(), 'wolverine'))}`)).motions()
+    expect(set.get('superattack1')!.anim.toLowerCase()).not.toMatch(/^gun_/)
+    expect(set.get('superattack1')!.anim.split('_')[0]).toBe(wolverine.get('superattack1')!.anim.split('_')[0])
+    for (const [state, name] of [[D.GUN_MOTIONS.ground, /^Gun_Shot_[0-9a-f_]+\.nad$/], [D.GUN_MOTIONS.air, /^Gun_AirShot_[0-9a-f_]+\.nad$/]] as const) {
+      const rec = recs.get(set.get(state)!.anim.toLowerCase())!
+      expect(rec.name).toMatch(name)
+      expect(gun.shotsOf(rec).length).toBe(3)
+      expect(rec.events.filter(([, t, p]) => t === 0x4e && p === D.GUN_PICK_VALUE).map(([f]) => f)).toEqual([1])
+      expect(rec.events.some(([, t, p]) => t === 0x4f && p === gun.MUZZLE_INDEX)).toBe(true)
+    }
+    expect(set.get(D.GUN_MOTIONS.ground)!.opts).toEqual(['noloop'])
+    expect(set.get(D.GUN_MOTIONS.air)!.opts).toEqual(['noloop', 'endpause'])
+    expect(recs.get(set.get('stand')!.anim.toLowerCase())!.tracks.some(([b]) => b === 39)).toBe(true)
+    const [, models] = ngmtool.read(r.adds.get('Bundles/synth.ngm')!)
+    expect(models[0].attachments.filter(([n, k, i]) => n === 39 && k === gun.MUZZLE_KIND && i === gun.MUZZLE_INDEX).length).toBe(1)
+    expect(r.gun).toMatchObject({ internal: 'Synth', bone: 39, hand: 27, thigh: 65, nodes: 66, automatic: true, energy: 7.5 })
+    expect(r.gun!.k.length).toBe(12)
+    expect(D.arenaLo(r.dol!)).toBeGreaterThan(D.arenaLo(src().dol))
+    expect(r.adds.has('Cutscenes/synth_intro1.cut')).toBe(true)
+    for (const text of ['gun: each bullet launches proj_SynthGun', 'a burst of 3 bullets from the right hand', 'holstered at the right hip']) expect(r.notes.some((n) => n.includes(text)), text).toBe(true)
+  })
+
+  it("gives the gun a bone of its own on the hand where the base's prop bone is taken or missing", () => {
+    for (const [base, side, bone, hand] of [['paradox', 'left', 81, 42], ['daredevil', 'right', 88, 27], ['thing', 'right', 66, 27]] as const) {
+      const r = new Builder(src(), armed(base, side)).build()
+      for (const costume of ['', '_alt']) {
+        const [, models] = ngmtool.read(r.adds.get(`Bundles/synth${costume}.ngm`)!)
+        expect(models[0].nodes.length).toBe(bone + 1)
+        expect(models[0].nodes[bone][2]).toBe(hand)
+        expect(models[0].attachments.some(([n, k, i]) => n === bone && k === gun.MUZZLE_KIND && i === gun.MUZZLE_INDEX)).toBe(true)
+      }
+      expect(r.gun).toMatchObject({ bone, hand })
+    }
+  })
+
+  it("keeps a projectile base's own projectiles", () => {
+    const r = new Builder(src(), armed('johnnyohm')).build()
+    const ohm = new tuning.Tuning(src(), new R.BaseCharacter(src(), 'johnnyohm'))
+    expect(tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, 90)).toEqual(Array.from({ length: tuning.SLOTS }, (_, s) => ohm.value(90, s)))
+    expect(tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, gun.FIELD)[0]).toBe('proj_SynthGun')
+  })
+
+  it("puts every character's gun in one table", () => {
+    const r = buildBatch(src(), [armed('wolverine'), armed('storm', 'left', 'Other')], () => {})
+    const slot = [2, 3, 4, 5, 6].find((i) => u32be(r.dol!, 0x90 + 4 * i))!
+    const table = u32be(r.dol!, 4 * slot) + D.GUN_DATA
+    expect(u32be(r.dol!, table + D.GUN_COUNT)).toBe(2)
+    expect(latin1(r.dol!, table + D.GUN_ENTRIES + D.GUN_ENTRY_SIZE + 0x48, table + D.GUN_ENTRIES + D.GUN_ENTRY_SIZE + 0x51)).toBe('plr_other')
   })
 })

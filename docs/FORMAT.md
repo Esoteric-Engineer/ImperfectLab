@@ -78,7 +78,7 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
   "move_idle": ["Run"],
   "cutscenes": { "finisher": "wolverine", "audio": { "finisher_1": "cutscenes/finisher_1.asf" } },
   "sounds": { "3": {"file": "sounds/sound3.dsp"}, "10": {"game": "spiderman:4"} },
-  "z_button": { "stealth": { "undetected": true, "untouchable": true, "visible": 0.2 }, "costume": { "normal": { "0": "alt" }, "alt": { "0": "textures/mat0_altz.png" } }, "stats": { "attack_damage_3": 40, "damage_taken": 0.5, "lift": "heavy" }, "size": 2, "bullet": 0.5, "requires": { "energy": { "seconds": 8, "regen": false } } },
+  "z_button": { "stealth": { "undetected": true, "untouchable": true, "visible": 0.2 }, "costume": { "normal": { "0": "alt" }, "alt": { "0": "textures/mat0_altz.png" } }, "stats": { "attack_damage_3": 40, "damage_taken": 0.5, "lift": "heavy" }, "size": 2, "bullet": 0.5, "gun": { "side": "right", "damage": 10, "energy": 5, "bullets": 3, "automatic": true, "holster": { "position": [0.1, 0, -0.18], "rotation": [0, 90, 0] } }, "requires": { "energy": { "seconds": 8, "regen": false } } },
   "files": {"model/model.glb": "<sha256>", "ui/select_ready.png": "<sha256>"}
 }
 ```
@@ -244,7 +244,7 @@ Optional, and left out when no sound changes. The index of a sound in the base's
 A `sounds/` member is a standard Nintendo `.dsp` file. ImperfectLab writes mono, unlooped files at the replaced sound's rate or lower.
 
 ### `z_button`
-Optional, left out when Z does nothing (default). Holding Z runs every action given, at least one of `stealth`, `costume`, `stats`, `size` and `bullet`.
+Optional, left out when Z does nothing (default). Holding Z runs every action given, at least one of `stealth`, `costume`, `stats`, `size`, `bullet` and `gun`.
 - `action`: only in older files, where `stealth` is Stealth Mode. A reader takes it as `stealth`; a writer leaves it out.
 - `stealth`: optional, Stealth Mode's effects, at least one of them:
   - `undetected`: `true` when the CPU loses track of the character. Optional, `false` by default.
@@ -254,10 +254,20 @@ Optional, left out when Z does nothing (default). Holding Z runs every action gi
 - `stats`: optional, Stat Change. The values that replace the character's own while Z is held, at least one of them: `attack_damage_1` to `_5` and `damage_taken`, with the ranges of `stats.gameplay`, and `lift`.
 - `size`: optional, Change Size. 0.1-3.0, the character's size while Z is held as a multiple of its own (`model.size` included). It grows or shrinks over a quarter of a second, and back on release.
 - `bullet`: optional, Bullet Time. 0.25-0.9, the speed everything but the character runs at while Z is held: opponents, CPU players, projectiles, thrown objects and effects. The world eases into it over at most a quarter of a second, and back on release. Older ImperfectLab builds refuse a file with it.
+- `gun`: optional, Gun. The gun rides in a holster at the hip; while Z is held it's in hand, and any attack, on the ground or in the air, fires it instead. Any base.
+  - `side`: `right` or `left` (default `right`), the hand that holds and shoots it and the hip it's holstered on.
+  - `damage`: integer 1-1000 (default 10), each bullet's damage.
+  - `energy`: 0-100 (default 5) of a full bar of 100, what each shot takes. A shot needs that much to start.
+  - `bullets`: integer 1-10 (default 2), the bullets in each shot's quick burst.
+  - `automatic`: `true` keeps shooting while attack is held, each shot taking its energy (default `false`).
+  - `holster`: where the gun's middle sits from the side's thigh bone. `position`: three numbers from -0.6 to 0.6, in meters. `rotation`: three numbers from -180 to 180, degrees about X, Y and Z. Default `[0.1, 0, -0.18]` and `[0, 90, 0]` on the right, mirrored on the left (barrel down).
 - `requires`: optional, left out when empty. What the action needs.
   - `energy`: the action drains energy and can't start with none. `seconds` (1 to 60) is how long a full bar lasts. `regen` (optional, `false` by default) keeps the game's energy regeneration running while active, so the bar lasts longer.
 
 Older ImperfectLab builds refuse the key. See [`LIMITATIONS.md`](LIMITATIONS.md).
+
+### `gun`
+Only in files from ImperfectLab builds before the gun became a Z action, where R drew it. A reader takes it as `z_button.gun` and ignores its `drawn`; a writer leaves it out.
 
 ## Licensing
 

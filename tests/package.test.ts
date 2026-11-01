@@ -124,6 +124,57 @@ describe('round trip', () => {
     expect(errors(c)).toContain('the holster decides')
   })
 
+  it('saves and loads a gun as a Z action, which needs a part fixed to its bone', () => {
+    const c = character()
+    const g: imperfect.Gun = { ...imperfect.defaultGun('left'), damage: 25, energy: 12.5, bullets: 3, automatic: true }
+    c.zButton = { stealth: null, costume: null, stats: null, size: null, bullet: null, gun: g, requires: {} }
+    const errors = (x: imperfect.Character) => imperfect.problems(x).filter(([l]) => l === 'error').map(([, m]) => m).join(' ')
+    expect(errors(c)).toContain('bone 59')
+    c.materials[0].bind = 59
+    expect(errors(c)).toBe('')
+    const d = imperfect.load(imperfect.save(c))
+    expect(imperfect.gunOf(d)).toEqual(g)
+    expect(imperfect.gunOf(imperfect.load(imperfect.save(character())))).toBeNull()
+    d.base = 'johnnyohm'
+    expect(errors(d)).toBe('')
+    d.base = 'daredevil'
+    expect(errors(d)).toBe('')
+    for (const [base, bone] of [['paradox', 81], ['thing', 66]] as const) {
+      d.base = base
+      expect(errors(d)).toContain(`bone ${bone}`)
+    }
+    d.zButton!.gun = { ...g, side: 'right' }
+    d.base = 'daredevil'
+    expect(errors(d)).toContain('bone 88')
+    const m = imperfect.manifest(c) as Record<string, Record<string, Json>>
+    expect(m.z_button.gun).toEqual({ side: 'left', damage: 25, energy: 12.5, bullets: 3, automatic: true, holster: imperfect.gunHolster('left') })
+    expect(m.gun).toBeUndefined()
+  })
+
+  it("reads a gun from a file, and an earlier build's gun as a Z action", () => {
+    const glb = makeGlb()
+    const ok = (gun: Json) => imperfect.gunOf(imperfect.load(withManifest({ 'model/model.glb': glb }, (m) => { m.z_button = { gun } })))
+    expect(ok({ side: 'right' })).toEqual(imperfect.defaultGun('right'))
+    expect(ok({ side: 'left', damage: 40, bullets: 10, energy: 0 })).toMatchObject({ damage: 40, bullets: 10, energy: 0 })
+    const bad = (gun: Json, text: string) => rejected(withManifest({ 'model/model.glb': glb }, (m) => { m.z_button = { gun } }), text)
+    bad({ side: 'middle' }, 'gun.side')
+    bad({ damage: 0 }, 'gun.damage')
+    bad({ bullets: 11 }, 'gun.bullets')
+    bad({ bullets: 2.5 }, 'gun.bullets')
+    bad({ energy: 101 }, 'gun.energy')
+    bad({ automatic: 1 }, 'gun.automatic')
+    bad({ drawn: { Run: true } }, 'unknown key')
+    bad({ holster: { position: [0, 0, 1], rotation: [0, 0, 0] } }, 'gun.holster.position')
+    const old = imperfect.load(withManifest({ 'model/model.glb': glb }, (m) => {
+      m.base = 'wolverine'
+      m.gun = { side: 'left', damage: 30, holster: imperfect.gunHolster('left'), drawn: { Run: true } }
+      m.z_button = { size: 2 }
+    }))
+    expect(old.zButton).toMatchObject({ size: 2, gun: { ...imperfect.defaultGun('left'), damage: 30 } })
+    expect(imperfect.gunOf(imperfect.load(withManifest({ 'model/model.glb': glb }, (m) => { m.gun = { side: 'right' } })))).toEqual(imperfect.defaultGun('right'))
+    rejected(withManifest({ 'model/model.glb': glb }, (m) => { m.gun = { side: 'right' }; m.z_button = { gun: { side: 'left' } } }), 'not also gun')
+  })
+
   it('saves and loads the range grab', () => {
     const c = character()
     c.base = 'daredevil'
@@ -276,7 +327,7 @@ describe('round trip', () => {
   it('saves and loads the Z button actions', () => {
     const c = character()
     expect(imperfect.manifest(c).z_button).toBeUndefined()
-    const z: imperfect.ZButton = { stealth: { undetected: true, untouchable: false, visible: null }, costume: null, stats: null, size: null, bullet: null, requires: {} }
+    const z: imperfect.ZButton = { stealth: { undetected: true, untouchable: false, visible: null }, costume: null, stats: null, size: null, bullet: null, gun: null, requires: {} }
     c.zButton = z
     expect(JSON.parse(JSON.stringify(imperfect.manifest(c).z_button))).toEqual({ stealth: { undetected: true } })
     expect(imperfect.load(imperfect.save(c)).zButton).toEqual(z)
@@ -309,7 +360,7 @@ describe('round trip', () => {
 
     const m = imperfect.manifest(c) as Json
     const legacy = imperfect.fromManifest({ ...m, z_button: { action: 'stealth', stealth: { visible: 0.2 } } } as Json, new Map())
-    expect(legacy.zButton).toEqual({ stealth: { undetected: false, untouchable: false, visible: 0.2 }, costume: null, stats: null, size: null, bullet: null, requires: {} })
+    expect(legacy.zButton).toEqual({ stealth: { undetected: false, untouchable: false, visible: 0.2 }, costume: null, stats: null, size: null, bullet: null, gun: null, requires: {} })
     const bad = (z: unknown) => expect(() => imperfect.fromManifest({ ...m, z_button: z } as Json, new Map())).toThrow(/z_button/)
     bad('stealth')
     bad({})

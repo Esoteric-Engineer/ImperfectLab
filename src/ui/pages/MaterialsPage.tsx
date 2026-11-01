@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { zipSync } from 'fflate'
 import { encodePng } from '../../core/image/png'
 import type { RgbaImage } from '../../core/image/rgba'
-import { copyCharacter, type Material } from '../../core/package/imperfect'
+import { copyCharacter, gunBone, gunOf, type Material } from '../../core/package/imperfect'
 import { decodePicture, download, pickFile } from '../../io/files'
 import { ImageView, Note, NumberInput } from '../components/common'
 import { engine } from '../engine'
@@ -84,6 +84,7 @@ function MaterialCard({ index, thumbs }: { index: number; thumbs: [RgbaImage | n
   const c = s.character
   const m = c.materials[index]
   const sk = s.game ? s.skeleton() : null
+  const g = gunOf(c), gunAt = g ? gunBone(c.base, g.side) : undefined
   const edited = () => s.touch('character')
   const altMode = m.alt === 'same' ? 0 : m.alt.startsWith('hue:') ? 1 : 2
 
@@ -181,6 +182,7 @@ function MaterialCard({ index, thumbs }: { index: number; thumbs: [RgbaImage | n
             <select value={m.bind ?? ''} onChange={(e) => { m.bind = e.target.value === '' ? null : Number(e.target.value); edited() }}>
               <option value="">(follows its skin weights)</option>
               {(sk?.nodes ?? []).map((n) => <option key={n.index} value={n.index}>{n.index} {n.name}</option>)}
+              {m.bind !== null && sk && m.bind >= sk.nodes.length && <option value={m.bind}>{m.bind} {m.bind === gunAt ? 'Gun' : '(not on this base)'}</option>}
             </select>
             <Note>Normally a material follows the skin weights. Fix it to one game bone for a prop (Daredevil's club is bone 39), and model it where that bone is.</Note>
           </div>

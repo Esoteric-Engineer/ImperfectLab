@@ -104,16 +104,16 @@ export function fittedMeshes(trisByMat: Map<number, Tri[]>, images: Map<number, 
   })
 }
 
-// What is fixed to the club alone, moved onto the back as the holster carries it.
-export function holsteredTris(trisByMat: Map<number, Tri[]>, skeleton: Skeleton, h: Holster): Map<number, Tri[]> {
-  const C = holster.center(trisByMat.values())
-  const chest = skeleton.positions()[holster.CHEST]
+// What is fixed to the prop bone alone, moved into the holster on the anchor bone.
+export function holsteredTris(trisByMat: Map<number, Tri[]>, skeleton: Skeleton, h: Pick<Holster, 'position' | 'rotation'>, bone = CLUB, anchor = holster.CHEST): Map<number, Tri[]> {
+  const C = holster.center(trisByMat.values(), bone)
+  const chest = skeleton.positions()[anchor]
   const R = holster.turn(h.rotation)
   const at = (p: number[]) => {
     const v = holster.apply(R, [p[0] - C[0], p[1] - C[1], p[2] - C[2]])
     return [0, 1, 2].map((k) => chest[k] + h.position[k] + v[k]) as [number, number, number]
   }
-  const onClub = (w: [number, number][]) => w.some(([b, x]) => b === CLUB && x > 0) && !w.some(([b, x]) => b !== CLUB && x > 0)
+  const onClub = (w: [number, number][]) => w.some(([b, x]) => b === bone && x > 0) && !w.some(([b, x]) => b !== bone && x > 0)
   return new Map([...trisByMat].map(([slot, tris]) => [slot, tris.map((t) => t.map((v): Tri[number] => (onClub(v[3]) ? [at(v[0]), holster.apply(R, v[1]), v[2], v[3]] : v)) as Tri)]))
 }
 

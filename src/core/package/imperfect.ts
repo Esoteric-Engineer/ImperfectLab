@@ -10,6 +10,7 @@ import { CLUB } from '../build/basemoves'
 import { CLUB_MOVES, defaultDrawn } from '../build/holster'
 import { type DamageKey, KEYS as DAMAGE_KEYS } from '../build/damage'
 import { COSTS, type EnergyKey, FALLBACK, RECHARGE, type RechargeKey } from '../build/energy'
+import { BULLETS as GUN_BULLETS, DAMAGE as GUN_DAMAGE, DEFAULT_BULLETS, DEFAULT_DAMAGE, DEFAULT_ENERGY, ENERGY as GUN_ENERGY } from '../build/gun'
 import { LOW_ENERGY_STUN, MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
 import { DISTANCE, JUMP_DISTANCE, JUMPS, type Limb, LIMBS } from '../build/reach'
 import { Z_SECONDS, Z_SIZE, Z_SLOW, Z_VISIBLE } from '../game/dol'
@@ -74,6 +75,18 @@ export const THROW_REACH: [number, number] = [8, 35]
 export const HOLSTER_POSITION: [number, number] = [-0.6, 0.6]
 export const HOLSTER_ROTATION: [number, number] = [-180, 180]
 export const defaultHolster = (): Holster => ({ position: [0, -0.17, 0.05], rotation: [90, 0, 0] })
+export { GUN_BULLETS, GUN_DAMAGE, GUN_ENERGY }
+export const GUN_SIDES = ['right', 'left'] as const
+export type GunSide = (typeof GUN_SIDES)[number]
+// The gun's game bone per base, right and left (gun.ts, bone).
+const GUN_BONES: Record<string, [number, number]> = {
+  daredevil: [88, 59], paradox: [81, 81], elektra: [81, 81], storm: [81, 81], aftershock: [89, 89], heatwave: [81, 81], defcon: [97, 97],
+  thing: [66, 66], venom: [88, 88], megalith: [90, 90], roekel: [84, 84],
+}
+export const gunBone = (base: string, side: GunSide): number => (GUN_BONES[base] ?? [39, 59])[side === 'right' ? 0 : 1]
+export const gunHolster = (side: GunSide): Gun['holster'] => (side === 'right' ? { position: [0.1, 0, -0.18], rotation: [0, 90, 0] } : { position: [-0.1, 0, -0.18], rotation: [0, -90, 0] })
+export const defaultGun = (side: GunSide = 'right'): Gun => ({ side, damage: DEFAULT_DAMAGE, energy: DEFAULT_ENERGY, bullets: DEFAULT_BULLETS, automatic: false, holster: gunHolster(side) })
+export const gunOf = (c: Pick<Character, 'zButton'>): Gun | null => c.zButton?.gun ?? null
 export const POSES = ['rest', 'ready', 'readyalt'] as const
 export const CUTSCENE_KINDS = ['intro', 'victory', 'finisher'] as const
 export type CutsceneKind = (typeof CUTSCENE_KINDS)[number]
@@ -121,6 +134,15 @@ export interface Holster {
   position: [number, number, number]
   rotation: [number, number, number]
   drawn?: Record<string, boolean>
+}
+
+export interface Gun {
+  side: GunSide
+  damage: number
+  energy: number
+  bullets: number
+  automatic: boolean
+  holster: { position: [number, number, number]; rotation: [number, number, number] }
 }
 
 export interface BaseMoves {
@@ -176,6 +198,7 @@ export interface ZButton {
   stats: ZStats | null
   size: number | null
   bullet: number | null
+  gun: Gun | null
   requires: { energy?: { seconds: number; regen: boolean } }
 }
 
@@ -330,12 +353,13 @@ export function manifest(c: Character): Json {
     move_idle: c.moveIdle.length ? c.moveIdle : undefined,
     cutscenes: hasCutscenes(c.cutscenes) ? { ...c.cutscenes, effects: Object.keys(c.cutscenes.effects).length ? c.cutscenes.effects : undefined, animation: Object.keys(c.cutscenes.animation).length ? c.cutscenes.animation : undefined } : undefined,
     sounds: Object.keys(c.sounds).length ? c.sounds : undefined,
-    z_button: z && (z.stealth || z.costume || zStats || z.size !== null || z.bullet !== null) ? {
+    z_button: z && (z.stealth || z.costume || zStats || z.size !== null || z.bullet !== null || z.gun) ? {
       stealth: z.stealth ? { undetected: z.stealth.undetected || undefined, untouchable: z.stealth.untouchable || undefined, visible: z.stealth.visible ?? undefined } : undefined,
       costume: z.costume ?? undefined,
       stats: zStats,
       size: z.size ?? undefined,
       bullet: z.bullet ?? undefined,
+      gun: z.gun ?? undefined,
       requires: Object.keys(z.requires).length ? z.requires : undefined,
     } : undefined,
     files: Object.fromEntries([...files].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, v]) => [k, sha(v)])),
@@ -428,6 +452,11 @@ export function problems(c: Character): Problem[] {
     if ('file' in from && !c.files.has(from.file)) out.push(['error', `the new sound for sound ${Number(slot) + 1} is missing`])
     if ('game' in from && !(GAME_SOUND.test(from.game) && Object.hasOwn(BASES, from.game.split(':')[0]))) out.push(['error', `sound ${Number(slot) + 1} is taken from an unknown character`])
   }
+  const g = gunOf(c)
+  if (g) {
+    const bone = gunBone(c.base, g.side)
+    if (!c.mapping.has(bone) && !c.materials.some((m) => m.include && m.bind === bone)) out.push(['error', `nothing is fixed to game bone ${bone} to be the gun: pick the gun's material on the Z-Button Actions page`])
+  }
   if (c.zButton?.stats && !Object.keys(c.zButton.stats).length) out.push(['warning', 'Stat Change is ticked but changes nothing: tick a value on the Z-Button Actions page'])
   if (c.zButton?.size === 1) out.push(['warning', 'Change Size is ticked but changes nothing: set a size other than 1 on the Z-Button Actions page'])
   if (c.zButton?.costume) {
@@ -474,6 +503,36 @@ function keys(d: unknown, allowed: string[], what: string): Record<string, unkno
 
 const color = (v: unknown, what: string) => str(v, what, 9, COLOR)!
 
+function three(v: unknown, what: string, [lo, hi]: [number, number]): [number, number, number] {
+  const a = typed<unknown[]>(v, 'array', what)
+  if (a.length !== 3) throw new LabError(`manifest: ${what} is three numbers`)
+  return a.map((x) => num(x, what, lo, hi, false)!) as [number, number, number]
+}
+
+function drawnMoves(v: unknown, what: string): Record<string, boolean> {
+  const drawn: Record<string, boolean> = {}
+  for (const [id, x] of Object.entries(typed<Record<string, unknown>>(v, 'object', what))) {
+    if (!MOVE_IDS.has(id)) throw new LabError(`manifest: unknown move ${JSON.stringify(id.slice(0, 40))} in ${what}`)
+    drawn[id] = typed<boolean>(x, 'boolean', `${what}.${id}`)
+  }
+  return drawn
+}
+
+function readGun(v: unknown, what: string, legacy = false): Gun {
+  const g = keys(v, ['side', 'damage', 'energy', 'bullets', 'automatic', 'holster', ...(legacy ? ['drawn'] : [])], what)
+  const side = str(g.side ?? 'right', `${what}.side`, 8)! as GunSide
+  if (!GUN_SIDES.includes(side)) throw new LabError(`manifest: ${what}.side is right or left`)
+  const h = keys(g.holster ?? gunHolster(side), ['position', 'rotation'], `${what}.holster`)
+  return {
+    side,
+    damage: num(g.damage ?? DEFAULT_DAMAGE, `${what}.damage`, GUN_DAMAGE[0], GUN_DAMAGE[1], false, true)!,
+    energy: num(g.energy ?? DEFAULT_ENERGY, `${what}.energy`, GUN_ENERGY[0], GUN_ENERGY[1], false)!,
+    bullets: num(g.bullets ?? DEFAULT_BULLETS, `${what}.bullets`, GUN_BULLETS[0], GUN_BULLETS[1], false, true)!,
+    automatic: typed<boolean>(g.automatic ?? false, 'boolean', `${what}.automatic`),
+    holster: { position: three(h.position, `${what}.holster.position`, HOLSTER_POSITION), rotation: three(h.rotation, `${what}.holster.rotation`, HOLSTER_ROTATION) },
+  }
+}
+
 function upgrade(m: Record<string, unknown>): Record<string, unknown> {
   const v = m.version
   if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) throw new LabError('not a valid .imperfect file (no version)')
@@ -482,7 +541,7 @@ function upgrade(m: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Character {
-  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'trails', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'cutscenes', 'sounds', 'z_button', 'files'], 'the manifest')
+  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'trails', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'cutscenes', 'sounds', 'z_button', 'gun', 'files'], 'the manifest')
   if (m.format !== FORMAT) throw new LabError('not a .imperfect file')
   upgrade(m)
   if (m.game !== GAME) throw new LabError(`this file is for ${m.game}, not ${GAME}`)
@@ -622,18 +681,9 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   if (mv.range_grab !== null && mv.range_grab !== undefined) c.baseMoves.range_grab = typed<boolean>(mv.range_grab, 'boolean', 'base_moves.range_grab')
   if (mv.holster !== null && mv.holster !== undefined) {
     const h = keys(mv.holster, ['position', 'rotation', 'drawn'], 'base_moves.holster')
-    const three = (v: unknown, what: string, [lo, hi]: [number, number]) => {
-      const a = typed<unknown[]>(v, 'array', `base_moves.holster.${what}`)
-      if (a.length !== 3) throw new LabError(`manifest: base_moves.holster.${what} is three numbers`)
-      return a.map((x) => num(x, `base_moves.holster.${what}`, lo, hi, false)!) as [number, number, number]
-    }
-    c.baseMoves.holster = { position: three(h.position, 'position', HOLSTER_POSITION), rotation: three(h.rotation, 'rotation', HOLSTER_ROTATION) }
+    c.baseMoves.holster = { position: three(h.position, 'base_moves.holster.position', HOLSTER_POSITION), rotation: three(h.rotation, 'base_moves.holster.rotation', HOLSTER_ROTATION) }
     if (h.drawn !== null && h.drawn !== undefined) {
-      const drawn: Record<string, boolean> = {}
-      for (const [id, v] of Object.entries(typed<Record<string, unknown>>(h.drawn, 'object', 'base_moves.holster.drawn'))) {
-        if (!MOVE_IDS.has(id)) throw new LabError(`manifest: unknown move ${JSON.stringify(id.slice(0, 40))} in base_moves.holster.drawn`)
-        drawn[id] = typed<boolean>(v, 'boolean', `base_moves.holster.drawn.${id}`)
-      }
+      const drawn = drawnMoves(h.drawn, 'base_moves.holster.drawn')
       if (Object.keys(drawn).length) c.baseMoves.holster.drawn = drawn
     }
   }
@@ -736,7 +786,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   }
   c.zButton = null
   if (m.z_button !== undefined && m.z_button !== null) {
-    const z = keys(m.z_button, ['action', 'stealth', 'costume', 'stats', 'size', 'bullet', 'requires'], 'z_button')
+    const z = keys(m.z_button, ['action', 'stealth', 'costume', 'stats', 'size', 'bullet', 'gun', 'requires'], 'z_button')
     if (z.action !== undefined && z.action !== 'stealth') throw new LabError('manifest: z_button.action can only be stealth, as older files have it')
     let stealth: ZButton['stealth'] = null
     if (z.stealth !== undefined || z.action === 'stealth') {
@@ -782,13 +832,20 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     }
     const size = num(z.size, 'z_button.size', ...Z_SIZE)
     const bullet = num(z.bullet, 'z_button.bullet', ...Z_SLOW)
-    if (!stealth && !costume && !stats && size === null && bullet === null) throw new LabError('manifest: z_button needs at least one of stealth, costume, stats, size and bullet')
+    const gun = z.gun !== undefined && z.gun !== null ? readGun(z.gun, 'z_button.gun') : null
+    if (!stealth && !costume && !stats && size === null && bullet === null && !gun) throw new LabError('manifest: z_button needs at least one of stealth, costume, stats, size, bullet and gun')
     const requires = keys(z.requires ?? {}, ['energy'], 'z_button.requires')
-    c.zButton = { stealth, costume, stats, size, bullet, requires: {} }
+    c.zButton = { stealth, costume, stats, size, bullet, gun, requires: {} }
     if (requires.energy !== undefined) {
       const e = keys(requires.energy, ['seconds', 'regen'], 'z_button.requires.energy')
       c.zButton.requires.energy = { seconds: num(e.seconds, 'z_button.requires.energy.seconds', ...Z_SECONDS, false)!, regen: typed<boolean>(e.regen ?? false, 'boolean', 'z_button.requires.energy.regen') }
     }
+  }
+  // an earlier build's gun, drawn with R
+  if (m.gun !== undefined && m.gun !== null) {
+    if (c.zButton?.gun) throw new LabError('manifest: the gun is in z_button.gun, not also gun')
+    const gun = readGun(m.gun, 'gun', true)
+    c.zButton = c.zButton ? { ...c.zButton, gun } : { stealth: null, costume: null, stats: null, size: null, bullet: null, gun, requires: {} }
   }
   c.glb = files.get('model/model.glb') ?? null
   files.delete('model/model.glb')

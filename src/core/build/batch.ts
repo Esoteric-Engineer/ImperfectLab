@@ -8,7 +8,7 @@ import * as nfxtool from '../mnroi/nfxtool'
 import { Model } from '../model/glb'
 import * as mapping from '../model/mapping'
 import { Skeleton } from '../model/skeleton'
-import { type Character, hasCutscenes, problems as characterProblems, type Problem } from '../package/imperfect'
+import { type Character, gunOf, hasCutscenes, problems as characterProblems, type Problem } from '../package/imperfect'
 import * as effects from './effects'
 import * as moves from './moves'
 import { motionSetName, SLOTS } from './moves'
@@ -129,6 +129,8 @@ export function buildBatch(source: GameSource, chars: Batch, progress: Progress 
   if (batch.some(throwsDamage)) r.dol = D.throwDamage(r.dol)
   if (batch.some(ownSounds)) r.dol = D.soundBanks(r.dol, batch.filter(ownSounds).map((c) => c.internalName))
   if (batch.some((c) => c.zButton)) r.dol = D.zActions(r.dol, zCharacters(batch))
+  const guns = results.flatMap((x) => (x.gun ? [x.gun] : []))
+  if (guns.length) r.dol = D.gun(r.dol, guns)
   r.notes = [...notes, ...results.flatMap((x, i) => x.notes.map((n) => `${batch[i].displayName}: ${n}`))]
   return r
 }
@@ -160,7 +162,7 @@ function claims(c: Character): Set<string> {
 }
 
 // Whether the character gets its own tuning file, and so a line in Misc/nvblist.txt (Builder.tuning).
-const tuned = (c: Character) => c.aura.mode === 'tint' || Object.keys(tuningFields(c)).length > 0 || hasCutscenes(c.cutscenes) || Object.values(c.moveEffects).includes('theirs') || paintsReach(c)
+const tuned = (c: Character) => gunOf(c) !== null || c.aura.mode === 'tint' || Object.keys(tuningFields(c)).length > 0 || hasCutscenes(c.cutscenes) || Object.values(c.moveEffects).includes('theirs') || paintsReach(c)
 
 const gameBundle = (source: GameSource, name: string) => ['ngm', 'tpl'].reduce((n, ext) => n + (source.index.byName.get(`bundles/${name}.${ext}`)?.size ?? 0), 0)
 const builtBundle = (adds: Map<string, Uint8Array>, name: string) => ['ngm', 'tpl'].reduce((n, ext) => n + (adds.get(`Bundles/${name}.${ext}`)?.length ?? 0), 0)

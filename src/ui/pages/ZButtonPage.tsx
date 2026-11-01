@@ -1,11 +1,14 @@
+import * as gun from '../../core/build/gun'
 import { formatG } from '../../core/format'
 import { Z_SECONDS, Z_SIZE, Z_SLOW, Z_VISIBLE, type ZAction } from '../../core/game/dol'
+import { label } from '../../core/game/roster'
 import { encodePng } from '../../core/image/png'
-import { GAMEPLAY as RANGES, LIFT, type ZButton, type ZCostume, Z_COSTUMES, type ZStats, zTexture } from '../../core/package/imperfect'
+import { defaultGun, GAMEPLAY as RANGES, GUN_BULLETS, GUN_DAMAGE, GUN_ENERGY, GUN_SIDES, gunBone, type GunSide, LIFT, type ZButton, type ZCostume, Z_COSTUMES, type ZStats, zTexture } from '../../core/package/imperfect'
 import { decodePicture, pickFile } from '../../io/files'
 import { Note, NumberInput } from '../components/common'
 import { store, useStore } from '../store'
 import { DamageTable } from '../components/DamageTable'
+import { HolsterPlace } from './MovesPage'
 
 const ACTIONS: [ZAction, string][] = [
   ['stealth', 'Stealth Mode'],
@@ -13,6 +16,7 @@ const ACTIONS: [ZAction, string][] = [
   ['stats', 'Stat Change'],
   ['size', 'Change Size'],
   ['bullet', 'Bullet Time'],
+  ['gun', 'Gun'],
 ]
 
 const EFFECTS: ['undetected' | 'untouchable', string][] = [
@@ -28,6 +32,7 @@ const fresh = (action: ZAction): Partial<ZButton> => {
   if (action === 'costume') return { costume: { normal: {}, alt: {} } }
   if (action === 'size') return { size: 2 }
   if (action === 'bullet') return { bullet: 0.5 }
+  if (action === 'gun') return { gun: defaultGun() }
   return { stats: {} }
 }
 
@@ -38,8 +43,9 @@ export function ZButtonPage() {
   const energy = z?.requires.energy
   const edited = () => store.touch('character')
   const setAction = (action: ZAction, on: boolean) => {
-    const next: ZButton = { ...(z ?? { stealth: null, costume: null, stats: null, size: null, bullet: null, requires: {} }), ...(on ? fresh(action) : { [action]: null }) }
-    c.zButton = next.stealth || next.costume || next.stats || next.size !== null || next.bullet !== null ? next : null
+    if (action === 'gun' && !on && z?.gun) unbindGun(z.gun.side)
+    const next: ZButton = { ...(z ?? { stealth: null, costume: null, stats: null, size: null, bullet: null, gun: null, requires: {} }), ...(on ? fresh(action) : { [action]: null }) }
+    c.zButton = next.stealth || next.costume || next.stats || next.size !== null || next.bullet !== null || next.gun ? next : null
     edited()
   }
   return (
@@ -79,6 +85,7 @@ export function ZButtonPage() {
           {action === 'stats' && z?.stats && <Stats />}
           {action === 'size' && z?.size && <Size />}
           {action === 'bullet' && z?.bullet && <BulletTime />}
+          {action === 'gun' && z?.gun && <Gun />}
         </div>
       ))}
     </div>
@@ -243,6 +250,77 @@ function Stats() {
           </tr>
         </tbody>
       </table>
+    </div>
+  )
+}
+
+function unbindGun(side: GunSide) {
+  const c = store.character
+  for (const m of c.materials) if (m.bind === gunBone(c.base, side)) m.bind = null
+}
+
+function Gun() {
+  const c = store.character
+  const z = c.zButton!, g = z.gun!
+  const edited = () => store.touch('character')
+  const bone = (side: GunSide) => gunBone(c.base, side)
+  const part = c.materials.findIndex((m) => m.include && m.bind === bone(g.side))
+  const set = (next: Partial<typeof g>) => {
+    z.gun = { ...g, ...next }
+    edited()
+  }
+  const setSide = (side: GunSide) => {
+    const was = bone(g.side)
+    for (const m of c.materials) if (m.bind === was) m.bind = bone(side)
+    const [x, y, zz] = g.holster.position, [rx, ry, rz] = g.holster.rotation
+    set({ side, holster: { position: [-x, y, zz], rotation: [rx, -ry, -rz] } })
+  }
+  const setPart = (i: number) => {
+    unbindGun(g.side)
+    if (i >= 0) c.materials[i] = { ...c.materials[i], bind: bone(g.side), include: true }
+    edited()
+  }
+  return (
+    <div className="zaction-body">
+      <Note>
+        The gun rides in a holster at the hip. While holding Z, the character holds the gun and any attack fires the gun.<br />
+        The bullets make {label(c.base)}'s super attack sound: the game picks a move's sounds through scripts that other moves share, so the gun can't have a sound of its own yet.
+      </Note>
+      <table className="gameplay grid">
+        <thead><tr><th>Value</th><th>Setting</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Hand and holster side</td>
+            <td><select value={g.side} onChange={(e) => setSide(e.target.value as GunSide)}>
+              {GUN_SIDES.map((side) => <option key={side} value={side}>{side}</option>)}
+            </select></td>
+          </tr>
+          <tr>
+            <td>Gun part (material)</td>
+            <td><select value={part} onChange={(e) => setPart(Number(e.target.value))}>
+              <option value={-1}>(none)</option>
+              {c.materials.map((m, i) => <option key={i} value={i}>{m.name || `material ${m.gltfMaterial}`}{m.include ? '' : ' (excluded)'}</option>)}
+            </select></td>
+          </tr>
+          <tr>
+            <td>Damage per bullet</td>
+            <td><NumberInput min={GUN_DAMAGE[0]} max={GUN_DAMAGE[1]} step={1} value={g.damage} onChange={(v) => set({ damage: Math.round(v) })} /> <span className="muted">Elektra's sai: {gun.DEFAULT_DAMAGE}</span></td>
+          </tr>
+          <tr>
+            <td>Energy per shot</td>
+            <td><NumberInput min={GUN_ENERGY[0]} max={GUN_ENERGY[1]} step={0.5} value={g.energy} onChange={(v) => set({ energy: Math.round(v * 10) / 10 })} /> <span className="muted">of a full bar of 100</span></td>
+          </tr>
+          <tr>
+            <td>Bullets per shot</td>
+            <td><NumberInput min={GUN_BULLETS[0]} max={GUN_BULLETS[1]} step={1} value={g.bullets} onChange={(v) => set({ bullets: Math.round(v) })} /> <span className="muted">fired in a quick burst</span></td>
+          </tr>
+          <tr>
+            <td>Machine gun</td>
+            <td><label className="check"><input type="checkbox" checked={g.automatic} onChange={(e) => set({ automatic: e.target.checked })} /> Keep shooting while attack is held</label></td>
+          </tr>
+        </tbody>
+      </table>
+      <HolsterPlace h={g.holster} from={`the ${g.side} thigh`} view="front" gun onChange={(h) => set({ holster: { position: h.position, rotation: h.rotation } })} />
     </div>
   )
 }

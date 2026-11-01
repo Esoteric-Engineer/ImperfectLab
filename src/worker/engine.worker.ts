@@ -94,7 +94,7 @@ const handlers: Record<string, (progress: (stage: string, done?: number, total?:
   autoMap: (_p, key: string) => service.autoMap(key),
   preview: (_p, c, needBase: boolean) => service.preview(c, needBase),
   fitCheck: (_p, c) => service.fitCheck(c),
-  holsterPreview: (_p, c) => service.holsterPreview(c),
+  holsterPreview: (_p, c, gun) => service.holsterPreview(c, gun),
   materialThumbs: (_p, c) => service.materialThumbs(c),
   materialPngs: (_p, c, index: number | null) => service.materialPngs(c, index),
   layout: () => service.layoutInfo(),

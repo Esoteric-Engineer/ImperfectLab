@@ -3,6 +3,7 @@ import { type Batch, buildBatch, checkBatch } from '../core/build/batch'
 import * as cutscenes from '../core/build/cutscenes'
 import { Builder, glowRgba, patch, type Progress, report, type Result, WIRE, write } from '../core/build/patch'
 import * as effects from '../core/build/effects'
+import * as gun from '../core/build/gun'
 import * as moves from '../core/build/moves'
 import * as portraits from '../core/build/portraits'
 import * as sounds from '../core/build/sounds'
@@ -316,9 +317,16 @@ export class Service {
     return mapping.autoMap(this.model, sk)
   }
 
+  // The base's skeleton with the gun's bone, which it may lack (gun.ts, rig).
+  private gunSkeleton(key: string, side: imperfect.GunSide): Skeleton {
+    const base = this.base(key)
+    return new Skeleton(gun.rig(ngmtool.read(base.bundleFiles()[0])[1][0], base.body, side === 'left' ? 'L' : 'R'), base.body)
+  }
+
   private fitted(c: imperfect.Character): { m: Model; sk: Skeleton; f: Fit; included: imperfect.Character['materials']; tris: Map<number, Tri[]> } {
     const m = this.currentModel()
-    const sk = this.skeleton(c.base)
+    const g = imperfect.gunOf(c)
+    const sk = g && this.skeleton(c.base) ? this.gunSkeleton(c.base, g.side) : this.skeleton(c.base)
     if (!sk) throw new LabError(`${R.label(c.base)}'s skeleton is not supported yet; pick another base`)
     const f = new Fit(m, sk, c.mapping, c.overrides, c.fit.scale, c.fit.torso_squash ?? true, c.fit.flip, c.fit.floor_from_mesh ?? false)
     const included = c.materials.filter((x) => x.include)
@@ -375,15 +383,18 @@ export class Service {
     }
   }
 
-  // The fitted model with the holster's prop on the back, or why it can't be shown.
-  holsterPreview(c: imperfect.Character): { meshes: MeshData[]; bones: BoneLine[] } | string {
-    const h = c.baseMoves.holster
+  // The fitted model with the holster's prop on the back, or the gun at the hip, or why it can't be shown.
+  holsterPreview(c: imperfect.Character, gun = false): { meshes: MeshData[]; bones: BoneLine[] } | string {
+    const g = gun ? imperfect.gunOf(c) : null, h = gun ? g?.holster : c.baseMoves.holster
     if (!h) return 'the holster is off'
     try {
       const { m, sk, included, tris } = this.fitted(c)
       const images = materialImages(m, c)
       const bySlot = new Map(included.map((x, i) => [i, images.get(x.gltfMaterial) ?? null]))
-      return { meshes: previewTextures(fittedMeshes(holsteredTris(tris, sk, h), bySlot, c.size)), bones: gameBones(sk, c.size) }
+      const thigh = g ? sk.node(`${g.side === 'left' ? 'L' : 'R'}.thigh`) : undefined
+      if (g && thigh === undefined) return `${R.label(c.base)} has no thigh bone for the gun's holster`
+      const moved = g ? holsteredTris(tris, sk, h, imperfect.gunBone(c.base, g.side), thigh) : holsteredTris(tris, sk, h)
+      return { meshes: previewTextures(fittedMeshes(moved, bySlot, c.size)), bones: gameBones(sk, c.size) }
     } catch (e) {
       if (!(e instanceof LabError)) throw e
       return e.message
