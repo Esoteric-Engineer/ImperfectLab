@@ -254,7 +254,7 @@ Optional, left out when Z does nothing (default). Holding Z runs every action gi
 - `stats`: optional, Stat Change. The values that replace the character's own while Z is held, at least one of them: `attack_damage_1` to `_5` and `damage_taken`, with the ranges of `stats.gameplay`, and `lift`.
 - `size`: optional, Change Size. 0.1-3.0, the character's size while Z is held as a multiple of its own (`model.size` included). It grows or shrinks over a quarter of a second, and back on release.
 - `bullet`: optional, Bullet Time. 0.25-0.9, the speed everything but the character runs at while Z is held: opponents, CPU players, projectiles, thrown objects and effects. The world eases into it over at most a quarter of a second, and back on release. Older ImperfectLab builds refuse a file with it.
-- `gun`: optional, Gun. The gun rides in a holster at a hip or on the back; holding Z draws it, and once it's in hand any attack but a rise attack, on the ground or in the air, fires it instead. Any base.
+- `gun`: optional, Gun. The gun rides in a holster at a hip or on the back; holding Z draws it, and once it's in hand any attack but a rise attack, on the ground or in the air, fires it instead. On the ground the character keeps standing, walking or running while it fires. Any base.
   - `side`: `right` or `left` (default `right`), the hand that holds and shoots it.
   - `damage`: integer 1-1000 (default 10), each bullet's damage.
   - `energy`: 0-100 (default 5) of a full bar of 100, what each shot takes. A shot needs that much to start.

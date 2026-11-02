@@ -164,7 +164,7 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(() => D.zActions(dol, many)).toThrow(/no room/)
   })
 
-  it("adds the gun's code in a text section of its own and hooks the posing, motions, presses and projectile pick", () => {
+  it("adds the gun's code in a text section of its own and hooks the posing, motions, presses, events, stops and projectile pick", () => {
     const dol = D.zActions(gameSource().dol, [{ internal: 'Synth', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, costume: false,
       damage: [null, null, null, null, null], taken: null, lift: null, size: null, slow: null, gun: true }])
     const guns: D.GunCharacter[] = [
@@ -184,7 +184,7 @@ describe.skipIf(!ISO)('main.dol', () => {
       const target = (from: number) => (from + ((((u32be(out, D.fileOffset(out, from)) << 6) >> 6) & ~3))) >>> 0
       expect(target(0x801a4a08)).toBe(lo)
       expect(u32be(out, D.fileOffset(out, 0x801a4a08)) & 1).toBe(1)
-      for (const [site, to] of [[0x80097ce8, D.GUN_PLAY], [0x800cc0bc, D.GUN_PRESSED], [0x8009b04c, D.GUN_MOTION]]) {
+      for (const [site, to] of [[0x80097ce8, D.GUN_PLAY], [0x800cc0bc, D.GUN_PRESSED], [0x8009b04c, D.GUN_MOTION], [0x800cdf84, D.GUN_EVENT], [0x8009aec8, D.GUN_STOP]]) {
         expect(target(site)).toBe(lo + to)
         expect(u32be(out, D.fileOffset(out, site)) & 1).toBe(0)
       }
@@ -206,7 +206,7 @@ describe.skipIf(!ISO)('main.dol', () => {
       expect(f32be(out, first + D.GUN_ENTRY_SIZE + 0x6c)).toBeCloseTo(1 / (1000 * D.GUN_DRAW), 9)
       expect(latin1(out, first + 0xa0, first + 0xe0)).toBe('plr_synth' + '\0'.repeat(23) + 'plr_altSynth' + '\0'.repeat(20))
       const changed = [...out.subarray(0, before.length)].flatMap((b, i) => (b !== before[i] ? [i] : []))
-      const sites = [[0x801a4a08, 4], [0x80097ce8, 4], [0x800cc0bc, 4], [0x8009b04c, 4], [0x800e1efc, 0x2c]].map(([va, n]) => [D.fileOffset(out, va), D.fileOffset(out, va) + n])
+      const sites = [[0x801a4a08, 4], [0x80097ce8, 4], [0x800cc0bc, 4], [0x8009b04c, 4], [0x800cdf84, 4], [0x8009aec8, 4], [0x800e1efc, 0x2c]].map(([va, n]) => [D.fileOffset(out, va), D.fileOffset(out, va) + n])
       expect(changed.every((i) => i < 0x100 || sites.some(([a, b]) => i >= a && i < b) || [0x177bc4, 0x177bc8, 0x177bfc, 0x177c00].some((r) => i >= r && i < r + 4))).toBe(true)
       expect(() => D.gun(out, guns)).toThrow(LabError)
     }
@@ -1798,7 +1798,7 @@ describe.skipIf(!ISO)('gun', () => {
     }
   })
 
-  it('leaves tuning field 176 and motions action1 and action2 to the gun', () => {
+  it('leaves tuning field 176 and motions action1 to action4 to the gun', () => {
     for (const key of R.keys()) {
       const base = new R.BaseCharacter(src(), key)
       expect(new tuning.Tuning(src(), base).value(gun.FIELD, 0) ?? '').toBe('')
@@ -1827,14 +1827,20 @@ describe.skipIf(!ISO)('gun', () => {
     const wolverine = nmstool.parse(src().entry(`Motions/${moves.motionSetOf(new R.BaseCharacter(src(), 'wolverine'))}`)).motions()
     expect(set.get('superattack1')!.anim.toLowerCase()).not.toMatch(/^gun_/)
     expect(set.get('superattack1')!.anim.split('_')[0]).toBe(wolverine.get('superattack1')!.anim.split('_')[0])
-    for (const [state, name] of [[D.GUN_MOTIONS.ground, /^Gun_Shot_[0-9a-f_]+\.nad$/], [D.GUN_MOTIONS.air, /^Gun_AirShot_[0-9a-f_]+\.nad$/]] as const) {
+    for (const [state, name] of [[D.GUN_MOTIONS.ground, /^Gun_Shot_[0-9a-f_]+\.nad$/], [D.GUN_MOTIONS.air, /^Gun_AirShot_[0-9a-f_]+\.nad$/],
+      [D.GUN_MOTIONS.run, /^Gun_RunShot_[0-9a-f_]+\.nad$/], [D.GUN_MOTIONS.walk, /^Gun_WalkShot_[0-9a-f_]+\.nad$/]] as const) {
       const rec = recs.get(set.get(state)!.anim.toLowerCase())!
       expect(rec.name).toMatch(name)
       expect(gun.shotsOf(rec).length).toBe(3)
       expect(rec.events.filter(([, t, p]) => t === 0x4e && p === D.GUN_PICK_VALUE).map(([f]) => f)).toEqual([1])
       expect(rec.events.some(([, t, p]) => t === 0x4f && p === gun.MUZZLE_INDEX)).toBe(true)
     }
-    expect(set.get(D.GUN_MOTIONS.ground)!.opts).toEqual(['noloop'])
+    for (const state of [D.GUN_MOTIONS.ground, D.GUN_MOTIONS.run, D.GUN_MOTIONS.walk]) expect(set.get(state)!.opts).toEqual(['noloop', 'mix', 'nofadeout'])
+    const base = new R.BaseCharacter(src(), 'wolverine')
+    const arm = holster.armOf(new Skeleton(ngmtool.read(base.bundleFiles()[0])[1][0], base.body), 'R')
+    for (const state of [D.GUN_MOTIONS.ground, D.GUN_MOTIONS.run, D.GUN_MOTIONS.walk]) {
+      expect(new Set(recs.get(set.get(state)!.anim.toLowerCase())!.tracks.map(([b]) => b & 0xffff))).toEqual(new Set([arm.upper, arm.fore, arm.hand, 39]))
+    }
     expect(set.get(D.GUN_MOTIONS.air)!.opts).toEqual(['noloop', 'endpause'])
     expect(recs.get(set.get('stand')!.anim.toLowerCase())!.tracks.some(([b]) => b === 39)).toBe(true)
     const [, models] = ngmtool.read(r.adds.get('Bundles/synth.ngm')!)

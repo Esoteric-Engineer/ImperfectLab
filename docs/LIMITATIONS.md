@@ -84,10 +84,14 @@ A gun (`z_button.gun`, [`FORMAT.md`](FORMAT.md)).
 - **A swapped part rides fixed on the hand** while the gun is holstered, so no animation moves it within the hand.
 - **The air shot is Elektra's super jump attack** with the gun arm aimed, so its arc and timing are hers, and approximate on another skeleton. A burst fits the jump, so its bullets can come closer than in a ground shot.
 - **The arm points straight ahead,** and the game aims each bullet itself, so a bullet at a target above or below leaves at an angle to the barrel.
+- **Firing on the move.** From Stand, Walk and Run the shot plays on the arm alone over the game's own stand, walk or run (the motion set's `mix`), so the character moves and steers as usual. The game aims each bullet at the opponent and then turns the character back the way it was running, so a bullet fired while running away leaves at an angle to the barrel, behind the character.
+- **The arm is aimed from the chest.** A shot keeps the arm's angles to the chest. Movement can affect the visual "steadiness" of the shot.
+- **While a ground shot plays** the game's turn-around, start-to-run and idle animations are skipped (the legs go straight into the run), and the run's footstep sounds go quiet: the game mutes the base animation's sounds while another plays over it.
+- **Shots from other states still stand.** An attack the game starts from somewhere other than Stand, Walk or Run (a dodge's exit attack, a combo already under way when Z is pressed, an attack while carrying something) fires the shot in place, as before.
 - **The muzzle and barrel are guessed from the model** (the long side of the gun's outline, out of the end farther from the hand), so a gun of an unusual shape can come out aimed off.
 - **Only the base's own sounds.** Each shot plays one of the sound events the base's animations play (`sound`), or none. A match loads only each fighter's own sound bank, so other characters' sounds aren't available, and an uploaded sound can't be added: how an event picks its samples from the bank is compiled code that hasn't been decoded. A sample replaced on the **Sounds** page changes every move that plays it, the gun's shot included.
 - **Outside a match** the character's own animations carry the gun in its holster, which adds about 85 KB of keys on Wolverine.
-- **Storage.** Up to 4 characters can have a gun in one patch. `gun.s` and its table move the start of the arena 0x13A0 bytes later (0x120 more per extra character). The bullet's tuning field needs the character's own tuning file, so it takes a line in the tuning list (above), and the gun 253 bytes of the effect cache.
+- **Storage.** Up to 4 characters can have a gun in one patch. `gun.s` and its table move the start of the arena 0x1720 bytes later (0x120 more per extra character). The bullet's tuning field needs the character's own tuning file, so it takes a line in the tuning list (above), and the gun 253 bytes of the effect cache.
 
 ## Swapped moves
 

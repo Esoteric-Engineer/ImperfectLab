@@ -89,6 +89,30 @@ describe('gun', () => {
     }
   })
 
+  it('keeps only the arm of an aimed shot, its pose and events unchanged, to mix over the run', () => {
+    const g = gun.geometry([pistol()], 39, HAND)
+    const out = gun.aim(record(36, [6, 12]), MODEL, PROP, g, ARM)
+    const arm = gun.armOnly(out, ARM)
+    expect(arm.tracks.map(([b]) => b)).toEqual([23, 25, 27])
+    expect(arm.pointers.length).toBe(arm.tracks.length)
+    expect(arm.events).toEqual(out.events)
+    const [a, b] = [ngbtool.pose(MODEL, arm, 6), ngbtool.pose(MODEL, out, 6)]
+    for (const bone of [23, 25, 27]) a[bone][0].flat().forEach((x, k) => expect(x).toBeCloseTo(b[bone][0].flat()[k], 6))
+    expect(gun.MIXED).toEqual(['mix', 'nofadeout'])
+  })
+
+  it("holds each track at its average over a cycle, so a run's arm is aimed from its mean pose", () => {
+    const q = (deg: number) => ngbtool.encodeRotation([Math.cos((deg * Math.PI) / 360), 0, 0, Math.sin((deg * Math.PI) / 360)])
+    const rec: ngbtool.Record = { ...record(20, []), tracks: [[23, 0, [[0, q(-30)], [10, q(30)], [20, q(-30)]]], [0, 1, [[0, ngbtool.encodeTranslation([0, 0, 0])], [20, ngbtool.encodeTranslation([0, 0.2, 0])]]]] }
+    const out = gun.meanPose(rec, 36)
+    expect(out.pointers).toEqual(rec.pointers)
+    const [[b, ch, keys], [, , moved]] = out.tracks
+    expect([b, ch, keys.map(([t]) => t)]).toEqual([23, 0, [0, 36]])
+    expect(keys[0][1]).toEqual(keys[1][1])
+    expect(ngbtool.quat(keys[0][1])[0]).toBeCloseTo(1, 3)
+    expect(ngbtool.translation(moved[0][1])[1]).toBeCloseTo(0.1, 2)
+  })
+
   it("fires a burst from Elektra's first throw, from the muzzle with the gun's sound, without her effects or hits", () => {
     const events: ngbtool.Event[] = [[0, 0x4f, 2, 0], [1, 0x4e, 3, 0], [2, 0x48, 4, 0], [3, 0x18, 0, 0], [4.8, 0x17, gun.THROW_SOUND, 2], [5, 0x17, 36, 700], [6, 0x04, 0, 1], [12, 0x04, 0, 1]]
     const head: ngbtool.Event[] = [[1, 0x4e, GUN_PICK_VALUE, 0], [1, 0x4f, gun.MUZZLE_INDEX, 0]]

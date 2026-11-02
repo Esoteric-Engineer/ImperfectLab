@@ -42,6 +42,8 @@ const SPACING = 3
 const TAIL = 10
 const HELD_FIRST = 2
 
+export const MIXED = ['mix', 'nofadeout']
+
 const sideName = (side: holster.Side) => (side === 'R' ? 'right' : 'left')
 
 // A forearm prop bone that nothing is attached to, else a new bone on the hand, appended to the model.
@@ -224,6 +226,31 @@ export function aim(rec: ngbtool.Record, model: Pick<ngmtool.Model, 'nodes'>, pr
     keys.push([t, ngbtool.encodeRotation(prev)])
   }
   return withRotation(bent, arm.hand, keys)
+}
+
+// Each track held at its average over the record, over length: the pose an arm aimed for a whole run cycle is aimed from.
+export function meanPose(rec: ngbtool.Record, length: number): Pick<ngbtool.Record, 'tracks' | 'pointers'> {
+  const times = holster.frameList(0, Math.max(1, rec.length)).slice(0, -1)
+  const tracks = rec.tracks.map(([bone, ch, keys]): ngbtool.Track => {
+    if (!keys.length) return [bone, ch, keys]
+    let v: ngbtool.Packed
+    if (ch === 0) {
+      const qs = times.map((t) => ngbtool.quat(ngbtool.sample(keys, t)))
+      const sum = qs.reduce((s, q) => s.map((x, i) => x + holster.near(q, qs[0])[i]) as [number, number, number, number], [0, 0, 0, 0] as [number, number, number, number])
+      v = ngbtool.encodeRotation(sum.map((x) => x / (Math.hypot(...sum) || 1)))
+    } else {
+      const ts = times.map((t) => ngbtool.sample(keys.map(([f, k]): [number, Vec3] => [f, ngbtool.translation(k)]), t))
+      v = ngbtool.encodeTranslation(ts.reduce((s, x) => holster.add(s, x), [0, 0, 0] as Vec3).map((x) => x / ts.length) as Vec3)
+    }
+    return [bone, ch, [[0, v], [length, v]]]
+  })
+  return { tracks, pointers: rec.pointers }
+}
+
+// Only the arm's tracks, for a shot the game mixes over the run or stand (`mix` in the motion set).
+export function armOnly(rec: ngbtool.Record, arm: holster.Arm): ngbtool.Record {
+  const keep = rec.tracks.map(([b]) => [arm.upper, arm.fore, arm.hand].includes(b & 0xffff))
+  return { ...rec, tracks: rec.tracks.filter((_, i) => keep[i]), pointers: rec.pointers.filter((_, i) => keep[i]) }
 }
 
 function withRotation(rec: ngbtool.Record, bone: number, keys: ngbtool.Key[]): ngbtool.Record {

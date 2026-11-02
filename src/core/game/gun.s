@@ -5,22 +5,31 @@
 #     --defsym fn_8019D5E0=0x8019D5E0 --defsym fn_80434900=0x80434900 --defsym fn_804317BC=0x804317BC \
 #     --defsym fn_8042FF2C=0x8042FF2C --defsym strcmp=0x80172654 --defsym stealth_test=0x801377C0 \
 #     --defsym fn_80084B68=0x80084B68 --defsym fn_80084A60=0x80084A60 --defsym fn_800CC5E0=0x800CC5E0 \
-#     --defsym fn_800CC148=0x800CC148 -o gun.elf gun.o
+#     --defsym fn_800CC148=0x800CC148 --defsym fn_80097CE8=0x80097CE8 --defsym fn_800CDA20=0x800CDA20 \
+#     --defsym fn_800F0C70=0x800F0C70 -o gun.elf gun.o
 #   powerpc-eabi-objcopy -O binary -j .text gun.elf gun.bin
 # `data`: {u32 clock ms of the last refresh, PLAYERS x {actor, entry or 0, the attack its shot plays for, f32 draw progress,
-# u32 clock ms it was last posed}, u32 count, count x entry}, written by dol.ts.
+# u32 clock ms it was last posed, the controller that last asked for its presses}, u32 count, count x entry}, written by
+# dol.ts.
 # An entry: {u8 gun bone, hand, holster anchor, nodes a model needs, u8 flags (1 machine gun), u8 upper arm, forearm,
 # swap bone or 0xff, f32 energy per shot, f32 gun bone's bind position[3], f32 holster K[4][3] (the gun's skin matrix is K
 # times the anchor's), f32 bind positions[3] of the upper arm, forearm and hand, f32 draw progress per ms, u8 bone
 # masks[16] of the upper arm, forearm and hand with what hangs from them (the gun bone left out), char[32] entity name,
 # char[32] alt entity name, f32 swap K[4][3], f32 swap bone's bind position[3], pad[4]}.
 	.text
-	.globl gun_pose, gun_play, gun_pressed, gun_pick, gun_motion
+	.globl gun_pose, gun_play, gun_pressed, gun_pick, gun_motion, gun_event, gun_stop
 	.set GROUND, 0x14e          # action1
+	.set RUNSHOT, 0x150         # action3: the ground shot aimed over the run
+	.set WALKSHOT, 0x151        # action4: and over the walk
+	.set WALK, 3
 	.set AIR, 0x14f             # action2
 	.set MAGIC, 86              # event 0x4E value 87: tuning field 176
 	.set PLAYERS, 4
-	.set SLOT, 20
+	.set SLOT, 24
+	.set STAND, 2               # controller states (+0x8) Stand, Walk and Run
+	.set RUN, 4
+	.set MUZZLE, 3              # gun.ts's muzzle attachment index and kind
+	.set MUZZLE_KIND, 0x15
 	.set ENTRY, 0x120
 	.set NAMES, 0xa0
 	.set C_ZERO, 0
@@ -32,6 +41,9 @@
 	.set C_EPS, 0x20
 	.set C_TINY, 0x24
 	.set C_MAGIC, 0x28
+	.set C_THIRTY, 0x30
+	.set C_BLEND, 0x34
+	.set C_NEG, 0x38
 
 	.macro call fn
 	lis r12, \fn@ha
@@ -265,11 +277,22 @@ placed:
 	blt 1b
 	blr
 
-# fn_80097CE8 (play motion r4 on actor r3), in place of its first instruction: while Z holds the gun, an attack or ranged
-# attack other than a rise attack plays the shot instead and takes its energy, or nothing plays while the gun is still
-# being drawn or when the bar is short of the energy.
+# fn_80097CE8 (play motion r4 on actor r3, r5 0 for a one-shot), in place of its first instruction: while Z holds the gun,
+# an attack or ranged attack other than a rise attack plays the shot instead and takes its energy, or nothing plays while
+# the gun is still being drawn or when the bar is short of the energy. During a ground shot, the idle, turn and
+# stand-to-run one-shots don't play, so the shot plays on over the run.
 gun_play:
-	cmplwi r4, 0x60
+	cmpwi r5, 0
+	bne 0f
+	cmplwi r4, 5
+	beq 7f
+	cmplwi r4, 0x13
+	beq 7f
+	cmplwi r4, 0x22
+	blt 0f
+	cmplwi r4, 0x25
+	ble 7f
+0:	cmplwi r4, 0x60
 	blt 1f
 	cmplwi r4, 0x63
 	ble 2f
@@ -307,15 +330,6 @@ gun_play:
 	call stealth_test
 	cmpwi r0, 0
 	beq 5f
-	lwz r4, 0x8(r1)
-	bl gun_of
-	lfs f0, 12(r11)
-	lis r0, 0x3f80
-	stw r0, 0x24(r1)
-	lfs f1, 0x24(r1)
-	fcmpu cr0, f0, f1
-	li r3, -1
-	bne 6f
 	li r30, GROUND
 	lwz r0, 0xc(r1)
 	cmplwi r0, 0x36
@@ -326,14 +340,10 @@ gun_play:
 	beq 3f
 	li r30, AIR
 3:	lwz r3, 0x8(r1)
-	lfs f1, 8(r31)
-	call fn_80084B68
+	bl charge
 	cmpwi r3, 0
 	li r3, -1
 	beq 6f
-	lwz r3, 0x8(r1)
-	lfs f1, 8(r31)
-	call fn_80084A60
 	lwz r4, 0x8(r1)
 	bl gun_of
 	lwz r0, 0xc(r1)
@@ -357,9 +367,67 @@ gun_play:
 	mtlr r0
 	addi r1, r1, 0x40
 	blr
+7:	stwu r1, -0x40(r1)
+	mflr r0
+	stw r0, 0x44(r1)
+	stmw r29, 0x34(r1)
+	stw r3, 0x8(r1)
+	stw r4, 0xc(r1)
+	stw r5, 0x10(r1)
+	stw r6, 0x14(r1)
+	stfs f1, 0x18(r1)
+	stfs f2, 0x1c(r1)
+	stfs f3, 0x20(r1)
+	mr r4, r3
+	bl gun_of
+	cmpwi r9, 0
+	beq 5b
+	lwz r3, 0x8(r1)
+	bl motion_raw
+	bl is_ground
+	bne 5b
+	li r3, -1
+	lwz r0, 0x44(r1)
+	mtlr r0
+	addi r1, r1, 0x40
+	blr
+
+# r3 = 1 when actor r3's gun is drawn and the shot's energy is taken from its bar, else 0. Uses f0-f13 as calls do.
+charge:
+	stwu r1, -0x20(r1)
+	mflr r0
+	stw r0, 0x24(r1)
+	stmw r30, 0x18(r1)
+	mr r31, r3
+	mr r4, r3
+	bl gun_of
+	mr r30, r9
+	lfs f0, 12(r11)
+	lis r0, 0x3f80
+	stw r0, 0x8(r1)
+	lfs f1, 0x8(r1)
+	fcmpu cr0, f0, f1
+	li r3, 0
+	bne 9f
+	mr r3, r31
+	lfs f1, 8(r30)
+	call fn_80084B68
+	cmpwi r3, 0
+	li r3, 0
+	beq 9f
+	mr r3, r31
+	lfs f1, 8(r30)
+	call fn_80084A60
+	li r3, 1
+9:	lmw r30, 0x18(r1)
+	lwz r0, 0x24(r1)
+	mtlr r0
+	addi r1, r1, 0x20
+	blr
 
 # fn_800CC0BC (was action r4 pressed on controller r3), in place of its first instruction: while Z holds the gun, the ranged
-# attack (1, attack held) never is, attack (2) isn't during a shot, and with the machine gun is while attack is held.
+# attack (1, attack held) never is, attack (2) isn't during a shot, and with the machine gun is while attack is held. In
+# Stand, Walk and Run, not carrying, an attack plays the shot here and answers no, so the actor moves on as before.
 gun_pressed:
 	cmplwi r4, 1
 	blt 8f
@@ -379,6 +447,7 @@ gun_pressed:
 	bl gun_of
 	mr. r29, r9
 	beq 2f
+	stw r31, 20(r11)
 	mr r4, r30
 	li r5, 128
 	call stealth_test
@@ -388,19 +457,59 @@ gun_pressed:
 	beq 1f
 	mr r3, r30
 	bl motion_raw
-	cmpwi r3, GROUND
+	bl is_ground
 	beq 1f
 	cmpwi r3, AIR
 	beq 1f
 	lbz r0, 4(r29)
 	andi. r0, r0, 1
-	beq 2f
+	beq 4f
 	mr r3, r31
 	li r4, 1
 	call fn_800CC148
 	cmpwi r3, 0
-	beq 2f
-	li r3, 1
+	bne 5f
+4:	mr r3, r31
+	mr r4, r28
+	bl pressed_raw
+	cmpwi r3, 0
+	beq 1f
+5:	lbz r0, 8(r31)
+	cmplwi r0, STAND
+	blt 6f
+	cmplwi r0, RUN
+	bgt 6f
+	mr r3, r31
+	call fn_800CDA20
+	cmpwi r3, 0
+	bne 6f
+	mr r3, r30
+	bl charge
+	cmpwi r3, 0
+	beq 1f
+	mr r4, r30
+	bl gun_of
+	li r0, 0
+	stw r0, 8(r11)
+	bl here
+	mr r9, r11
+	mr r3, r30
+	lbz r0, 8(r31)
+	li r4, GROUND
+	cmplwi r0, STAND
+	beq 7f
+	li r4, WALKSHOT
+	cmplwi r0, WALK
+	beq 7f
+	li r4, RUNSHOT
+7:	li r5, 0
+	li r6, 0
+	lfs f1, consts - data + C_THIRTY(r9)
+	lfs f2, consts - data + C_BLEND(r9)
+	lfs f3, consts - data + C_NEG(r9)
+	call fn_80097CE8
+	b 1f
+6:	li r3, 1
 	b 3f
 1:	li r3, 0
 3:	lmw r28, 0x10(r1)
@@ -416,6 +525,116 @@ gun_pressed:
 	addi r1, r1, 0x20
 8:	stwu r1, -0x20(r1)
 	jump 0x800CC0C0
+
+# fn_800CC0BC itself.
+pressed_raw:
+	stwu r1, -0x20(r1)
+	jump 0x800CC0C0
+
+# fn_800CDF84 (controller r3's animation event r5 from r4, value r6 and r7), in place of its first instruction: Stand, Walk
+# and Run drop a bullet event (0x04), so during a shot it launches the bullet here from the muzzle at the opponent, as the
+# attack states would, and the actor keeps its facing.
+gun_event:
+	cmpwi r5, 4
+	bne 8f
+	lbz r0, 8(r3)
+	cmplwi r0, STAND
+	blt 8f
+	cmplwi r0, RUN
+	bgt 8f
+	stwu r1, -0x30(r1)
+	mflr r0
+	stw r0, 0x34(r1)
+	stmw r30, 0x28(r1)
+	stw r3, 0x8(r1)
+	stw r4, 0xc(r1)
+	stw r5, 0x10(r1)
+	stw r6, 0x14(r1)
+	stw r7, 0x18(r1)
+	mr r31, r3
+	bl refresh
+	mr r3, r31
+	call fn_800CC5E0
+	mr r30, r3
+	mr r4, r3
+	bl gun_of
+	cmpwi r9, 0
+	beq 5f
+	mr r3, r30
+	bl motion_raw
+	bl is_ground
+	bne 5f
+	li r0, MAGIC
+	stb r0, 0x409(r31)
+	li r0, 0
+	stb r0, 0x40a(r31)
+	stw r0, 0x414(r31)
+	li r0, MUZZLE
+	stb r0, 0x40b(r31)
+	li r0, MUZZLE_KIND
+	stb r0, 0x40c(r31)
+	mr r3, r31
+	li r4, 0
+	li r5, 0
+	li r6, 1
+	li r7, 0
+	call fn_800F0C70
+	lmw r30, 0x28(r1)
+	lwz r0, 0x34(r1)
+	mtlr r0
+	addi r1, r1, 0x30
+	blr
+5:	lwz r3, 0x8(r1)
+	lwz r4, 0xc(r1)
+	lwz r5, 0x10(r1)
+	lwz r6, 0x14(r1)
+	lwz r7, 0x18(r1)
+	lmw r30, 0x28(r1)
+	lwz r0, 0x34(r1)
+	mtlr r0
+	addi r1, r1, 0x30
+8:	stwu r1, -0x30(r1)
+	jump 0x800CDF88
+
+# fn_8009AEC8 (stop actor r3's one-shot), in place of its first instruction: in Stand, Walk and Run a ground shot plays on,
+# so starting, stopping or slowing a run doesn't cut it off.
+gun_stop:
+	stwu r1, -0x20(r1)
+	mflr r0
+	stw r0, 0x24(r1)
+	stw r31, 0x1c(r1)
+	stw r3, 0x8(r1)
+	stw r4, 0xc(r1)
+	mr r31, r3
+	mr r4, r3
+	bl gun_of
+	cmpwi r9, 0
+	beq 5f
+	lwz r9, 20(r11)
+	cmpwi r9, 0
+	beq 5f
+	lbz r0, 8(r9)
+	cmplwi r0, STAND
+	blt 5f
+	cmplwi r0, RUN
+	bgt 5f
+	mr r3, r31
+	bl motion_raw
+	bl is_ground
+	bne 5f
+	lwz r31, 0x1c(r1)
+	lwz r0, 0x24(r1)
+	mtlr r0
+	addi r1, r1, 0x20
+	blr
+5:	lwz r3, 0x8(r1)
+	lwz r4, 0xc(r1)
+	lwz r31, 0x1c(r1)
+	lwz r0, 0x24(r1)
+	mtlr r0
+	addi r1, r1, 0x20
+	stwu r1, -0x18(r1)
+	jump 0x8009AECC
 
 # fn_800E1788's event 0x4E (r4 = value) for controller r3, as r3 = the projectile pick (+0x409): value - 1 clamped to 0-3 as
 # the game does, except MAGIC, whose bullets cost nothing more (+0x414): gun_play took the shot's energy.
@@ -461,6 +680,15 @@ gun_motion:
 	lwz r0, 0x14(r1)
 	mtlr r0
 	addi r1, r1, 0x10
+	blr
+
+# cr0 eq when motion r3 is a ground shot, standing or on the move.
+is_ground:
+	cmpwi r3, GROUND
+	beqlr
+	cmpwi r3, RUNSHOT
+	beqlr
+	cmpwi r3, WALKSHOT
 	blr
 
 # fn_8009B04C itself.
@@ -543,6 +771,7 @@ refresh:
 	li r0, 0
 	stw r0, 12(r28)
 	stw r0, 16(r28)
+	stw r0, 20(r28)
 6:	stw r25, 4(r28)
 	stw r26, 8(r28)
 	addi r30, r30, 1
@@ -1191,6 +1420,7 @@ consts:
 	.float 0.5, 1, 1.5, 2, 3
 	.float 0.0001, 1e-12
 	.4byte 0x43300000, 0
+	.float 30, 7.5, -1
 
 	.balign 4
 data:

@@ -556,11 +556,19 @@ function gunMoves(src: GameSource, base: R.BaseCharacter, own: nmstool.MotionSet
   const stand = resolved(src, own, holds(bundles)).get('stand')
   const standRec = stand && bundles.get('')?.find((r) => r.name.toLowerCase() === stand.anim.toLowerCase())
   if (!standRec) throw new LabError(`${base.label} has no stand to aim the gun from`)
+  const loop = (state: string) => {
+    const m = resolved(src, own, holds(bundles)).get(state)
+    const rec = m && [...bundles.values()].flat().find((r) => r.name.toLowerCase() === m.anim.toLowerCase())
+    if (!rec) throw new LabError(`${base.label} has no ${state} to aim the gun from`)
+    return rec
+  }
   const [ground, groundSlots, groundOpts] = taken(gun.DONOR_GROUND)
   const [air, airSlots, airOpts] = taken(gun.DONOR_AIR)
   const [groundEvents, length] = gun.shotEvents(ground.events, shooter.sound, shooter.bullets, ground.length, true, shooter.automatic)
-  const shot = gun.aim({ ...ground, name: 'Gun_Shot.nad', length, tracks: standRec.tracks.map((t) => fitTrack(t, standRec.length, length)), pointers: standRec.pointers,
-    events: groundEvents }, model, prop, g, arm, shooter.automatic)
+  const shot = gun.armOnly(gun.aim({ ...ground, name: 'Gun_Shot.nad', length, tracks: standRec.tracks.map((t) => fitTrack(t, standRec.length, length)),
+    pointers: standRec.pointers, events: groundEvents }, model, prop, g, arm, shooter.automatic), arm)
+  const moving = (state: string, name: string) =>
+    gun.armOnly(gun.aim({ ...ground, name, length, ...gun.meanPose(loop(state), length), events: groundEvents }, model, prop, g, arm, shooter.automatic), arm)
   const airShot = gun.aim({ ...air, name: 'Gun_AirShot.nad', events: gun.shotEvents(air.events, shooter.sound, shooter.bullets, air.length)[0] }, model, prop, g, arm)
   const put = (rec: ngbtool.Record, slots: string[]) => {
     const named = ownName(rec)
@@ -571,11 +579,13 @@ function gunMoves(src: GameSource, base: R.BaseCharacter, own: nmstool.MotionSet
     }
     return named
   }
-  own.set({ state: GUN_MOTIONS.ground, anim: put(shot, groundSlots), opts: groundOpts })
+  own.set({ state: GUN_MOTIONS.ground, anim: put(shot, groundSlots), opts: [...groundOpts, ...gun.MIXED] })
+  own.set({ state: GUN_MOTIONS.run, anim: put(moving('run', 'Gun_RunShot.nad'), groundSlots), opts: [...groundOpts, ...gun.MIXED] })
+  own.set({ state: GUN_MOTIONS.walk, anim: put(moving('walk', 'Gun_WalkShot.nad'), groundSlots), opts: [...groundOpts, ...gun.MIXED] })
   own.set({ state: GUN_MOTIONS.air, anim: put(airShot, airSlots), opts: airOpts })
   const n = shooter.bullets, sound = shooter.sound
   const heard = sound ? `with sound event ${sound.join(':')}` : 'silently'
-  return `gun: with Z held, an attack fires ${n === 1 ? 'a bullet' : `a burst of ${n} bullets`} from the ${prop.side === 'R' ? 'right' : 'left'} hand instead, ${heard} (${base.label}'s stand on the ground, Elektra's super jump attack in the air)`
+  return `gun: with Z held, an attack fires ${n === 1 ? 'a bullet' : `a burst of ${n} bullets`} from the ${prop.side === 'R' ? 'right' : 'left'} hand instead, ${heard} (the arm aimed over ${base.label}'s stand, walk or run on the ground, Elektra's super jump attack in the air)`
 }
 
 export interface MotionFiles {
