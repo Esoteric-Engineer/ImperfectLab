@@ -96,6 +96,7 @@ function mul(a: Mat4, b: Mat4): Mat4 {
 interface Gpu {
   vao: WebGLVertexArrayObject
   buf: WebGLBuffer
+  data: Float32Array
   count: number
   texture: WebGLTexture | null
   alpha: number
@@ -114,6 +115,9 @@ export class Viewport {
   dist = 3.0
   center: Vec3 = [0, 0, 1]
   private dirty = true
+  private posed: { positions: Float32Array[]; normals: Float32Array[] } | null = null
+  private poseDirty = false
+  private linesDirty = false
   private gpu: Gpu[] = []
   private lineGpu: Gpu | null = null
   private meshProg: WebGLProgram | null = null
@@ -176,11 +180,20 @@ export class Viewport {
   setScene(meshes: MeshData[], lines: BoneLine[], fit = true) {
     this.meshes = meshes
     this.lines = lines
+    this.posed = null
     if (fit) {
       this.frame()
       this.frameOnResize = true
     }
     this.dirty = true
+    this.update()
+  }
+
+  setPose(positions: Float32Array[], normals: Float32Array[], lines: BoneLine[]) {
+    this.posed = { positions, normals }
+    this.lines = lines
+    this.poseDirty = true
+    this.linesDirty = true
     this.update()
   }
 
@@ -235,6 +248,49 @@ export class Viewport {
     this.lineGpu = null
   }
 
+  private applyPose() {
+    const gl = this.gl!, posed = this.posed!
+    this.gpu.forEach((g, m) => {
+      const p = posed.positions[m], n = posed.normals[m]
+      if (!p || !n) return
+      for (let i = 0; i < g.count; i++) {
+        g.data.set(p.subarray(i * 3, i * 3 + 3), i * 9)
+        g.data.set(n.subarray(i * 3, i * 3 + 3), i * 9 + 3)
+      }
+      gl.bindBuffer(gl.ARRAY_BUFFER, g.buf)
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, g.data)
+    })
+    this.poseDirty = false
+  }
+
+  private uploadLines() {
+    const gl = this.gl!
+    if (this.lineGpu) {
+      gl.deleteBuffer(this.lineGpu.buf)
+      gl.deleteVertexArray(this.lineGpu.vao)
+      this.lineGpu = null
+    }
+    this.linesDirty = false
+    if (!this.lines.length) return
+    const hl = this.highlight
+    const data = new Float32Array(this.lines.length * 12)
+    this.lines.forEach(([a, b, key], i) => {
+      const col = key !== null && key === hl ? [1.0, 0.85, 0.1] : [0.2, 0.9, 1.0]
+      data.set([...a, ...col, ...b, ...col], i * 12)
+    })
+    const vao = gl.createVertexArray()!
+    gl.bindVertexArray(vao)
+    const buf = gl.createBuffer()!
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf)
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW)
+    for (const [loc, off] of [[0, 0], [1, 12]]) {
+      gl.enableVertexAttribArray(loc)
+      gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 24, off)
+    }
+    gl.bindVertexArray(null)
+    this.lineGpu = { vao, buf, data, count: 2 * this.lines.length, texture: null, alpha: 1 }
+  }
+
   private upload() {
     const gl = this.gl!
     this.release()
@@ -274,26 +330,9 @@ export class Viewport {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
       }
-      this.gpu.push({ vao, buf, count: n, texture, alpha: m.alpha })
+      this.gpu.push({ vao, buf, data, count: n, texture, alpha: m.alpha })
     }
-    if (this.lines.length) {
-      const data = new Float32Array(this.lines.length * 12)
-      this.lines.forEach(([a, b, key], i) => {
-        const col = key !== null && key === hl ? [1.0, 0.85, 0.1] : [0.2, 0.9, 1.0]
-        data.set([...a, ...col, ...b, ...col], i * 12)
-      })
-      const vao = gl.createVertexArray()!
-      gl.bindVertexArray(vao)
-      const buf = gl.createBuffer()!
-      gl.bindBuffer(gl.ARRAY_BUFFER, buf)
-      gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW)
-      for (const [loc, off] of [[0, 0], [1, 12]]) {
-        gl.enableVertexAttribArray(loc)
-        gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 24, off)
-      }
-      gl.bindVertexArray(null)
-      this.lineGpu = { vao, buf, count: 2 * this.lines.length, texture: null, alpha: 1 }
-    }
+    this.uploadLines()
     this.dirty = false
   }
 
@@ -314,7 +353,10 @@ export class Viewport {
     gl.viewport(0, 0, w, h)
     gl.clearColor(...this.clear, 1.0)
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+    const fresh = this.dirty
     if (this.dirty) this.upload()
+    if (this.posed && (fresh || this.poseDirty)) this.applyPose()
+    if (this.linesDirty) this.uploadLines()
     const eye: Vec3 = [
       this.center[0] + Math.sin(this.yaw) * Math.cos(this.pitch) * this.dist,
       this.center[1] + Math.cos(this.yaw) * Math.cos(this.pitch) * this.dist,

@@ -144,7 +144,7 @@ export function motionSetOf(base: R.BaseCharacter): string {
 export const stemOf = (set: string) => set.replace(/\.nms$/i, '').toLowerCase()
 
 // The motions the game ends up with: the base set's, then the set's own, dropping any whose animation no bundle has.
-function resolved(src: GameSource, own: nmstool.MotionSet, has: (anim: string) => boolean): Map<string, nmstool.Motion> {
+export function resolved(src: GameSource, own: nmstool.MotionSet, has: (anim: string) => boolean): Map<string, nmstool.Motion> {
   const out = new Map<string, nmstool.Motion>()
   const based = own.basedon && src.has(`Motions/${own.basedon}.nms`) ? nmstool.parse(src.entry(`Motions/${own.basedon}.nms`)).motions() : new Map<string, nmstool.Motion>()
   for (const list of [based, own.motions()]) for (const [k, m] of list) if (has(m.anim)) out.set(k, m)
@@ -582,6 +582,7 @@ export interface MotionFiles {
   motionSet: string
   files: Map<string, Uint8Array>
   notes: string[]
+  model: ngmtool.Model
 }
 
 export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: string, moves: Record<string, string>, throwReach?: number,
@@ -849,5 +850,38 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     files.set(`Bundles/${name}${slot}.ngb`, data)
   }
   if (Object.keys(moves).length || idle.length || size !== 1 || carried) notes.push(`${size !== 1 ? 'size' : 'moves'}: animations ${Math.round(after / 1024)} KB (${base.label}'s ${Math.round(before / 1024)} KB)`)
-  return { motionSet: motionSetName(internal), files, notes }
+  return { motionSet: motionSetName(internal), files, notes, model: models[0] }
+}
+
+export interface Played {
+  state: string
+  slot: string
+  opts: string[]
+  rec: ngbtool.Record
+}
+
+// Victim states are left out: they play on the opponent's skeleton.
+export function played(src: GameSource, mf: MotionFiles, internal: string, move: Move): Played[] {
+  const bundles = new Map<string, ngbtool.Record[]>()
+  for (const slot of SLOTS) {
+    const data = mf.files.get(`Bundles/${internal.toLowerCase()}${slot}.ngb`)
+    if (data) bundles.set(slot, ngbtool.parse(data))
+  }
+  const now = resolved(src, nmstool.parse(mf.files.get(`Motions/${mf.motionSet}`)!), holds(bundles))
+  return move.states.filter((s) => !VICTIM.test(s)).flatMap((state) => {
+    const m = now.get(state.toLowerCase())
+    if (!m) return []
+    const out: Played[] = []
+    for (const slot of SLOTS) {
+      const rec = bundles.get(slot)?.find((r) => r.name.toLowerCase() === m.anim.toLowerCase())
+      if (rec && !out.some((p) => ngbtool.sameMotion(p.rec, rec))) out.push({ state: m.state, slot, opts: m.opts, rec })
+    }
+    return out
+  })
+}
+
+export function motionFps(opts: string[]): number {
+  const i = opts.findIndex((o) => o.toLowerCase() === 'fps')
+  const v = i >= 0 ? Number(opts[i + 1]) : NaN
+  return v > 0 ? v : 30
 }

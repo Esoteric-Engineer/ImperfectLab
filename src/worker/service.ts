@@ -1,7 +1,7 @@
 import * as dsp from '../core/audio/dspadpcm'
 import { type Batch, buildBatch, checkBatch } from '../core/build/batch'
 import * as cutscenes from '../core/build/cutscenes'
-import { Builder, glowRgba, patch, type Progress, report, type Result, WIRE, write } from '../core/build/patch'
+import { Builder, glowRgba, gunPlanOf, onBackPlan, patch, type Progress, propShape, report, type Result, WIRE, write } from '../core/build/patch'
 import * as effects from '../core/build/effects'
 import * as gun from '../core/build/gun'
 import * as moves from '../core/build/moves'
@@ -26,7 +26,7 @@ import * as mapping from '../core/model/mapping'
 import { Skeleton } from '../core/model/skeleton'
 import * as imperfect from '../core/package/imperfect'
 import { baseMeshes, type BoneLine, costumeImage, fittedMeshes, gameBones, holsteredTris, materialImages, type MeshData, sourceBones, sourceMeshes } from '../core/preview'
-import type { BaseDetails, BaseInfo, CheckResult, ComposeArgs, DiscInfo, ImportedModel, BatchCheckResult, LayoutInfo, ModelInfo, PreviewResult } from './protocol'
+import type { BaseDetails, BaseInfo, CheckResult, ComposeArgs, DiscInfo, ImportedModel, BatchCheckResult, LayoutInfo, ModelInfo, MovePreview, PreviewResult } from './protocol'
 
 const DEFAULT_SIZES: Record<string, [number, number]> = {
   tile0: [64, 32], tile1: [64, 32], hud: [64, 64], strip0: [128, 256], strip1: [32, 256], strip0_alt: [128, 256], strip1_alt: [32, 256],
@@ -87,6 +87,8 @@ export class Service {
   private pictures = new Map<string, RgbaImage>()
   private batchBuild: { token: number; result: Result } | null = null
   private batchTokens = 0
+  private motionCache = new Map<string, moves.MotionFiles>()
+  private motionModel: Model | null = null
   decoder: ImageDecoder | null = null
 
   openDisc(disc: ImageDisc | FolderDisc): DiscInfo {
@@ -399,6 +401,58 @@ export class Service {
       if (!(e instanceof LabError)) throw e
       return e.message
     }
+  }
+
+  movePreview(c: imperfect.Character, moveId: string, from: string | null = null): MovePreview | string {
+    const move = moves.MOVE_IDS.get(moveId)
+    if (!move) return `there is no move ${moveId}`
+    if (from !== null) {
+      c = { ...c, moves: { ...c.moves }, moveReach: { ...c.moveReach }, moveIdle: c.moveIdle.filter((id) => id !== moveId) }
+      delete c.moveReach[moveId]
+      if (from === c.base) delete c.moves[moveId]
+      else c.moves[moveId] = from
+    }
+    const src = this.src(), base = this.base(c.base)
+    const notes: string[] = []
+    let custom: MeshData[] | null = null, tris: Map<number, Tri[]> | null = null, sk: Skeleton | null = null
+    if (!this.model) notes.push('Import a model on the Model page to see the move on it.')
+    else {
+      try {
+        const f = this.fitted(c)
+        tris = f.tris
+        sk = f.sk
+        const images = materialImages(f.m, c)
+        custom = previewTextures(fittedMeshes(tris, new Map(f.included.map((x, i) => [i, images.get(x.gltfMaterial) ?? null])), c.size))
+      } catch (e) {
+        if (!(e instanceof LabError)) throw e
+        notes.push(`The custom model can't be shown: ${e.message}`)
+      }
+    }
+    const key = JSON.stringify([c.base, c.internalName, c.moves, c.moveIdle, c.moveReach, c.size, c.baseMoves, imperfect.gunOf(c), [...c.mapping], [...c.overrides], c.fit, c.materials])
+    if (this.motionModel !== this.model) {
+      this.motionCache.clear()
+      this.motionModel = this.model
+    }
+    let mf = this.motionCache.get(key)
+    if (!mf) {
+      const baseModel = ngmtool.read(base.bundleFiles()[0])[1][0]
+      const [center, geometry] = tris && sk ? propShape(c, baseModel, base.body, tris, sk) : [null, null]
+      const shooter = gunPlanOf(c, baseModel, base.body, center, geometry)
+      const fx = Object.keys(c.moveReach).length ? new effects.Effects(src.entry('Misc/game.nfx')) : null
+      try {
+        mf = moves.motionFiles(src, base, c.internalName, c.moves, c.baseMoves.throw_reach, {}, null, c.moveReach, fx, c.size, c.moveIdle, onBackPlan(c, center), false, shooter)
+      } catch (e) {
+        if (!(e instanceof LabError)) throw e
+        return e.message
+      }
+      this.motionCache.set(key, mf)
+      if (this.motionCache.size > 8) this.motionCache.delete(this.motionCache.keys().next().value!)
+    }
+    if ((c.baseMoves.holster || imperfect.gunOf(c)) && !tris) notes.push('The holstered prop needs the custom model, so the move plays without it.')
+    notes.push(...mf.notes.filter((n) => n.startsWith(`moves: ${move.label} `) || n.startsWith(`reach: ${move.label} `)).map((n) => n.slice(n.indexOf(': ') + 2)))
+    const variants = moves.played(src, mf, c.internalName, move).map((p) => ({ state: p.state, slot: p.slot, fps: moves.motionFps(p.opts), rec: p.rec }))
+    const baseMesh = baseMeshes(src, base).map((m) => (c.size === 1 ? m : { ...m, positions: m.positions.map((v) => v * c.size) }))
+    return { nodes: mf.model.nodes, variants, custom, base: previewTextures(baseMesh), notes }
   }
 
   private materialSource(c: imperfect.Character, x: imperfect.Material): RgbaImage | null {

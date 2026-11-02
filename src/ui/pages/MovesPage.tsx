@@ -7,6 +7,7 @@ import { keys, label } from '../../core/game/roster'
 import { BASE_MOVES, copyCharacter, defaultHolster, GAMEPLAY, type Holster as HolsterPlan, HOLSTER_POSITION, HOLSTER_ROTATION, type MoveEffect, STUN_BASES, THROW_REACH, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
 import type { BoneLine, MeshData } from '../../core/preview'
 import { ColorButton, Note, NumberInput, Warning } from '../components/common'
+import { MovePreviewDialog } from '../components/MovePreviewDialog'
 import { Viewport } from '../components/viewport'
 import { engine, errorText } from '../engine'
 import { store, useStore } from '../store'
@@ -106,42 +107,55 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
   const idle = c.moveIdle.includes(move.id), offer = move.id !== 'Stand'
   const first = own.find((a) => a !== null) ?? null
   const more = own.filter((a) => a !== null).length - 1
+  const choose = (v: string) => {
+    if (move.id === 'SuperThrow') pickSuperThrow(cat, v && v !== IDLE ? v : undefined)
+    c.moveIdle = c.moveIdle.filter((id) => id !== move.id)
+    if (v && v !== IDLE) c.moves[move.id] = v
+    else {
+      delete c.moves[move.id]
+      delete c.moveEffects[move.id]
+    }
+    if (v === IDLE) {
+      delete c.moveReach[move.id]
+      c.moveIdle = [...c.moveIdle, move.id]
+    }
+    store.touch('character')
+  }
   return (
     <tr>
       <td title={move.states.join(', ')}>{move.label}</td>
       <td className="anim">{stem(first)}{more > 0 ? ` (+${more})` : ''}</td>
       <td>
-        <select value={idle ? IDLE : at >= 0 ? opts[at].from[0] : (picked ?? '')} disabled={locked || (!opts.length && !offer && !picked)}
-          title={locked ? 'The baton throw reach changes this move: untick it below to swap the move' : undefined}
-          onChange={(e) => {
-            const v = e.target.value
-            if (move.id === 'SuperThrow') pickSuperThrow(cat, v && v !== IDLE ? v : undefined)
-            c.moveIdle = c.moveIdle.filter((id) => id !== move.id)
-            if (v && v !== IDLE) c.moves[move.id] = v
-            else {
-              delete c.moves[move.id]
-              delete c.moveEffects[move.id]
-            }
-            if (v === IDLE) {
-              delete c.moveReach[move.id]
-              c.moveIdle = [...c.moveIdle, move.id]
-            }
-            store.touch('character')
-          }}>
-          <option value="">{label(c.base)} (base)</option>
-          {offer && <option value={IDLE}>Idle: {stem(cat[c.moves.Stand ?? c.base]?.motions.stand ?? null)}</option>}
-          {opts.map((o) => (
-            <option key={o.from[0]} value={o.from[0]}>
-              {o.from.map(label).join(', ')}: {stem(o.anims.find((a) => a !== null) ?? null)}{o.body !== cat[c.base].body ? ` (${o.body}, approximate)` : ''}
-            </option>
-          ))}
-          {picked && at < 0 && <option value={picked}>{label(picked)} (not available for {label(c.base)})</option>}
-        </select>
+        <div className="move-pick">
+          <select value={idle ? IDLE : at >= 0 ? opts[at].from[0] : (picked ?? '')} disabled={locked || (!opts.length && !offer && !picked)}
+            title={locked ? 'The baton throw reach changes this move: untick it below to swap the move' : undefined}
+            onChange={(e) => choose(e.target.value)}>
+            <option value="">{label(c.base)} (base)</option>
+            {offer && <option value={IDLE}>Idle: {stem(cat[c.moves.Stand ?? c.base]?.motions.stand ?? null)}</option>}
+            {opts.map((o) => (
+              <option key={o.from[0]} value={o.from[0]}>
+                {o.from.map(label).join(', ')}: {stem(o.anims.find((a) => a !== null) ?? null)}{o.body !== cat[c.base].body ? ` (${o.body}, approximate)` : ''}
+              </option>
+            ))}
+            {picked && at < 0 && <option value={picked}>{label(picked)} (not available for {label(c.base)})</option>}
+          </select>
+          <PreviewButton move={move} onSave={locked ? undefined : (from) => choose(from === c.base ? '' : from)} />
+        </div>
         {!opts.length && !offer && !picked && <span className="muted"> no other version</span>}
       </td>
       <td className="fx">{picked && <MoveEffects id={move.id} from={picked} />}</td>
       {c.baseMoves.holster && <td><InHand move={move} /></td>}
     </tr>
+  )
+}
+
+function PreviewButton({ move, disabled = false, onSave }: { move: Move; disabled?: boolean; onSave?: (from: string) => void }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button className="small" disabled={disabled} title="Preview the move's animation" aria-label={`Preview ${move.label}`} onClick={() => setOpen(true)}>▶</button>
+      {open && <MovePreviewDialog move={move} onSave={onSave} onClose={() => setOpen(false)} />}
+    </>
   )
 }
 
@@ -289,26 +303,30 @@ function WallRow({ cat, move, required }: { cat: Catalog; move: Move; required: 
   const opts = addOptions(cat, c.base, move)
   const picked = c.moves[move.id]
   const at = picked ? opts.findIndex((o) => o.from.includes(picked)) : -1
+  const choose = (v: string) => {
+    if (v) c.moves[move.id] = v
+    else {
+      delete c.moves[move.id]
+      delete c.moveEffects[move.id]
+    }
+    store.touch('character')
+  }
   return (
     <tr>
       <td>{move.label}</td>
       <td>
-        <select value={at >= 0 ? opts[at].from[0] : (picked ?? '')} onChange={(e) => {
-          if (e.target.value) c.moves[move.id] = e.target.value
-          else {
-            delete c.moves[move.id]
-            delete c.moveEffects[move.id]
-          }
-          store.touch('character')
-        }}>
-          {(!required || !picked) && <option value="">{required ? '(pick one)' : 'None'}</option>}
-          {opts.map((o) => (
-            <option key={o.from[0]} value={o.from[0]}>
-              {o.from.map(label).join(', ')}: {stem(o.anims.find((a) => a !== null) ?? null)}{o.body !== cat[c.base].body ? ` (${o.body}, approximate)` : ''}
-            </option>
-          ))}
-          {picked && at < 0 && <option value={picked}>{label(picked)} (has no {move.label.toLowerCase()})</option>}
-        </select>
+        <div className="move-pick">
+          <select value={at >= 0 ? opts[at].from[0] : (picked ?? '')} onChange={(e) => choose(e.target.value)}>
+            {(!required || !picked) && <option value="">{required ? '(pick one)' : 'None'}</option>}
+            {opts.map((o) => (
+              <option key={o.from[0]} value={o.from[0]}>
+                {o.from.map(label).join(', ')}: {stem(o.anims.find((a) => a !== null) ?? null)}{o.body !== cat[c.base].body ? ` (${o.body}, approximate)` : ''}
+              </option>
+            ))}
+            {picked && at < 0 && <option value={picked}>{label(picked)} (has no {move.label.toLowerCase()})</option>}
+          </select>
+          <PreviewButton move={move} disabled={!picked} onSave={choose} />
+        </div>
       </td>
       <td className="fx">{picked && <MoveEffects id={move.id} from={picked} />}</td>
     </tr>

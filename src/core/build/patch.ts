@@ -19,7 +19,7 @@ import * as nvbtool from '../mnroi/nvbtool'
 import type * as ngbtool from '../mnroi/ngbtool'
 import * as ngmtool from '../mnroi/ngmtool'
 import * as bundle from '../model/bundle'
-import { Fit, type MaterialSlots } from '../model/fit'
+import { Fit, type MaterialSlots, type Tri } from '../model/fit'
 import { Model } from '../model/glb'
 import { Skeleton } from '../model/skeleton'
 import { type Character, gunOf, hasCutscenes, image as readImage, type Material, problems, type Placement, WALL, type WallKey, type ZCostume, zTexture } from '../package/imperfect'
@@ -215,13 +215,7 @@ export class Builder {
       if (m.bind !== null && m.bind >= sk.nodes.length) throw new LabError(`material ${m.name} is bound to game bone ${m.bind}, which ${base.label} does not have`)
     }
     const tris = f.triangles(slots)
-    this.propCenter = c.baseMoves.holster ? holster.center(tris.values()) : null
-    this.gunGeometry = null
-    if (side) {
-      const prop = gun.prop(baseModel, base.body, side)
-      this.propCenter = holster.center(tris.values(), prop.bone)
-      this.gunGeometry = gun.geometry(tris.values(), prop.bone, sk.nodes[prop.hand!].pos)
-    }
+    ;[this.propCenter, this.gunGeometry] = propShape(c, baseModel, base.body, tris, sk)
     const far = Object.keys(c.moveReach).length ? moves.farLimb(this.src, base, c.moveReach, c.moves) : null
     const imgs = this.materialImages(model)
     const normals = new bundle.NormalIndex(bundle.readNormals(this.src.entry('Misc/NormalTable.ngn')))
@@ -449,17 +443,12 @@ export class Builder {
 
   // The holster's plan, once the model has given the prop's middle.
   onBack(): holster.Plan | null {
-    const h = this.c.baseMoves.holster
-    return h && this.propCenter ? { ...h, center: this.propCenter } : null
+    return onBackPlan(this.c, this.propCenter)
   }
 
   // The gun's plan, once the model has given the gun's middle and shape.
   gunPlan(): gun.Plan | null {
-    const g = gunOf(this.c)
-    if (!g || !this.propCenter || !this.gunGeometry) return null
-    const side = gunSide(this.c)
-    const prop = gun.prop(ngmtool.read(this.base.bundleFiles()[0])[1][0], this.base.body, side)
-    return { holster: { ...g.holster, center: this.propCenter, prop }, geometry: this.gunGeometry, sound: g.sound ?? null, bullets: g.bullets, automatic: g.automatic }
+    return gunPlanOf(this.c, ngmtool.read(this.base.bundleFiles()[0])[1][0], this.base.body, this.propCenter, this.gunGeometry)
   }
 
   gunEntry(plan: gun.Plan): D.GunCharacter {
@@ -626,6 +615,24 @@ export function ownMotions(c: Character): boolean {
 }
 
 export const gunSide = (c: Character): holster.Side => (gunOf(c)?.side === 'left' ? 'L' : 'R')
+
+export function propShape(c: Character, baseModel: ngmtool.Model, body: string, tris: Map<number, Tri[]>, sk: Skeleton): [ngbtool.Vec3 | null, gun.Geometry | null] {
+  if (!gunOf(c)) return [c.baseMoves.holster ? holster.center(tris.values()) : null, null]
+  const prop = gun.prop(baseModel, body, gunSide(c))
+  return [holster.center(tris.values(), prop.bone), gun.geometry(tris.values(), prop.bone, sk.nodes[prop.hand!].pos)]
+}
+
+export function onBackPlan(c: Character, center: ngbtool.Vec3 | null): holster.Plan | null {
+  const h = c.baseMoves.holster
+  return h && center ? { ...h, center } : null
+}
+
+export function gunPlanOf(c: Character, baseModel: ngmtool.Model, body: string, center: ngbtool.Vec3 | null, geometry: gun.Geometry | null): gun.Plan | null {
+  const g = gunOf(c)
+  if (!g || !center || !geometry) return null
+  const prop = gun.prop(baseModel, body, gunSide(c))
+  return { holster: { ...g.holster, center, prop }, geometry, sound: g.sound ?? null, bullets: g.bullets, automatic: g.automatic }
+}
 
 // A stretched hit that comes back from where it lands needs RETURN_ABILITY and main.dol's mirrored skip.
 export const stretchReturns = (c: Character) => reach.RETURNS.some((id) => c.moveReach[id])
