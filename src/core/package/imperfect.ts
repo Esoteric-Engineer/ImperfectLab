@@ -10,7 +10,7 @@ import { CLUB } from '../build/basemoves'
 import { CLUB_MOVES, defaultDrawn } from '../build/holster'
 import { type DamageKey, KEYS as DAMAGE_KEYS } from '../build/damage'
 import { COSTS, type EnergyKey, FALLBACK, RECHARGE, type RechargeKey } from '../build/energy'
-import { BULLETS as GUN_BULLETS, DAMAGE as GUN_DAMAGE, DEFAULT_BULLETS, DEFAULT_DAMAGE, DEFAULT_ENERGY, ENERGY as GUN_ENERGY, type Sound as GunSound } from '../build/gun'
+import { BULLETS as GUN_BULLETS, DAMAGE as GUN_DAMAGE, DEFAULT_BULLETS, DEFAULT_DAMAGE, DEFAULT_ENERGY, ENERGY as GUN_ENERGY, PLACES as GUN_PLACES, type Place as GunPlace, type Sound as GunSound } from '../build/gun'
 import { LOW_ENERGY_STUN, MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
 import { DISTANCE, JUMP_DISTANCE, JUMPS, type Limb, LIMBS } from '../build/reach'
 import { Z_SECONDS, Z_SIZE, Z_SLOW, Z_VISIBLE } from '../game/dol'
@@ -75,7 +75,7 @@ export const THROW_REACH: [number, number] = [8, 35]
 export const HOLSTER_POSITION: [number, number] = [-0.6, 0.6]
 export const HOLSTER_ROTATION: [number, number] = [-180, 180]
 export const defaultHolster = (): Holster => ({ position: [0, -0.17, 0.05], rotation: [90, 0, 0] })
-export { GUN_BULLETS, GUN_DAMAGE, GUN_ENERGY }
+export { GUN_BULLETS, GUN_DAMAGE, GUN_ENERGY, GUN_PLACES, type GunPlace }
 export const GUN_SIDES = ['right', 'left'] as const
 export type GunSide = (typeof GUN_SIDES)[number]
 // The gun's game bone per base, right and left (gun.ts, bone).
@@ -84,7 +84,21 @@ const GUN_BONES: Record<string, [number, number]> = {
   thing: [66, 66], venom: [88, 88], megalith: [90, 90], roekel: [84, 84],
 }
 export const gunBone = (base: string, side: GunSide): number => (GUN_BONES[base] ?? [39, 59])[side === 'right' ? 0 : 1]
-export const gunHolster = (side: GunSide): Gun['holster'] => (side === 'right' ? { position: [0.1, 0, -0.18], rotation: [0, 90, 0] } : { position: [-0.1, 0, -0.18], rotation: [0, -90, 0] })
+// The swap's game bone per base, right and left (gun.ts, swapBone).
+const SWAP_BONES: Record<string, [number, number]> = {
+  thing: [67, 67], paradox: [82, 82], elektra: [82, 82], daredevil: [89, 88], storm: [82, 82], aftershock: [90, 90], venom: [89, 89],
+  heatwave: [82, 82], humantorch: [88, 88], megalith: [91, 91], magneto: [88, 88], biohazard: [88, 88], defcon: [98, 98], roekel: [85, 85],
+}
+export const swapBone = (base: string, side: GunSide): number => (SWAP_BONES[base] ?? [72, 72])[side === 'right' ? 0 : 1]
+export const gunHip = (side: GunSide): GunPlace => (side === 'right' ? 'hip_right' : 'hip_left')
+export const mirrorPlace = (place: GunPlace): GunPlace => ({ hip_right: 'hip_left', hip_left: 'hip_right', back_left: 'back_right', back_right: 'back_left' } as const)[place]
+// Barrel down at a hip; flat across the back, grip over the named shoulder.
+export function gunHolster(side: GunSide, place: GunPlace = gunHip(side)): Gun['holster'] {
+  const s = side === 'right' ? 1 : -1
+  if (place === 'hip_right' || place === 'hip_left') return { place, position: [place === 'hip_right' ? 0.1 : -0.1, 0, -0.18], rotation: [0, 90 * s, 0] }
+  const flip = (place === 'back_left') === (side === 'left') ? 180 : 0
+  return { place, position: [place === 'back_right' ? 0.05 : -0.05, -0.2, 0.05], rotation: [-90, 45 * s, flip] }
+}
 export const defaultGun = (side: GunSide = 'right'): Gun => ({ side, damage: DEFAULT_DAMAGE, energy: DEFAULT_ENERGY, bullets: DEFAULT_BULLETS, automatic: false, holster: gunHolster(side) })
 export const gunOf = (c: Pick<Character, 'zButton'>): Gun | null => c.zButton?.gun ?? null
 export const POSES = ['rest', 'ready', 'readyalt'] as const
@@ -142,7 +156,8 @@ export interface Gun {
   energy: number
   bullets: number
   automatic: boolean
-  holster: { position: [number, number, number]; rotation: [number, number, number] }
+  holster: { place: GunPlace; position: [number, number, number]; rotation: [number, number, number] }
+  swap?: { position: [number, number, number]; rotation: [number, number, number] }
   sound?: GunSound
 }
 
@@ -457,6 +472,8 @@ export function problems(c: Character): Problem[] {
   if (g) {
     const bone = gunBone(c.base, g.side)
     if (!c.mapping.has(bone) && !c.materials.some((m) => m.include && m.bind === bone)) out.push(['error', `nothing is fixed to game bone ${bone} to be the gun: pick the gun's material on the Z-Button Actions page`])
+    const swap = swapBone(c.base, g.side)
+    if (g.swap && !c.mapping.has(swap) && !c.materials.some((m) => m.include && m.bind === swap)) out.push(['error', `nothing is fixed to game bone ${swap} to swap into the gun's holster: pick its material on the Z-Button Actions page`])
   }
   if (c.zButton?.stats && !Object.keys(c.zButton.stats).length) out.push(['warning', 'Stat Change is ticked but changes nothing: tick a value on the Z-Button Actions page'])
   if (c.zButton?.size === 1) out.push(['warning', 'Change Size is ticked but changes nothing: set a size other than 1 on the Z-Button Actions page'])
@@ -531,17 +548,22 @@ function readGunSound(v: unknown, what: string): GunSound {
 }
 
 function readGun(v: unknown, what: string, legacy = false): Gun {
-  const g = keys(v, ['side', 'damage', 'energy', 'bullets', 'automatic', 'holster', 'sound', ...(legacy ? ['drawn'] : [])], what)
+  const g = keys(v, ['side', 'damage', 'energy', 'bullets', 'automatic', 'holster', 'swap', 'sound', ...(legacy ? ['drawn'] : [])], what)
   const side = str(g.side ?? 'right', `${what}.side`, 8)! as GunSide
   if (!GUN_SIDES.includes(side)) throw new LabError(`manifest: ${what}.side is right or left`)
-  const h = keys(g.holster ?? gunHolster(side), ['position', 'rotation'], `${what}.holster`)
+  const h0 = keys(g.holster ?? {}, ['place', 'position', 'rotation'], `${what}.holster`)
+  const place = str(h0.place ?? gunHip(side), `${what}.holster.place`, 16)! as GunPlace
+  if (!GUN_PLACES.includes(place)) throw new LabError(`manifest: ${what}.holster.place is one of ${GUN_PLACES.join(', ')}`)
+  const h = { ...gunHolster(side, place), ...Object.fromEntries(Object.entries(h0).filter(([, x]) => x !== undefined)) }
+  const sw = g.swap !== undefined && g.swap !== null ? keys(g.swap, ['position', 'rotation'], `${what}.swap`) : null
   return {
     side,
     damage: num(g.damage ?? DEFAULT_DAMAGE, `${what}.damage`, GUN_DAMAGE[0], GUN_DAMAGE[1], false, true)!,
     energy: num(g.energy ?? DEFAULT_ENERGY, `${what}.energy`, GUN_ENERGY[0], GUN_ENERGY[1], false)!,
     bullets: num(g.bullets ?? DEFAULT_BULLETS, `${what}.bullets`, GUN_BULLETS[0], GUN_BULLETS[1], false, true)!,
     automatic: typed<boolean>(g.automatic ?? false, 'boolean', `${what}.automatic`),
-    holster: { position: three(h.position, `${what}.holster.position`, HOLSTER_POSITION), rotation: three(h.rotation, `${what}.holster.rotation`, HOLSTER_ROTATION) },
+    holster: { place, position: three(h.position, `${what}.holster.position`, HOLSTER_POSITION), rotation: three(h.rotation, `${what}.holster.rotation`, HOLSTER_ROTATION) },
+    ...(sw ? { swap: { position: three(sw.position ?? h.position, `${what}.swap.position`, HOLSTER_POSITION), rotation: three(sw.rotation ?? h.rotation, `${what}.swap.rotation`, HOLSTER_ROTATION) } } : {}),
     ...(g.sound !== undefined && g.sound !== null ? { sound: readGunSound(g.sound, `${what}.sound`) } : {}),
   }
 }

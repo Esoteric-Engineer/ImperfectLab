@@ -594,7 +594,9 @@ function Holster() {
 }
 
 // Where a holster sits from its bone (from), as numbers and in 3D.
-export function HolsterPlace({ h, from, view, gun = false, onChange }: { h: HolsterPlan; from: string; view: 'back' | 'right' | 'front'; gun?: boolean; onChange: (h: HolsterPlan) => void }) {
+export function HolsterPlace({ h, from, view, kind = 'club', title = 'Holster Location', what = "the prop's middle", onChange }: {
+  h: HolsterPlan; from: string; view: 'back' | 'right' | 'front'; kind?: HolsterKind; title?: string; what?: string; onChange: (h: HolsterPlan) => void
+}) {
   const changed = Object.keys(h.drawn ?? {}).length
   const set = (what: 'position' | 'rotation', k: number, v: number) => {
     const next = [...h[what]] as [number, number, number]
@@ -603,10 +605,10 @@ export function HolsterPlace({ h, from, view, gun = false, onChange }: { h: Hols
   }
   return (
     <>
-      <h4>Holster Location</h4>
+      <h4>{title}</h4>
       <Note>
-        Where the prop's middle sits from {from}.
-        {!gun && <><br />The "Prop in Hand" column of the Moves tables above picks where it is during each move.</>}
+        Where {what} sits from {from}.
+        {kind === 'club' && <><br />The "Prop in Hand" column of the Moves tables above picks where it is during each move.</>}
       </Note>
       {changed > 0 && <div className="row"><span>{changed} move{changed === 1 ? '' : 's'} changed from the default</span><button onClick={() => onChange({ position: h.position, rotation: h.rotation })}>Set all back</button></div>}
       <div className="row">
@@ -622,13 +624,15 @@ export function HolsterPlace({ h, from, view, gun = false, onChange }: { h: Hols
             ))}
           </tbody>
         </table>
-        <HolsterView first={view} gun={gun} />
+        <HolsterView first={view} kind={kind} />
       </div>
     </>
   )
 }
 
-function HolsterView({ first, gun }: { first: 'back' | 'right' | 'front'; gun: boolean }) {
+export type HolsterKind = 'club' | 'gun' | 'swap'
+
+function HolsterView({ first, kind }: { first: 'back' | 'right' | 'front'; kind: HolsterKind }) {
   const s = useStore()
   const canvas = useRef<HTMLCanvasElement>(null)
   const view = useRef<Viewport | null>(null)
@@ -643,7 +647,7 @@ function HolsterView({ first, gun }: { first: 'back' | 'right' | 'front'; gun: b
     if (!s.model) return
     let live = true
     const timer = window.setTimeout(() => {
-      engine.call<{ meshes: MeshData[]; bones: BoneLine[] } | string>('holsterPreview', [copyCharacter({ ...store.character, glb: null }), gun]).then((r) => {
+      engine.call<{ meshes: MeshData[]; bones: BoneLine[] } | string>('holsterPreview', [copyCharacter({ ...store.character, glb: null }), kind]).then((r) => {
         if (!live || !view.current) return
         if (typeof r === 'string') {
           setReport('✖ ' + r)
@@ -660,7 +664,7 @@ function HolsterView({ first, gun }: { first: 'back' | 'right' | 'front'; gun: b
       live = false
       clearTimeout(timer)
     }
-  }, [s.versions.character, s.versions.model, s.versions.mapping, s.model, first, gun])
+  }, [s.versions.character, s.versions.model, s.versions.mapping, s.model, first, kind])
   return (
     <div className="holster-view">
       <canvas ref={canvas} className="viewport" />

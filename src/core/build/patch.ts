@@ -85,6 +85,7 @@ export class Builder {
   moveFx: moves.EffectPlan | null = null
   propCenter: [number, number, number] | null = null
   gunGeometry: gun.Geometry | null = null
+  swapCenter: [number, number, number] | null = null
 
   constructor(source: GameSource, character: Character, progress?: Progress, model?: Model) {
     this.src = source
@@ -204,8 +205,8 @@ export class Builder {
     const model = this.model ?? new Model(c.glb!)
     const side = gunOf(c) ? gunSide(c) : null
     const baseModel = ngmtool.read(base.bundleFiles()[0])[1][0]
-    const extraNodes = side ? gun.extraNode(baseModel, base.body, side) : []
-    const sk = side ? new Skeleton(gun.rig(baseModel, base.body, side), base.body) : Skeleton.ofBase(base)
+    const extraNodes = side ? gun.extraNode(baseModel, base.body, side, gunSwaps(c)) : []
+    const sk = side ? new Skeleton(gun.rig(baseModel, base.body, side, gunSwaps(c)), base.body) : Skeleton.ofBase(base)
     const f = new Fit(model, sk, c.mapping, c.overrides, c.fit.scale, c.fit.torso_squash ?? true, c.fit.flip, c.fit.floor_from_mesh ?? false)
     const included = c.materials.filter((m) => m.include)
     const slots: MaterialSlots = new Map()
@@ -215,7 +216,7 @@ export class Builder {
       if (m.bind !== null && m.bind >= sk.nodes.length) throw new LabError(`material ${m.name} is bound to game bone ${m.bind}, which ${base.label} does not have`)
     }
     const tris = f.triangles(slots)
-    ;[this.propCenter, this.gunGeometry] = propShape(c, baseModel, base.body, tris, sk)
+    ;[this.propCenter, this.gunGeometry, this.swapCenter] = propShape(c, baseModel, base.body, tris, sk)
     const far = Object.keys(c.moveReach).length ? moves.farLimb(this.src, base, c.moveReach, c.moves) : null
     const imgs = this.materialImages(model)
     const normals = new bundle.NormalIndex(bundle.readNormals(this.src.entry('Misc/NormalTable.ngn')))
@@ -228,7 +229,7 @@ export class Builder {
     for (const [costume, alt] of [['', false], ['_alt', true]] as [string, boolean][]) {
       const [ngm, ngt, tpl] = base.bundleFiles(alt)
       const [, models] = ngmtool.read(ngm)
-      const renderBase = side ? gun.rig(models[0], base.body, side) : models[0]
+      const renderBase = side ? gun.rig(models[0], base.body, side, gunSwaps(c)) : models[0]
       const replaced = new Set<string>(), keptByOthers = new Set<string>()
       for (const part of renderBase.parts) {
         const keys = nsa.get(part.toLowerCase()) ?? new Map<string, string>()
@@ -423,7 +424,7 @@ export class Builder {
       let stow: ((rec: ngbtool.Record) => ngbtool.Record) | null = null
       if (onBack) {
         const base0 = ngmtool.read(this.base.bundleFiles()[0])[1][0]
-        const own = gunOf(c) ? gun.rig(base0, this.base.body, gunSide(c)) : base0
+        const own = gunOf(c) ? gun.rig(base0, this.base.body, gunSide(c), gunSwaps(c)) : base0
         const model = c.size !== 1 ? bundle.scaleModel(own, c.size) : own, plan = holster.sized(onBack, c.size)
         stow = (rec) => holster.stow(rec, model, plan)
       }
@@ -448,15 +449,16 @@ export class Builder {
 
   // The gun's plan, once the model has given the gun's middle and shape.
   gunPlan(): gun.Plan | null {
-    return gunPlanOf(this.c, ngmtool.read(this.base.bundleFiles()[0])[1][0], this.base.body, this.propCenter, this.gunGeometry)
+    return gunPlanOf(this.c, ngmtool.read(this.base.bundleFiles()[0])[1][0], this.base.body, this.propCenter, this.gunGeometry, this.swapCenter)
   }
 
   gunEntry(plan: gun.Plan): D.GunCharacter {
     const g = gunOf(this.c)!
-    const rigged = gun.rig(ngmtool.read(this.base.bundleFiles()[0])[1][0], this.base.body, gunSide(this.c))
+    const rigged = gun.rig(ngmtool.read(this.base.bundleFiles()[0])[1][0], this.base.body, gunSide(this.c), gunSwaps(this.c))
     const model = this.c.size !== 1 ? bundle.scaleModel(rigged, this.c.size) : rigged
     const arm = holster.armOf(new Skeleton(rigged, this.base.body), gunSide(this.c))
-    return gun.entry(this.c.internalName, model, holster.sized(plan.holster, this.c.size), g.energy, g.automatic, arm)
+    const swap = plan.swap && { ...holster.sized(plan.swap, this.c.size), bone: plan.swap.bone }
+    return gun.entry(this.c.internalName, model, holster.sized(plan.holster, this.c.size), g.energy, g.automatic, arm, swap)
   }
 
   // The character's own motion set, when a move changes an animation.
@@ -615,11 +617,14 @@ export function ownMotions(c: Character): boolean {
 }
 
 export const gunSide = (c: Character): holster.Side => (gunOf(c)?.side === 'left' ? 'L' : 'R')
+export const gunSwaps = (c: Character): boolean => gunOf(c)?.swap !== undefined
 
-export function propShape(c: Character, baseModel: ngmtool.Model, body: string, tris: Map<number, Tri[]>, sk: Skeleton): [ngbtool.Vec3 | null, gun.Geometry | null] {
-  if (!gunOf(c)) return [c.baseMoves.holster ? holster.center(tris.values()) : null, null]
+// The holster prop's middle, the gun's shape, and the middle of what swaps into the gun's holster.
+export function propShape(c: Character, baseModel: ngmtool.Model, body: string, tris: Map<number, Tri[]>, sk: Skeleton): [ngbtool.Vec3 | null, gun.Geometry | null, ngbtool.Vec3 | null] {
+  if (!gunOf(c)) return [c.baseMoves.holster ? holster.center(tris.values()) : null, null, null]
   const prop = gun.prop(baseModel, body, gunSide(c))
-  return [holster.center(tris.values(), prop.bone), gun.geometry(tris.values(), prop.bone, sk.nodes[prop.hand!].pos)]
+  const swap = gunSwaps(c) ? holster.center(tris.values(), gun.swapBone(baseModel, body, gunSide(c))) : null
+  return [holster.center(tris.values(), prop.bone), gun.geometry(tris.values(), prop.bone, sk.nodes[prop.hand!].pos), swap]
 }
 
 export function onBackPlan(c: Character, center: ngbtool.Vec3 | null): holster.Plan | null {
@@ -627,11 +632,14 @@ export function onBackPlan(c: Character, center: ngbtool.Vec3 | null): holster.P
   return h && center ? { ...h, center } : null
 }
 
-export function gunPlanOf(c: Character, baseModel: ngmtool.Model, body: string, center: ngbtool.Vec3 | null, geometry: gun.Geometry | null): gun.Plan | null {
+export function gunPlanOf(c: Character, baseModel: ngmtool.Model, body: string, center: ngbtool.Vec3 | null, geometry: gun.Geometry | null,
+  swapCenter: ngbtool.Vec3 | null = null): gun.Plan | null {
   const g = gunOf(c)
-  if (!g || !center || !geometry) return null
-  const prop = gun.prop(baseModel, body, gunSide(c))
-  return { holster: { ...g.holster, center, prop }, geometry, sound: g.sound ?? null, bullets: g.bullets, automatic: g.automatic }
+  if (!g || !center || !geometry || (g.swap && !swapCenter)) return null
+  const { place, position, rotation } = g.holster
+  const prop = gun.prop(baseModel, body, gunSide(c), place)
+  const swap = g.swap && swapCenter ? { ...g.swap, center: swapCenter, bone: gun.swapBone(baseModel, body, gunSide(c)) } : null
+  return { place, holster: { position, rotation, center, prop }, swap, geometry, sound: g.sound ?? null, bullets: g.bullets, automatic: g.automatic }
 }
 
 // A stretched hit that comes back from where it lands needs RETURN_ABILITY and main.dol's mirrored skip.

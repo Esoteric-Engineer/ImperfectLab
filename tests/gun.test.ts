@@ -134,10 +134,27 @@ describe('gun', () => {
     expect(gun.prop(female, 'female', 'R')).toEqual({ bone: 81, anchor: 58, side: 'R', hand: 27 })
   })
 
+  it('adds the swap bone on the hand after any gun bone, and hangs the holster from a thigh or the chest', () => {
+    const male = Object.assign(new ngmtool.Model(), { nodes: nodes(72), attachments: [] })
+    expect(gun.swapBone(male, 'male', 'R')).toBe(72)
+    const swapped = gun.rig(male, 'male', 'R', true)
+    expect(swapped.nodes.length).toBe(73)
+    expect(swapped.nodes[72][2]).toBe(27)
+    expect(ngbtool.pose(swapped, null, 0)[72][1]).toEqual(HAND)
+    const club = Object.assign(new ngmtool.Model(), { nodes: nodes(88), attachments: [[39, 43, 0, []]] as ngmtool.Attachment[] })
+    expect(gun.swapBone(club, 'male', 'R')).toBe(89)
+    expect(gun.swapBone(club, 'male', 'L')).toBe(88)
+    expect(gun.rig(club, 'male', 'R', true).nodes.map(([, , parent]) => parent).slice(88)).toEqual([27, 27])
+    expect(gun.prop(male, 'male', 'R').anchor).toBe(65)
+    expect(gun.prop(male, 'male', 'R', 'hip_left').anchor).toBe(61)
+    expect(gun.prop(male, 'male', 'L', 'back_right').anchor).toBe(3)
+    expect(gun.prop(male, 'male', 'R', 'back_left')).toEqual({ bone: 39, anchor: 3, side: 'R', hand: 27 })
+  })
+
   it("holsters the gun at run time where the baked holster puts it, from the thigh's skin matrix", () => {
     const plan: holster.Plan = { position: [0.1, 0.02, -0.2], rotation: [10, 90, -20], center: [0.7, 0, 1.5], prop: PROP }
     const e = gun.entry('Deadpool', MODEL, plan, 7.5, true, ARM)
-    expect([e.bone, e.hand, e.thigh, e.nodes, e.energy, e.automatic]).toEqual([39, 27, 1, 40, 7.5, true])
+    expect([e.bone, e.hand, e.anchor, e.nodes, e.energy, e.automatic, e.swap]).toEqual([39, 27, 1, 40, 7.5, true, null])
     expect(e.bind).toEqual(ngbtool.pose(MODEL, null, 0)[39][1])
     const rec = { ...record(10, []), tracks: [[1, 0, [[0, ngbtool.encodeRotation(ngbtool.matQuat(holster.turn([30, -10, 45])))]]], [1, 1, [[0, ngbtool.encodeTranslation([0.2, -0.1, 0.05])]]]] as ngbtool.Track[] }
     const posed = ngbtool.pose(MODEL, rec, 0)
@@ -151,9 +168,25 @@ describe('gun', () => {
     }
   })
 
+  it("puts what the hand holds in the holster from the gun's anchor once the gun is drawn", () => {
+    const model = gun.rig(Object.assign(new ngmtool.Model(), { nodes: nodes(72), attachments: [] }), 'male', 'R', true)
+    const plan: holster.Plan = { position: [0, -0.17, 0.05], rotation: [-90, 45, 0], center: [0.85, 0, 1.6], prop: { ...PROP, anchor: 3 } }
+    const swap: gun.Swap = { position: [0.02, -0.18, 0.04], rotation: [-90, -45, 0], center: [0.75, 0.4, 1.55], bone: 72 }
+    const e = gun.entry('Deadpool', model, plan, 0, false, ARM, swap)
+    expect(e.anchor).toBe(3)
+    expect(e.nodes).toBe(73)
+    expect(e.swap!.bone).toBe(72)
+    expect(e.swap!.bind).toEqual(HAND)
+    expect(e.moves[2]).toContain(72)
+    const k = (p: V3): V3 => [0, 1, 2].map((c) => p[0] * e.swap!.k[c] + p[1] * e.swap!.k[3 + c] + p[2] * e.swap!.k[6 + c] + e.swap!.k[9 + c]) as V3
+    k(swap.center).forEach((x, i) => expect(x).toBeCloseTo([0, 0, 1.4][i] + swap.position[i], 6))
+    const tip = holster.sub(k([0.75, 0.9, 1.55]), k(swap.center))
+    holster.unit(tip).forEach((x, i) => expect(x).toBeCloseTo([Math.SQRT1_2, 0, -Math.SQRT1_2][i], 6))
+  })
+
   it('reaches with the arm and everything under it but the gun', () => {
     const plan: holster.Plan = { position: [0, 0, 0], rotation: [0, 0, 0], center: [0, 0, 0], prop: PROP }
-    const e = gun.entry('Deadpool', MODEL, plan, 0, false, ARM, 0.4)
+    const e = gun.entry('Deadpool', MODEL, plan, 0, false, ARM, null, 0.4)
     expect([e.upper, e.fore, e.draw]).toEqual([23, 25, 0.4])
     expect(e.arm).toEqual([23, 25, 27].map((b) => ngbtool.pose(MODEL, null, 0)[b][1]))
     expect(e.moves).toEqual([[23, 24, 25, 26, 27, 38], [25, 26, 27, 38], [27]])

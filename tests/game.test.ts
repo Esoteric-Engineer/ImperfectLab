@@ -168,9 +168,9 @@ describe.skipIf(!ISO)('main.dol', () => {
     const dol = D.zActions(gameSource().dol, [{ internal: 'Synth', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, costume: false,
       damage: [null, null, null, null, null], taken: null, lift: null, size: null, slow: null, gun: true }])
     const guns: D.GunCharacter[] = [
-      { internal: 'Synth', bone: 39, hand: 27, thigh: 65, nodes: 66, automatic: true, energy: 7.5, bind: [0.5, 0, 1.5], k: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0.2, 0.3],
-        upper: 23, fore: 25, arm: [[0.2, 0, 1.55], [0.48, 0, 1.55], [0.75, 0, 1.55]], draw: 0.25, moves: [[23, 24, 25, 26, 27, 30], [25, 26, 27, 30], [27, 30]] },
-      { internal: 'Other', bone: 81, hand: 27, thigh: 58, nodes: 82, automatic: false, energy: 0, bind: [0, 0, 1], k: new Array(12).fill(0),
+      { internal: 'Synth', bone: 39, hand: 27, anchor: 65, nodes: 66, automatic: true, energy: 7.5, bind: [0.5, 0, 1.5], k: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0.2, 0.3],
+        swap: { bone: 72, bind: [0.75, 0, 1.55], k: [0, 1, 0, -1, 0, 0, 0, 0, 1, 0.5, 0.25, 2] }, upper: 23, fore: 25, arm: [[0.2, 0, 1.55], [0.48, 0, 1.55], [0.75, 0, 1.55]], draw: 0.25, moves: [[23, 24, 25, 26, 27, 30], [25, 26, 27, 30], [27, 30]] },
+      { internal: 'Other', bone: 81, hand: 27, anchor: 58, nodes: 82, automatic: false, energy: 0, bind: [0, 0, 1], k: new Array(12).fill(0), swap: null,
         upper: 23, fore: 25, arm: [[0, 0, 0], [0, 0, 0], [0, 0, 0]], draw: D.GUN_DRAW, moves: [[], [], []] },
     ]
     for (const before of [dol, D.patchMany(dol, [1, 2].map((i) => ({ internal: `C${i}`, display: `C${i}`, stats: [1, 1, 1, 1, 1, 1], altStats: [1, 1, 1, 1, 1, 1] })))]) {
@@ -193,7 +193,10 @@ describe.skipIf(!ISO)('main.dol', () => {
       const table = at + D.GUN_DATA
       expect(u32be(out, table + D.GUN_COUNT)).toBe(2)
       const first = table + D.GUN_ENTRIES
-      expect([...out.subarray(first, first + 8)]).toEqual([39, 27, 65, 66, 1, 23, 25, 0])
+      expect([...out.subarray(first, first + 8)]).toEqual([39, 27, 65, 66, 1, 23, 25, 72])
+      expect([...out.subarray(first + D.GUN_ENTRY_SIZE, first + D.GUN_ENTRY_SIZE + 8)]).toEqual([81, 27, 58, 82, 0, 23, 25, 0xff])
+      expect([0xe0, 0xe4, 0xec, 0x104, 0x108, 0x10c, 0x110, 0x114, 0x118].map((o) => f32be(out, first + o))).toEqual([0, 1, -1, 0.5, 0.25, 2, 0.75, 0, 1.55].map(Math.fround))
+      expect(D.GUN_ENTRY_SIZE).toBe(0x120)
       expect([0x8, 0xc, 0x18, 0x3c, 0x44].map((o) => u32be(out, first + o))).toEqual([0x40f00000, 0x3f000000, 0x3f800000, 0x3dcccccd, 0x3e99999a])
       expect([0x48, 0x50, 0x54, 0x5c, 0x60, 0x68].map((o) => f32be(out, first + o))).toEqual([0.2, 1.55, 0.48, 1.55, 0.75, 1.55].map(Math.fround))
       expect(f32be(out, first + 0x6c)).toBeCloseTo(1 / 250, 9)
@@ -1784,11 +1787,14 @@ describe.skipIf(!ISO)('gun', () => {
   const motions = (r: { adds: Map<string, Uint8Array> }, internal = 'Synth') => nmstool.parse(r.adds.get(`Motions/${internal}.nms`)!).motions()
   const records = (r: { adds: Map<string, Uint8Array> }, stem = 'synth') => new Map(ngbtool.parse(r.adds.get(`Bundles/${stem}.ngb`)!).map((x) => [x.name.toLowerCase(), x]))
 
-  it('puts the gun on the bone the manifest names, on every base', () => {
+  it('puts the gun and the swap on the bones the manifest names, on every base', () => {
     for (const key of R.keys()) {
       const base = new R.BaseCharacter(src(), key)
       const model = ngmtool.read(base.bundleFiles()[0])[1][0]
-      for (const side of imperfect.GUN_SIDES) expect(gun.bone(model, base.body, side === 'right' ? 'R' : 'L')[0], `${key} ${side}`).toBe(imperfect.gunBone(key, side))
+      for (const side of imperfect.GUN_SIDES) {
+        expect(gun.bone(model, base.body, side === 'right' ? 'R' : 'L')[0], `${key} ${side}`).toBe(imperfect.gunBone(key, side))
+        expect(gun.swapBone(model, base.body, side === 'right' ? 'R' : 'L'), `${key} ${side} swap`).toBe(imperfect.swapBone(key, side))
+      }
     }
   })
 
@@ -1833,7 +1839,7 @@ describe.skipIf(!ISO)('gun', () => {
     expect(recs.get(set.get('stand')!.anim.toLowerCase())!.tracks.some(([b]) => b === 39)).toBe(true)
     const [, models] = ngmtool.read(r.adds.get('Bundles/synth.ngm')!)
     expect(models[0].attachments.filter(([n, k, i]) => n === 39 && k === gun.MUZZLE_KIND && i === gun.MUZZLE_INDEX).length).toBe(1)
-    expect(r.gun).toMatchObject({ internal: 'Synth', bone: 39, hand: 27, thigh: 65, automatic: true, energy: 7.5, upper: 23, fore: 25, draw: D.GUN_DRAW })
+    expect(r.gun).toMatchObject({ internal: 'Synth', bone: 39, hand: 27, anchor: 65, swap: null, automatic: true, energy: 7.5, upper: 23, fore: 25, draw: D.GUN_DRAW })
     expect(r.gun!.k.length).toBe(12)
     const [upper, fore, hand] = r.gun!.moves
     expect([upper[0], fore[0], hand[0]]).toEqual([23, 25, 27])
@@ -1848,6 +1854,32 @@ describe.skipIf(!ISO)('gun', () => {
     expect(D.arenaLo(r.dol!)).toBeGreaterThan(D.arenaLo(src().dol))
     expect(r.adds.has('Cutscenes/synth_intro1.cut')).toBe(true)
     for (const text of ['gun: each bullet launches proj_SynthGun', 'a burst of 3 bullets from the right hand', 'holstered at the right hip']) expect(r.notes.some((n) => n.includes(text)), text).toBe(true)
+  })
+
+  it('holsters the gun on the back and swaps what the gun hand holds into its place', () => {
+    const c = armed('wolverine', 'left')
+    c.materials[0].bind = null
+    for (const [bone, joint] of [...c.mapping]) if (['mixamorig:LeftHandIndex3', 'mixamorig:LeftHandRing3'].includes(joint)) c.mapping.delete(bone)
+    c.mapping.set(59, 'mixamorig:LeftHandIndex3')
+    c.mapping.set(imperfect.swapBone('wolverine', 'left'), 'mixamorig:LeftHandRing3')
+    const holster = imperfect.gunHolster('left', 'back_left')
+    c.zButton!.gun = { ...c.zButton!.gun!, holster, swap: { position: holster.position, rotation: [-90, -45, 0] } }
+    expect(imperfect.problems(c).filter(([l]) => l === 'error')).toEqual([])
+    const r = new Builder(src(), c).build()
+    expect(r.gun).toMatchObject({ bone: 59, hand: 47, anchor: 3 })
+    expect(r.gun!.swap!.bone).toBe(72)
+    expect(r.gun!.swap!.k.length).toBe(12)
+    expect(r.gun!.nodes).toBeGreaterThan(72)
+    expect(r.gun!.moves[2]).toContain(72)
+    expect(r.gun!.moves[2]).not.toContain(59)
+    const [, models] = ngmtool.read(r.adds.get('Bundles/synth.ngm')!)
+    expect(models[0].nodes.length).toBe(73)
+    expect(models[0].nodes[72][2]).toBe(47)
+    const set = motions(r), recs = records(r)
+    const stand = recs.get(set.get('stand')!.anim.toLowerCase())!
+    expect(stand.tracks.some(([b]) => b === 59)).toBe(true)
+    expect(stand.tracks.some(([b]) => b === 72)).toBe(false)
+    expect(r.notes.some((n) => n.includes('holstered on the back over the left shoulder') && n.includes('game bone 72'))).toBe(true)
   })
 
   it('plays the sound event picked for the gun, or none', () => {

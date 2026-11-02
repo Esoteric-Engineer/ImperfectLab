@@ -593,7 +593,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
   const bundles = loadBundles(src, stem)
   const before = [...bundles.values()].reduce((n, rs) => n + rs.reduce((k, r) => k + ngbtool.writeRecord(r).length, 0), 0)
   const [, models] = ngmtool.read(base.bundleFiles()[0])
-  if (shooter) models[0] = gun.rig(models[0], base.body, shooter.holster.prop!.side)
+  if (shooter) models[0] = gun.rig(models[0], base.body, shooter.holster.prop!.side, shooter.swap !== null)
   const mine = resolved(src, own, holds(bundles))
   const notes: string[] = []
   const sized = new Set<string>()
@@ -821,7 +821,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       held++
     }
     notes.push(shooter
-      ? `gun: holstered at the ${shooter.holster.prop!.side === 'R' ? 'right' : 'left'} hip (${held} animations), and drawn while Z is held`
+      ? `gun: holstered ${gun.PLACE_TEXT[shooter.place]} (${held} animations), and drawn while Z is held${shooter.swap ? `, when what the ${shooter.holster.prop!.side === 'R' ? 'right' : 'left'} hand holds (game bone ${shooter.swap.bone}) goes into the holster in its place` : ''}`
       : `holster: ${base.label}'s club rides on the back outside power mode (${held} animations); power-on draws it and power-off puts it back; the baton throw's catch ends in the power-stand grip`)
   }
   // the base's records the moves replaced, unless another state still plays them

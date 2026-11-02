@@ -4,7 +4,7 @@ import { formatG } from '../../core/format'
 import { Z_SECONDS, Z_SIZE, Z_SLOW, Z_VISIBLE, type ZAction } from '../../core/game/dol'
 import { label } from '../../core/game/roster'
 import { encodePng } from '../../core/image/png'
-import { defaultGun, GAMEPLAY as RANGES, GUN_BULLETS, GUN_DAMAGE, GUN_ENERGY, GUN_SIDES, gunBone, type GunSide, LIFT, soundRef, type ZButton, type ZCostume, Z_COSTUMES, type ZStats, zTexture } from '../../core/package/imperfect'
+import { defaultGun, GAMEPLAY as RANGES, GUN_BULLETS, GUN_DAMAGE, GUN_ENERGY, GUN_PLACES, GUN_SIDES, gunBone, gunHolster, type GunPlace, type GunSide, LIFT, mirrorPlace, swapBone, soundRef, type ZButton, type ZCostume, Z_COSTUMES, type ZStats, zTexture } from '../../core/package/imperfect'
 import { decodePicture, pickFile } from '../../io/files'
 import { Note, NumberInput } from '../components/common'
 import { store, useStore } from '../store'
@@ -255,10 +255,12 @@ function Stats() {
   )
 }
 
-function unbindGun(side: GunSide) {
+function unbindGun(side: GunSide, swapOnly = false) {
   const c = store.character
-  for (const m of c.materials) if (m.bind === gunBone(c.base, side)) m.bind = null
+  for (const m of c.materials) if ((!swapOnly && m.bind === gunBone(c.base, side)) || m.bind === swapBone(c.base, side)) m.bind = null
 }
+
+const PLACE_LABELS: Record<GunPlace, string> = { hip_right: 'Right hip', hip_left: 'Left hip', back_left: 'Back, over the left shoulder', back_right: 'Back, over the right shoulder' }
 
 function Gun() {
   const c = store.character
@@ -266,21 +268,36 @@ function Gun() {
   const edited = () => store.touch('character')
   const bone = (side: GunSide) => gunBone(c.base, side)
   const part = c.materials.findIndex((m) => m.include && m.bind === bone(g.side))
+  const swapPart = c.materials.findIndex((m) => m.include && m.bind === swapBone(c.base, g.side))
   const set = (next: Partial<typeof g>) => {
     z.gun = { ...g, ...next }
+    if (!z.gun.swap) delete z.gun.swap
     edited()
   }
+  const mirror = (p: typeof g.holster.position, r: typeof g.holster.rotation) => ({ position: [-p[0], p[1], p[2]] as typeof p, rotation: [r[0], -r[1], -r[2]] as typeof r })
   const setSide = (side: GunSide) => {
-    const was = bone(g.side)
-    for (const m of c.materials) if (m.bind === was) m.bind = bone(side)
-    const [x, y, zz] = g.holster.position, [rx, ry, rz] = g.holster.rotation
-    set({ side, holster: { position: [-x, y, zz], rotation: [rx, -ry, -rz] } })
+    const [was, wasSwap] = [bone(g.side), swapBone(c.base, g.side)]
+    for (const m of c.materials) {
+      if (m.bind === was) m.bind = bone(side)
+      else if (m.bind === wasSwap) m.bind = swapBone(c.base, side)
+    }
+    set({ side, holster: { place: mirrorPlace(g.holster.place), ...mirror(g.holster.position, g.holster.rotation) }, swap: g.swap && mirror(g.swap.position, g.swap.rotation) })
+  }
+  const setPlace = (place: GunPlace) => {
+    const holster = gunHolster(g.side, place)
+    set({ holster, swap: g.swap && { position: holster.position, rotation: holster.rotation } })
   }
   const setPart = (i: number) => {
     unbindGun(g.side)
     if (i >= 0) c.materials[i] = { ...c.materials[i], bind: bone(g.side), include: true }
     edited()
   }
+  const setSwap = (i: number) => {
+    unbindGun(g.side, true)
+    if (i >= 0) c.materials[i] = { ...c.materials[i], bind: swapBone(c.base, g.side), include: true }
+    set({ swap: i < 0 ? undefined : g.swap ?? { position: g.holster.position, rotation: g.holster.rotation } })
+  }
+  const from = g.holster.place.startsWith('back') ? 'the chest' : `the ${g.holster.place === 'hip_left' ? 'left' : 'right'} thigh`
   const cat = store.moveCatalog()
   const sounds = cat ? soundChoices(cat, c.base) : []
   const events = [...new Set(sounds.map(([event]) => event))]
@@ -290,14 +307,14 @@ function Gun() {
   return (
     <div className="zaction-body">
       <Note>
-        The gun rides in a holster at the hip. Holding Z draws the gun, and once it's in hand any attack except a rise attack fires it.<br />
-        Each shot is silent, or plays one of {label(c.base)}'s own sound events, listed by the moves that play it.
+        The gun rides in a holster at a hip or on the back. Holding Z draws the gun, and once it's in hand any attack except a rise attack fires it.<br />
+        What the gun hand holds can swap into the holster as the gun comes out, and back into the hand when it goes back.
       </Note>
       <table className="gameplay grid">
         <thead><tr><th>Value</th><th>Setting</th></tr></thead>
         <tbody>
           <tr>
-            <td>Hand and holster side</td>
+            <td>Hand</td>
             <td><select value={g.side} onChange={(e) => setSide(e.target.value as GunSide)}>
               {GUN_SIDES.map((side) => <option key={side} value={side}>{side}</option>)}
             </select></td>
@@ -308,6 +325,19 @@ function Gun() {
               <option value={-1}>(none)</option>
               {c.materials.map((m, i) => <option key={i} value={i}>{m.name || `material ${m.gltfMaterial}`}{m.include ? '' : ' (excluded)'}</option>)}
             </select></td>
+          </tr>
+          <tr>
+            <td>Holster</td>
+            <td><select value={g.holster.place} onChange={(e) => setPlace(e.target.value as GunPlace)}>
+              {GUN_PLACES.map((place) => <option key={place} value={place}>{PLACE_LABELS[place]}</option>)}
+            </select></td>
+          </tr>
+          <tr>
+            <td>Swaps into the holster (material)</td>
+            <td><select value={g.swap ? swapPart : -1} onChange={(e) => setSwap(Number(e.target.value))}>
+              <option value={-1}>(nothing)</option>
+              {c.materials.map((m, i) => (i === part ? null : <option key={i} value={i}>{m.name || `material ${m.gltfMaterial}`}{m.include ? '' : ' (excluded)'}</option>))}
+            </select> <span className="muted">held in the {g.side} hand until the gun is drawn</span></td>
           </tr>
           <tr>
             <td>Damage per bullet</td>
@@ -342,7 +372,10 @@ function Gun() {
           </tr>
         </tbody>
       </table>
-      <HolsterPlace h={g.holster} from={`the ${g.side} thigh`} view="front" gun onChange={(h) => set({ holster: { position: h.position, rotation: h.rotation } })} />
+      <HolsterPlace h={g.holster} from={from} view={g.holster.place.startsWith('back') ? 'back' : 'front'} kind="gun" what="the gun's middle"
+        onChange={(h) => set({ holster: { place: g.holster.place, position: h.position, rotation: h.rotation } })} />
+      {g.swap && <HolsterPlace h={g.swap} from={from} view={g.holster.place.startsWith('back') ? 'back' : 'front'} kind="swap" title="Swap Location"
+        what="the swapped part's middle, while the gun is drawn," onChange={(h) => set({ swap: { position: h.position, rotation: h.rotation } })} />}
     </div>
   )
 }

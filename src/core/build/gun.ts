@@ -1,4 +1,4 @@
-// A gun (manifest `z_button.gun`): holstered at the hip, drawn while Z is held, when attacks shoot it instead (game/gun.s).
+// A gun (manifest `z_button.gun`): holstered at a hip or on the back, drawn while Z is held, when attacks shoot it instead (game/gun.s).
 import { LabError } from '../errors'
 import { GUN_DRAW, GUN_FIELD, GUN_PICK_VALUE, type GunCharacter } from '../game/dol'
 import type * as R from '../game/roster'
@@ -53,29 +53,46 @@ export function bone(model: Pick<ngmtool.Model, 'nodes' | 'attachments'>, body: 
   return [model.nodes.length, true]
 }
 
-// The node bone() appends, or none: on the hand, where it is.
-export function extraNode(model: Pick<ngmtool.Model, 'nodes' | 'attachments'>, body: string, side: holster.Side): ngmtool.Node[] {
-  const [, added] = bone(model, body, side)
-  if (!added) return []
-  const hand = new Skeleton(model, body).node(`${side}.hand`)!
-  const [, b, , x] = model.nodes[hand]
-  return [[[0, 0, 0, 0], [...b] as ngmtool.Vec4, hand, x]]
+// A new bone on the hand, after any bone() appends.
+export function swapBone(model: Pick<ngmtool.Model, 'nodes' | 'attachments'>, body: string, side: holster.Side): number {
+  return model.nodes.length + (bone(model, body, side)[1] ? 1 : 0)
 }
 
-export function rig<M extends ngmtool.Model>(model: M, body: string, side: holster.Side): M {
-  const extra = extraNode(model, body, side)
+// The nodes bone() and, with swap, swapBone() append, on the hand.
+export function extraNode(model: Pick<ngmtool.Model, 'nodes' | 'attachments'>, body: string, side: holster.Side, swap = false): ngmtool.Node[] {
+  const [, added] = bone(model, body, side)
+  const hand = new Skeleton(model, body).node(`${side}.hand`)!
+  const [, b, , x] = model.nodes[hand]
+  const node = (): ngmtool.Node => [[0, 0, 0, 0], [...b] as ngmtool.Vec4, hand, x]
+  return [...(added ? [node()] : []), ...(swap ? [node()] : [])]
+}
+
+export function rig<M extends ngmtool.Model>(model: M, body: string, side: holster.Side, swap = false): M {
+  const extra = extraNode(model, body, side, swap)
   if (!extra.length) return model
   const m = model.clone() as M
   m.nodes = [...model.nodes, ...extra]
   return m
 }
 
+export const PLACES = ['hip_right', 'hip_left', 'back_left', 'back_right'] as const
+export type Place = (typeof PLACES)[number]
+export const hipOf = (side: holster.Side): Place => (side === 'R' ? 'hip_right' : 'hip_left')
+export const PLACE_TEXT: Record<Place, string> = { hip_right: 'at the right hip', hip_left: 'at the left hip', back_left: 'on the back over the left shoulder', back_right: 'on the back over the right shoulder' }
+
+export function anchorOf(sk: Skeleton, place: Place): number {
+  const role = place.startsWith('back') ? 'chest' : `${place === 'hip_left' ? 'L' : 'R'}.thigh`
+  const anchor = sk.node(role)
+  if (anchor === undefined) throw new LabError(`the skeleton has no ${role === 'chest' ? 'chest' : role === 'L.thigh' ? 'left thigh' : 'right thigh'} for the gun's holster`)
+  return anchor
+}
+
 // model: the base's, before rig().
-export function prop(model: Pick<ngmtool.Model, 'nodes' | 'attachments'>, body: string, side: holster.Side): holster.Prop {
+export function prop(model: Pick<ngmtool.Model, 'nodes' | 'attachments'>, body: string, side: holster.Side, place: Place = hipOf(side)): holster.Prop {
   const sk = new Skeleton(model, body)
-  const [anchor, hand] = [`${side}.thigh`, `${side}.hand`].map((r) => sk.node(r))
-  if (anchor === undefined || hand === undefined) throw new LabError(`the skeleton has no ${sideName(side)} thigh or hand for the gun`)
-  return { bone: bone(model, body, side)[0], anchor, side, hand }
+  const hand = sk.node(`${side}.hand`)
+  if (hand === undefined) throw new LabError(`the skeleton has no ${sideName(side)} hand for the gun`)
+  return { bone: bone(model, body, side)[0], anchor: anchorOf(sk, place), side, hand }
 }
 
 // The gun at bind: its muzzle, the barrel's direction out of it, and the gun's up.
@@ -267,8 +284,18 @@ export function tracer(fx: Effects, internal: string): string {
   return add(fx, CONTROLLER, [`effectname ${streak}`, `effectname ${glow}`, 'renderradius -1', 'flags 0x400'], prefix)
 }
 
+// The prop swapped into the holster, placed like the gun.
+export interface Swap {
+  position: Vec3
+  rotation: Vec3
+  center: Vec3
+  bone: number
+}
+
 export interface Plan {
+  place: Place
   holster: holster.Plan
+  swap: Swap | null
   geometry: Geometry
   sound: Sound | null
   bullets: number
@@ -286,17 +313,23 @@ export function reachBones(model: Pick<ngmtool.Model, 'nodes'>, arm: holster.Arm
   return [arm.upper, arm.fore, arm.hand].map(under)
 }
 
-// The gun's entry in gun.s's table; K takes a vertex at bind to where the thigh's skin matrix puts it: R p + thigh + position - R center.
+// K takes a vertex at bind to where the anchor's skin matrix puts it: R p + anchor + position - R center.
+function holsterK(bind: [Mat3, Vec3][], anchor: number, place: { position: Vec3; rotation: Vec3; center: Vec3 }): number[] {
+  const R = holster.turn(place.rotation)
+  const kt = holster.add(holster.sub(bind[anchor][1], holster.apply(R, place.center)), place.position)
+  return [...[0, 1, 2].flatMap((i) => [R[0][i], R[1][i], R[2][i]]), ...kt]
+}
+
+// The gun's entry in gun.s's table.
 export function entry(internal: string, model: Pick<ngmtool.Model, 'nodes'>, plan: holster.Plan, energy: number, automatic: boolean,
-  arm: holster.Arm, draw = GUN_DRAW): GunCharacter {
+  arm: holster.Arm, swap: Swap | null = null, draw = GUN_DRAW): GunCharacter {
   const p = plan.prop!
   const bind = ngbtool.pose(model, null, 0)
-  const R = holster.turn(plan.rotation)
-  const kt = holster.add(holster.sub(bind[p.anchor][1], holster.apply(R, plan.center)), plan.position)
   const moves = reachBones(model, arm, p.bone)
   return {
-    internal, bone: p.bone, hand: p.hand!, thigh: p.anchor, nodes: Math.max(p.bone, p.anchor, ...moves.flat()) + 1, automatic, energy,
-    bind: bind[p.bone][1], k: [...[0, 1, 2].flatMap((i) => [R[0][i], R[1][i], R[2][i]]), ...kt],
+    internal, bone: p.bone, hand: p.hand!, anchor: p.anchor, nodes: Math.max(p.bone, p.anchor, swap?.bone ?? 0, ...moves.flat()) + 1, automatic, energy,
+    bind: bind[p.bone][1], k: holsterK(bind, p.anchor, plan),
+    swap: swap && { bone: swap.bone, bind: bind[swap.bone][1], k: holsterK(bind, p.anchor, swap) },
     upper: arm.upper, fore: arm.fore, arm: [arm.upper, arm.fore, arm.hand].map((b) => bind[b][1]), draw, moves,
   }
 }

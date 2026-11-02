@@ -9,10 +9,11 @@
 #   powerpc-eabi-objcopy -O binary -j .text gun.elf gun.bin
 # `data`: {u32 clock ms of the last refresh, PLAYERS x {actor, entry or 0, the attack its shot plays for, f32 draw progress,
 # u32 clock ms it was last posed}, u32 count, count x entry}, written by dol.ts.
-# An entry: {u8 gun bone, hand, thigh, nodes a model needs, u8 flags (1 machine gun), u8 upper arm, forearm, pad,
-# f32 energy per shot, f32 gun bone's bind position[3], f32 holster K[4][3] (the gun's skin matrix is K times the thigh's),
-# f32 bind positions[3] of the upper arm, forearm and hand, f32 draw progress per ms, u8 bone masks[16] of the upper arm,
-# forearm and hand with what hangs from them (the gun bone left out), char[32] entity name, char[32] alt entity name}.
+# An entry: {u8 gun bone, hand, holster anchor, nodes a model needs, u8 flags (1 machine gun), u8 upper arm, forearm,
+# swap bone or 0xff, f32 energy per shot, f32 gun bone's bind position[3], f32 holster K[4][3] (the gun's skin matrix is K
+# times the anchor's), f32 bind positions[3] of the upper arm, forearm and hand, f32 draw progress per ms, u8 bone
+# masks[16] of the upper arm, forearm and hand with what hangs from them (the gun bone left out), char[32] entity name,
+# char[32] alt entity name, f32 swap K[4][3], f32 swap bone's bind position[3], pad[4]}.
 	.text
 	.globl gun_pose, gun_play, gun_pressed, gun_pick, gun_motion
 	.set GROUND, 0x14e          # action1
@@ -20,7 +21,7 @@
 	.set MAGIC, 86              # event 0x4E value 87: tuning field 176
 	.set PLAYERS, 4
 	.set SLOT, 20
-	.set ENTRY, 0xe0
+	.set ENTRY, 0x120
 	.set NAMES, 0xa0
 	.set C_ZERO, 0
 	.set C_HALF, 0xc
@@ -61,7 +62,8 @@
 
 # fn_801A479C, in place of its bl fn_8019D5E0 (r30 = the model, r31 its frame, 0x8(r31) the actor's world matrix at +0x78):
 # poses the bones, then draws or holsters the gun: its progress runs from 0 (holstered) to 1 (in hand) over the entry's
-# draw time while Z holds it, and back. The arm reaches for the holster up to halfway, where the gun moves to the hand.
+# draw time while Z holds it, and back. The arm reaches for the holster up to halfway, where the gun moves to the hand
+# and the swap bone, which otherwise follows the hand, moves to the holster.
 gun_pose:
 	stwu r1, -0x50(r1)
 	mflr r0
@@ -138,11 +140,67 @@ gun_pose:
 	fsubs f7, f0, f7
 	fmuls f8, f6, f6
 	fmuls f31, f8, f7
-	lbz r9, 2(r27)
+	mr r3, r25
+	addi r4, r27, 0x18
+	lbz r5, 2(r27)
+	slwi r5, r5, 6
+	add r5, r26, r5
+	bl holstered
+	lfs f0, C_ZERO(r31)
+	fcmpo cr0, f31, f0
+	ble 7f
+	mr r3, r28
+	mr r4, r27
+	mr r5, r25
+	bl reach
+7:	cmpwi r23, 0
+	beq 8f
+	lbz r9, 1(r27)
 	slwi r9, r9, 6
 	add r9, r26, r9
-	addi r10, r27, 0x18
-	mr r11, r25
+	addi r9, r9, -4
+	addi r10, r25, -4
+	li r0, 16
+	mtctr r0
+1:	lwzu r0, 4(r9)
+	stwu r0, 4(r10)
+	bdnz 1b
+	lbz r22, 7(r27)
+	cmplwi r22, 0xff
+	beq 8f
+	slwi r3, r22, 6
+	add r3, r26, r3
+	addi r4, r27, 0xe0
+	lbz r5, 2(r27)
+	slwi r5, r5, 6
+	add r5, r26, r5
+	bl holstered
+	lwz r3, 0xa8(r28)
+	slwi r0, r22, 4
+	add r3, r3, r0
+	addi r4, r27, 0x110
+	slwi r5, r22, 6
+	add r5, r26, r5
+	bl placed
+8:	lwz r3, 0xa8(r28)
+	lbz r0, 0(r27)
+	slwi r0, r0, 4
+	add r3, r3, r0
+	addi r4, r27, 0xc
+	mr r5, r25
+	bl placed
+9:	lfd f31, 0x48(r1)
+	lmw r22, 0x20(r1)
+	lwz r0, 0x54(r1)
+	mtlr r0
+	addi r1, r1, 0x50
+	blr
+
+# Skin matrix r3 = holster K r4 (4x3) times anchor skin matrix r5. Uses r0, r9-r11, ctr, f0-f6.
+holstered:
+	mr r9, r5
+	mr r10, r4
+	mr r11, r3
 	li r0, 4
 	mtctr r0
 5:	lfs f1, 0(r10)
@@ -182,53 +240,29 @@ gun_pose:
 	stfs f4, 0(r11)
 	stfs f5, 4(r11)
 	stfs f6, 8(r11)
-	lfs f0, C_ZERO(r31)
-	fcmpo cr0, f31, f0
-	ble 7f
-	mr r3, r28
-	mr r4, r27
-	mr r5, r25
-	bl reach
-7:	cmpwi r23, 0
-	beq 8f
-	lbz r9, 1(r27)
-	slwi r9, r9, 6
-	add r9, r26, r9
-	addi r9, r9, -4
-	addi r10, r25, -4
-	li r0, 16
-	mtctr r0
-1:	lwzu r0, 4(r9)
-	stwu r0, 4(r10)
-	bdnz 1b
-8:	lwz r9, 0xa8(r28)
-	lbz r0, 0(r27)
-	slwi r0, r0, 4
-	add r9, r9, r0
-	lfs f1, 0xc(r27)
-	lfs f2, 0x10(r27)
-	lfs f3, 0x14(r27)
+	blr
+
+# Bone position r3 = bind position r4 times skin matrix r5, with its translation. Uses r0, r10, r11, f0-f4.
+placed:
+	lfs f1, 0(r4)
+	lfs f2, 4(r4)
+	lfs f3, 8(r4)
 	li r10, 0
-1:	lfsx f0, r25, r10
+1:	lfsx f0, r5, r10
 	fmuls f4, f1, f0
 	addi r11, r10, 0x10
-	lfsx f0, r25, r11
+	lfsx f0, r5, r11
 	fmadds f4, f2, f0, f4
 	addi r11, r10, 0x20
-	lfsx f0, r25, r11
+	lfsx f0, r5, r11
 	fmadds f4, f3, f0, f4
 	addi r11, r10, 0x30
-	lfsx f0, r25, r11
+	lfsx f0, r5, r11
 	fadds f4, f4, f0
-	stfsx f4, r9, r10
+	stfsx f4, r3, r10
 	addi r10, r10, 4
 	cmpwi r10, 12
 	blt 1b
-9:	lfd f31, 0x48(r1)
-	lmw r22, 0x20(r1)
-	lwz r0, 0x54(r1)
-	mtlr r0
-	addi r1, r1, 0x50
 	blr
 
 # fn_80097CE8 (play motion r4 on actor r3), in place of its first instruction: while Z holds the gun, an attack or ranged

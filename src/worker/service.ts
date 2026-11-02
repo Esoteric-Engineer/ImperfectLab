@@ -319,16 +319,16 @@ export class Service {
     return mapping.autoMap(this.model, sk)
   }
 
-  // The base's skeleton with the gun's bone, which it may lack (gun.ts, rig).
-  private gunSkeleton(key: string, side: imperfect.GunSide): Skeleton {
+  // The base's skeleton with the gun's bone, which it may lack, and the swap bone (gun.ts, rig).
+  private gunSkeleton(key: string, side: imperfect.GunSide, swap: boolean): Skeleton {
     const base = this.base(key)
-    return new Skeleton(gun.rig(ngmtool.read(base.bundleFiles()[0])[1][0], base.body, side === 'left' ? 'L' : 'R'), base.body)
+    return new Skeleton(gun.rig(ngmtool.read(base.bundleFiles()[0])[1][0], base.body, side === 'left' ? 'L' : 'R', swap), base.body)
   }
 
   private fitted(c: imperfect.Character): { m: Model; sk: Skeleton; f: Fit; included: imperfect.Character['materials']; tris: Map<number, Tri[]> } {
     const m = this.currentModel()
     const g = imperfect.gunOf(c)
-    const sk = g && this.skeleton(c.base) ? this.gunSkeleton(c.base, g.side) : this.skeleton(c.base)
+    const sk = g && this.skeleton(c.base) ? this.gunSkeleton(c.base, g.side, g.swap !== undefined) : this.skeleton(c.base)
     if (!sk) throw new LabError(`${R.label(c.base)}'s skeleton is not supported yet; pick another base`)
     const f = new Fit(m, sk, c.mapping, c.overrides, c.fit.scale, c.fit.torso_squash ?? true, c.fit.flip, c.fit.floor_from_mesh ?? false)
     const included = c.materials.filter((x) => x.include)
@@ -385,17 +385,15 @@ export class Service {
     }
   }
 
-  // The fitted model with the holster's prop on the back, or the gun at the hip, or why it can't be shown.
-  holsterPreview(c: imperfect.Character, gun = false): { meshes: MeshData[]; bones: BoneLine[] } | string {
-    const g = gun ? imperfect.gunOf(c) : null, h = gun ? g?.holster : c.baseMoves.holster
+  holsterPreview(c: imperfect.Character, kind: 'club' | 'gun' | 'swap' = 'club'): { meshes: MeshData[]; bones: BoneLine[] } | string {
+    const g = kind === 'club' ? null : imperfect.gunOf(c), h = kind === 'club' ? c.baseMoves.holster : kind === 'gun' ? g?.holster : g?.swap
     if (!h) return 'the holster is off'
     try {
       const { m, sk, included, tris } = this.fitted(c)
       const images = materialImages(m, c)
       const bySlot = new Map(included.map((x, i) => [i, images.get(x.gltfMaterial) ?? null]))
-      const thigh = g ? sk.node(`${g.side === 'left' ? 'L' : 'R'}.thigh`) : undefined
-      if (g && thigh === undefined) return `${R.label(c.base)} has no thigh bone for the gun's holster`
-      const moved = g ? holsteredTris(tris, sk, h, imperfect.gunBone(c.base, g.side), thigh) : holsteredTris(tris, sk, h)
+      const bone = g && (kind === 'gun' ? imperfect.gunBone : imperfect.swapBone)(c.base, g.side)
+      const moved = g ? holsteredTris(tris, sk, h, bone!, gun.anchorOf(sk, g.holster.place)) : holsteredTris(tris, sk, h)
       return { meshes: previewTextures(fittedMeshes(moved, bySlot, c.size)), bones: gameBones(sk, c.size) }
     } catch (e) {
       if (!(e instanceof LabError)) throw e
@@ -436,8 +434,8 @@ export class Service {
     let mf = this.motionCache.get(key)
     if (!mf) {
       const baseModel = ngmtool.read(base.bundleFiles()[0])[1][0]
-      const [center, geometry] = tris && sk ? propShape(c, baseModel, base.body, tris, sk) : [null, null]
-      const shooter = gunPlanOf(c, baseModel, base.body, center, geometry)
+      const [center, geometry, swapCenter] = tris && sk ? propShape(c, baseModel, base.body, tris, sk) : [null, null, null]
+      const shooter = gunPlanOf(c, baseModel, base.body, center, geometry, swapCenter)
       const fx = Object.keys(c.moveReach).length ? new effects.Effects(src.entry('Misc/game.nfx')) : null
       try {
         mf = moves.motionFiles(src, base, c.internalName, c.moves, c.baseMoves.throw_reach, {}, null, c.moveReach, fx, c.size, c.moveIdle, onBackPlan(c, center), false, shooter)
