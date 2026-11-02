@@ -149,6 +149,9 @@ describe('round trip', () => {
     const m = imperfect.manifest(c) as Record<string, Record<string, Json>>
     expect(m.z_button.gun).toEqual({ side: 'left', damage: 25, energy: 12.5, bullets: 3, automatic: true, holster: imperfect.gunHolster('left') })
     expect(m.gun).toBeUndefined()
+    c.zButton!.gun = { ...g, sound: [116, 3] }
+    expect(imperfect.gunOf(imperfect.load(imperfect.save(c)))).toEqual({ ...g, sound: [116, 3] })
+    expect((imperfect.manifest(c) as Record<string, Record<string, Record<string, Json>>>).z_button.gun.sound).toBe('116:3')
   })
 
   it("reads a gun from a file, and an earlier build's gun as a Z action", () => {
@@ -165,6 +168,8 @@ describe('round trip', () => {
     bad({ automatic: 1 }, 'gun.automatic')
     bad({ drawn: { Run: true } }, 'unknown key')
     bad({ holster: { position: [0, 0, 1], rotation: [0, 0, 0] } }, 'gun.holster.position')
+    expect(ok({ sound: '20:900' })).toEqual({ ...imperfect.defaultGun('right'), sound: [20, 900] })
+    for (const sound of ['none', 'loud', '116', '116:3:1', '65536:0', '1:4294967296', 116]) bad({ sound }, 'gun.sound')
     const old = imperfect.load(withManifest({ 'model/model.glb': glb }, (m) => {
       m.base = 'wolverine'
       m.gun = { side: 'left', damage: 30, holster: imperfect.gunHolster('left'), drawn: { Run: true } }

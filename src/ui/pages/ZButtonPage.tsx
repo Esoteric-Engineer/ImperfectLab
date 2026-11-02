@@ -1,9 +1,10 @@
 import * as gun from '../../core/build/gun'
+import { soundChoices } from '../../core/build/moves'
 import { formatG } from '../../core/format'
 import { Z_SECONDS, Z_SIZE, Z_SLOW, Z_VISIBLE, type ZAction } from '../../core/game/dol'
 import { label } from '../../core/game/roster'
 import { encodePng } from '../../core/image/png'
-import { defaultGun, GAMEPLAY as RANGES, GUN_BULLETS, GUN_DAMAGE, GUN_ENERGY, GUN_SIDES, gunBone, type GunSide, LIFT, type ZButton, type ZCostume, Z_COSTUMES, type ZStats, zTexture } from '../../core/package/imperfect'
+import { defaultGun, GAMEPLAY as RANGES, GUN_BULLETS, GUN_DAMAGE, GUN_ENERGY, GUN_SIDES, gunBone, type GunSide, LIFT, soundRef, type ZButton, type ZCostume, Z_COSTUMES, type ZStats, zTexture } from '../../core/package/imperfect'
 import { decodePicture, pickFile } from '../../io/files'
 import { Note, NumberInput } from '../components/common'
 import { store, useStore } from '../store'
@@ -280,11 +281,17 @@ function Gun() {
     if (i >= 0) c.materials[i] = { ...c.materials[i], bind: bone(g.side), include: true }
     edited()
   }
+  const cat = store.moveCatalog()
+  const sounds = cat ? soundChoices(cat, c.base) : []
+  const events = [...new Set(sounds.map(([event]) => event))]
+  const sound = g.sound ? soundRef(g.sound) : 'none'
+  const setSound = (v: string) => set({ sound: v === 'none' ? undefined : v.split(':').map(Number) as [number, number] })
+  const asIn = (moves: string[]) => (moves.length ? ` (as in ${moves.slice(0, 3).join(', ')}${moves.length > 3 ? `, and ${moves.length - 3} more` : ''})` : '')
   return (
     <div className="zaction-body">
       <Note>
-        The gun rides in a holster at the hip. While holding Z, the character holds the gun and any attack fires the gun.<br />
-        The bullets make {label(c.base)}'s super attack sound: the game picks a move's sounds through scripts that other moves share, so the gun can't have a sound of its own yet.
+        The gun rides in a holster at the hip. Holding Z draws the gun, and once it's in hand any attack except a rise attack fires it.<br />
+        Each shot is silent, or plays one of {label(c.base)}'s own sound events, listed by the moves that play it.
       </Note>
       <table className="gameplay grid">
         <thead><tr><th>Value</th><th>Setting</th></tr></thead>
@@ -313,6 +320,21 @@ function Gun() {
           <tr>
             <td>Bullets per shot</td>
             <td><NumberInput min={GUN_BULLETS[0]} max={GUN_BULLETS[1]} step={1} value={g.bullets} onChange={(v) => set({ bullets: Math.round(v) })} /> <span className="muted">fired in a quick burst</span></td>
+          </tr>
+          <tr>
+            <td>Sound</td>
+            <td><select value={sound} onChange={(e) => setSound(e.target.value)}>
+              <option value="none">Silent (default)</option>
+              {sound !== 'none' && !sounds.some(([event, variant]) => `${event}:${variant}` === sound) && <option value={sound}>Event {sound.replace(':', ', variant ')}</option>}
+              {events.map((event) => (
+                <optgroup key={event} label={`Event ${event}`}>
+                  {sounds.filter(([e]) => e === event).map(([, variant, moves]) => (
+                    <option key={variant} value={`${event}:${variant}`}>Event {event}, variant {variant}{asIn(moves)}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>{!cat && <span className="muted"> reading {label(c.base)}'s sounds…</span>}<br />
+            <span className="muted">Custom sounds and other characters' sounds can't be used at the moment.<br />Support for this will get added in the future, but isn't on the roadmap any time soon.</span></td>
           </tr>
           <tr>
             <td>Machine gun</td>

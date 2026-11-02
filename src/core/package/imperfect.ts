@@ -10,7 +10,7 @@ import { CLUB } from '../build/basemoves'
 import { CLUB_MOVES, defaultDrawn } from '../build/holster'
 import { type DamageKey, KEYS as DAMAGE_KEYS } from '../build/damage'
 import { COSTS, type EnergyKey, FALLBACK, RECHARGE, type RechargeKey } from '../build/energy'
-import { BULLETS as GUN_BULLETS, DAMAGE as GUN_DAMAGE, DEFAULT_BULLETS, DEFAULT_DAMAGE, DEFAULT_ENERGY, ENERGY as GUN_ENERGY } from '../build/gun'
+import { BULLETS as GUN_BULLETS, DAMAGE as GUN_DAMAGE, DEFAULT_BULLETS, DEFAULT_DAMAGE, DEFAULT_ENERGY, ENERGY as GUN_ENERGY, type Sound as GunSound } from '../build/gun'
 import { LOW_ENERGY_STUN, MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
 import { DISTANCE, JUMP_DISTANCE, JUMPS, type Limb, LIMBS } from '../build/reach'
 import { Z_SECONDS, Z_SIZE, Z_SLOW, Z_VISIBLE } from '../game/dol'
@@ -143,6 +143,7 @@ export interface Gun {
   bullets: number
   automatic: boolean
   holster: { position: [number, number, number]; rotation: [number, number, number] }
+  sound?: GunSound
 }
 
 export interface BaseMoves {
@@ -359,7 +360,7 @@ export function manifest(c: Character): Json {
       stats: zStats,
       size: z.size ?? undefined,
       bullet: z.bullet ?? undefined,
-      gun: z.gun ?? undefined,
+      gun: z.gun ? { ...z.gun, sound: z.gun.sound === undefined ? undefined : soundRef(z.gun.sound) } : undefined,
       requires: Object.keys(z.requires).length ? z.requires : undefined,
     } : undefined,
     files: Object.fromEntries([...files].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, v]) => [k, sha(v)])),
@@ -518,8 +519,19 @@ function drawnMoves(v: unknown, what: string): Record<string, boolean> {
   return drawn
 }
 
+export const soundRef = (s: GunSound) => s.join(':')
+
+const GUN_SOUND = /^(\d{1,5}):(\d{1,10})$/
+
+function readGunSound(v: unknown, what: string): GunSound {
+  const ref = str(v, what, 20)!
+  const m = GUN_SOUND.exec(ref)
+  if (!m || Number(m[1]) > 0xffff || Number(m[2]) > 0xffffffff) throw new LabError(`manifest: ${what} is a sound event and its variant, like 116:3`)
+  return [Number(m[1]), Number(m[2])]
+}
+
 function readGun(v: unknown, what: string, legacy = false): Gun {
-  const g = keys(v, ['side', 'damage', 'energy', 'bullets', 'automatic', 'holster', ...(legacy ? ['drawn'] : [])], what)
+  const g = keys(v, ['side', 'damage', 'energy', 'bullets', 'automatic', 'holster', 'sound', ...(legacy ? ['drawn'] : [])], what)
   const side = str(g.side ?? 'right', `${what}.side`, 8)! as GunSide
   if (!GUN_SIDES.includes(side)) throw new LabError(`manifest: ${what}.side is right or left`)
   const h = keys(g.holster ?? gunHolster(side), ['position', 'rotation'], `${what}.holster`)
@@ -530,6 +542,7 @@ function readGun(v: unknown, what: string, legacy = false): Gun {
     bullets: num(g.bullets ?? DEFAULT_BULLETS, `${what}.bullets`, GUN_BULLETS[0], GUN_BULLETS[1], false, true)!,
     automatic: typed<boolean>(g.automatic ?? false, 'boolean', `${what}.automatic`),
     holster: { position: three(h.position, `${what}.holster.position`, HOLSTER_POSITION), rotation: three(h.rotation, `${what}.holster.rotation`, HOLSTER_ROTATION) },
+    ...(g.sound !== undefined && g.sound !== null ? { sound: readGunSound(g.sound, `${what}.sound`) } : {}),
   }
 }
 

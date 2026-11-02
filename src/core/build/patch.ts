@@ -459,14 +459,15 @@ export class Builder {
     if (!g || !this.propCenter || !this.gunGeometry) return null
     const side = gunSide(this.c)
     const prop = gun.prop(ngmtool.read(this.base.bundleFiles()[0])[1][0], this.base.body, side)
-    return { holster: { ...g.holster, center: this.propCenter, prop }, geometry: this.gunGeometry, sound: gun.THROW_SOUND, bullets: g.bullets, automatic: g.automatic }
+    return { holster: { ...g.holster, center: this.propCenter, prop }, geometry: this.gunGeometry, sound: g.sound ?? null, bullets: g.bullets, automatic: g.automatic }
   }
 
   gunEntry(plan: gun.Plan): D.GunCharacter {
     const g = gunOf(this.c)!
     const rigged = gun.rig(ngmtool.read(this.base.bundleFiles()[0])[1][0], this.base.body, gunSide(this.c))
     const model = this.c.size !== 1 ? bundle.scaleModel(rigged, this.c.size) : rigged
-    return gun.entry(this.c.internalName, model, holster.sized(plan.holster, this.c.size), g.energy, g.automatic)
+    const arm = holster.armOf(new Skeleton(rigged, this.base.body), gunSide(this.c))
+    return gun.entry(this.c.internalName, model, holster.sized(plan.holster, this.c.size), g.energy, g.automatic, arm)
   }
 
   // The character's own motion set, when a move changes an animation.

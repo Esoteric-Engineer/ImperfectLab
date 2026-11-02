@@ -16,7 +16,7 @@ import * as templates from '../src/core/build/templates'
 import * as trails from '../src/core/build/trails'
 import * as tuning from '../src/core/build/tuning'
 import * as ui from '../src/core/build/ui'
-import { equal, latin1, u32be } from '../src/core/bytes'
+import { equal, f32be, latin1, u32be } from '../src/core/bytes'
 import { LabError } from '../src/core/errors'
 import * as D from '../src/core/game/dol'
 import * as R from '../src/core/game/roster'
@@ -168,8 +168,10 @@ describe.skipIf(!ISO)('main.dol', () => {
     const dol = D.zActions(gameSource().dol, [{ internal: 'Synth', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, costume: false,
       damage: [null, null, null, null, null], taken: null, lift: null, size: null, slow: null, gun: true }])
     const guns: D.GunCharacter[] = [
-      { internal: 'Synth', bone: 39, hand: 27, thigh: 65, nodes: 66, automatic: true, energy: 7.5, bind: [0.5, 0, 1.5], k: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0.2, 0.3] },
-      { internal: 'Other', bone: 81, hand: 27, thigh: 58, nodes: 82, automatic: false, energy: 0, bind: [0, 0, 1], k: new Array(12).fill(0) },
+      { internal: 'Synth', bone: 39, hand: 27, thigh: 65, nodes: 66, automatic: true, energy: 7.5, bind: [0.5, 0, 1.5], k: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0.2, 0.3],
+        upper: 23, fore: 25, arm: [[0.2, 0, 1.55], [0.48, 0, 1.55], [0.75, 0, 1.55]], draw: 0.25, moves: [[23, 24, 25, 26, 27, 30], [25, 26, 27, 30], [27, 30]] },
+      { internal: 'Other', bone: 81, hand: 27, thigh: 58, nodes: 82, automatic: false, energy: 0, bind: [0, 0, 1], k: new Array(12).fill(0),
+        upper: 23, fore: 25, arm: [[0, 0, 0], [0, 0, 0], [0, 0, 0]], draw: D.GUN_DRAW, moves: [[], [], []] },
     ]
     for (const before of [dol, D.patchMany(dol, [1, 2].map((i) => ({ internal: `C${i}`, display: `C${i}`, stats: [1, 1, 1, 1, 1, 1], altStats: [1, 1, 1, 1, 1, 1] })))]) {
       const lo = D.arenaLo(before)
@@ -191,16 +193,22 @@ describe.skipIf(!ISO)('main.dol', () => {
       const table = at + D.GUN_DATA
       expect(u32be(out, table + D.GUN_COUNT)).toBe(2)
       const first = table + D.GUN_ENTRIES
-      expect([...out.subarray(first, first + 8)]).toEqual([39, 27, 65, 66, 1, 0, 0, 0])
+      expect([...out.subarray(first, first + 8)]).toEqual([39, 27, 65, 66, 1, 23, 25, 0])
       expect([0x8, 0xc, 0x18, 0x3c, 0x44].map((o) => u32be(out, first + o))).toEqual([0x40f00000, 0x3f000000, 0x3f800000, 0x3dcccccd, 0x3e99999a])
+      expect([0x48, 0x50, 0x54, 0x5c, 0x60, 0x68].map((o) => f32be(out, first + o))).toEqual([0.2, 1.55, 0.48, 1.55, 0.75, 1.55].map(Math.fround))
+      expect(f32be(out, first + 0x6c)).toBeCloseTo(1 / 250, 9)
+      expect([...out.subarray(first + 0x70, first + 0xa0)].flatMap((b, i) => [0, 1, 2, 3, 4, 5, 6, 7].filter((k) => b & (1 << k)).map((k) => [i >> 4, 8 * (i & 15) + k])))
+        .toEqual([...[23, 24, 25, 26, 27, 30].map((b) => [0, b]), ...[25, 26, 27, 30].map((b) => [1, b]), ...[27, 30].map((b) => [2, b])])
       expect(out[first + D.GUN_ENTRY_SIZE + 4]).toBe(0)
-      expect(latin1(out, first + 0x48, first + 0x88)).toBe('plr_synth' + '\0'.repeat(23) + 'plr_altSynth' + '\0'.repeat(20))
+      expect(f32be(out, first + D.GUN_ENTRY_SIZE + 0x6c)).toBeCloseTo(1 / (1000 * D.GUN_DRAW), 9)
+      expect(latin1(out, first + 0xa0, first + 0xe0)).toBe('plr_synth' + '\0'.repeat(23) + 'plr_altSynth' + '\0'.repeat(20))
       const changed = [...out.subarray(0, before.length)].flatMap((b, i) => (b !== before[i] ? [i] : []))
       const sites = [[0x801a4a08, 4], [0x80097ce8, 4], [0x800cc0bc, 4], [0x8009b04c, 4], [0x800e1efc, 0x2c]].map(([va, n]) => [D.fileOffset(out, va), D.fileOffset(out, va) + n])
       expect(changed.every((i) => i < 0x100 || sites.some(([a, b]) => i >= a && i < b) || [0x177bc4, 0x177bc8, 0x177bfc, 0x177c00].some((r) => i >= r && i < r + 4))).toBe(true)
       expect(() => D.gun(out, guns)).toThrow(LabError)
     }
     expect(() => D.gun(dol, Array.from({ length: 5 }, () => guns[0]))).toThrow(/room/)
+    expect(() => D.gun(dol, [{ ...guns[0], moves: [[23, 130], [], []] }])).toThrow(/128/)
   })
 
   it('refuses a patched main.dol', () => {
@@ -1825,11 +1833,45 @@ describe.skipIf(!ISO)('gun', () => {
     expect(recs.get(set.get('stand')!.anim.toLowerCase())!.tracks.some(([b]) => b === 39)).toBe(true)
     const [, models] = ngmtool.read(r.adds.get('Bundles/synth.ngm')!)
     expect(models[0].attachments.filter(([n, k, i]) => n === 39 && k === gun.MUZZLE_KIND && i === gun.MUZZLE_INDEX).length).toBe(1)
-    expect(r.gun).toMatchObject({ internal: 'Synth', bone: 39, hand: 27, thigh: 65, nodes: 66, automatic: true, energy: 7.5 })
+    expect(r.gun).toMatchObject({ internal: 'Synth', bone: 39, hand: 27, thigh: 65, automatic: true, energy: 7.5, upper: 23, fore: 25, draw: D.GUN_DRAW })
     expect(r.gun!.k.length).toBe(12)
+    const [upper, fore, hand] = r.gun!.moves
+    expect([upper[0], fore[0], hand[0]]).toEqual([23, 25, 27])
+    expect(hand.every((b) => fore.includes(b)) && fore.every((b) => upper.includes(b))).toBe(true)
+    expect(upper).not.toContain(39)
+    expect(r.gun!.nodes).toBe(Math.max(65, ...upper) + 1)
+    for (const state of Object.values(D.GUN_MOTIONS)) {
+      const rec = recs.get(set.get(state)!.anim.toLowerCase())!
+      const shots = gun.shotsOf(rec)
+      expect(rec.events.filter(([f, t, p]) => t === gun.SOUND && (p === gun.THROW_SOUND || shots.includes(f)))).toEqual([])
+    }
     expect(D.arenaLo(r.dol!)).toBeGreaterThan(D.arenaLo(src().dol))
     expect(r.adds.has('Cutscenes/synth_intro1.cut')).toBe(true)
     for (const text of ['gun: each bullet launches proj_SynthGun', 'a burst of 3 bullets from the right hand', 'holstered at the right hip']) expect(r.notes.some((n) => n.includes(text)), text).toBe(true)
+  })
+
+  it('plays the sound event picked for the gun, or none', () => {
+    for (const [sound, want] of [[[116, 3], [116, 3]], [undefined, null]] as [gun.Sound | undefined, [number, number] | null][]) {
+      const c = armed('wolverine')
+      c.zButton!.gun!.sound = sound
+      const r = new Builder(src(), c).build()
+      const set = motions(r), recs = records(r)
+      for (const state of Object.values(D.GUN_MOTIONS)) {
+        const rec = recs.get(set.get(state)!.anim.toLowerCase())!
+        const at = new Set(gun.shotsOf(rec))
+        const played = rec.events.filter(([f, t]) => t === gun.SOUND && at.has(f)).map(([, , p, v]) => [p, v])
+        expect(played).toEqual(want ? gun.shotsOf(rec).map(() => want) : [])
+      }
+      expect(r.notes.some((n) => n.includes(want ? 'with sound event 116:3' : 'silently'))).toBe(true)
+    }
+  })
+
+  it('lists the sound events each base plays, by the moves that play them', () => {
+    const cat = moves.catalog(src(), new effects.Effects(src().entry('Misc/game.nfx')))
+    expect(Object.keys(cat.wolverine.sounds!)).toEqual(expect.arrayContaining(['21:2', '116:3']))
+    const choices = moves.soundChoices(cat, 'wolverine')
+    expect(choices.find(([e, v]) => e === 116 && v === 3)![2]).toContain('Super attack 1')
+    expect(choices.map(([e, v]) => e * 1e6 + v)).toEqual(choices.map(([e, v]) => e * 1e6 + v).sort((a, b) => a - b))
   })
 
   it("gives the gun a bone of its own on the hand where the base's prop bone is taken or missing", () => {
@@ -1857,6 +1899,6 @@ describe.skipIf(!ISO)('gun', () => {
     const slot = [2, 3, 4, 5, 6].find((i) => u32be(r.dol!, 0x90 + 4 * i))!
     const table = u32be(r.dol!, 4 * slot) + D.GUN_DATA
     expect(u32be(r.dol!, table + D.GUN_COUNT)).toBe(2)
-    expect(latin1(r.dol!, table + D.GUN_ENTRIES + D.GUN_ENTRY_SIZE + 0x48, table + D.GUN_ENTRIES + D.GUN_ENTRY_SIZE + 0x51)).toBe('plr_other')
+    expect(latin1(r.dol!, table + D.GUN_ENTRIES + D.GUN_ENTRY_SIZE + 0xa0, table + D.GUN_ENTRIES + D.GUN_ENTRY_SIZE + 0xa9)).toBe('plr_other')
   })
 })

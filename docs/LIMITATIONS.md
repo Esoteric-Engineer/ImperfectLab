@@ -79,14 +79,13 @@ A Daredevil-based character's `holster` (`base_moves`, [`FORMAT.md`](FORMAT.md))
 
 A gun (`z_button.gun`, [`FORMAT.md`](FORMAT.md)).
 
-- **Drawing is instant,** not an animated reach, and the arm keeps whatever the animation does until a shot aims it.
-- **Every attack shoots** while Z holds the gun, including the ranged attacks and their super versions; the landings stay, and holding attack no longer starts a projectile character's ranged attack. Grabs, throws and the dodge are unchanged.
+- **Drawing takes 0.3 seconds** due to the reach animation.
 - **The air shot is Elektra's super jump attack** with the gun arm aimed, so its arc and timing are hers, and approximate on another skeleton. A burst fits the jump, so its bullets can come closer than in a ground shot.
 - **The arm points straight ahead,** and the game aims each bullet itself, so a bullet at a target above or below leaves at an angle to the barrel.
 - **The muzzle and barrel are guessed from the model** (the long side of the gun's outline, out of the end farther from the hand), so a gun of an unusual shape can come out aimed off.
-- **No sound of its own.** The bullets play the base's version of Elektra's throw sound (event 21). Every sound event the attacks use is shared with other moves, and no map from an event to its samples has been decoded, so a sample replaced for the gun would change other moves too.
+- **Only the base's own sounds.** Each shot plays one of the sound events the base's animations play (`sound`), or none. A match loads only each fighter's own sound bank, so other characters' sounds aren't available, and an uploaded sound can't be added: how an event picks its samples from the bank is compiled code that hasn't been decoded. A sample replaced on the **Sounds** page changes every move that plays it, the gun's shot included.
 - **Outside a match** the character's own animations carry the gun in its holster, which adds about 85 KB of keys on Wolverine.
-- **Storage.** Up to 4 characters can have a gun in one patch. `gun.s` and its table move the start of the arena 0x740 bytes later (0x88 more per extra character). The bullet's tuning field needs the character's own tuning file, so it takes a line in the tuning list (above), and the gun 253 bytes of the effect cache.
+- **Storage.** Up to 4 characters can have a gun in one patch. `gun.s` and its table move the start of the arena 0x12E0 bytes later (0xE0 more per extra character). The bullet's tuning field needs the character's own tuning file, so it takes a line in the tuning list (above), and the gun 253 bytes of the effect cache.
 
 ## Swapped moves
 

@@ -92,9 +92,10 @@ describe('gun', () => {
   it("fires a burst from Elektra's first throw, from the muzzle with the gun's sound, without her effects or hits", () => {
     const events: ngbtool.Event[] = [[0, 0x4f, 2, 0], [1, 0x4e, 3, 0], [2, 0x48, 4, 0], [3, 0x18, 0, 0], [4.8, 0x17, gun.THROW_SOUND, 2], [5, 0x17, 36, 700], [6, 0x04, 0, 1], [12, 0x04, 0, 1]]
     const head: ngbtool.Event[] = [[1, 0x4e, GUN_PICK_VALUE, 0], [1, 0x4f, gun.MUZZLE_INDEX, 0]]
-    expect(gun.shotEvents(events, 99, 2, 30)).toEqual([[...head, [5, 0x17, 36, 700], [6, 0x17, 99, 2], [6, 0x04, 0, 1], [9, 0x17, 99, 2], [9, 0x04, 0, 1]], 30])
+    expect(gun.shotEvents(events, [99, 5], 2, 30)).toEqual([[...head, [5, 0x17, 36, 700], [6, 0x17, 99, 5], [6, 0x04, 0, 1], [9, 0x17, 99, 5], [9, 0x04, 0, 1]], 30])
+    expect(gun.shotEvents(events, null, 2, 30)[0].filter(([, t]) => t === 0x17)).toEqual([[5, 0x17, 36, 700]])
     const fires = (bullets: number, length: number, grow = false) => {
-      const [out, n] = gun.shotEvents(events, 99, bullets, length, grow)
+      const [out, n] = gun.shotEvents(events, null, bullets, length, grow)
       return [out.filter(([, t]) => t === 0x04).map(([f]) => f), n]
     }
     expect(fires(1, 30)).toEqual([[6], 30])
@@ -102,9 +103,9 @@ describe('gun', () => {
     expect(fires(5, 20)).toEqual([[6, 7, 8, 9, 10], 20])
     expect(fires(10, 20, true)).toEqual([[6, 9, 12, 15, 18, 21, 24, 27, 30, 33], 43])
     expect(fires(3, 30, true)).toEqual([[6, 9, 12], 30])
-    const held = gun.shotEvents(events, 99, 3, 30, true, true)
+    const held = gun.shotEvents(events, null, 3, 30, true, true)
     expect([held[0].filter(([, t]) => t === 0x04).map(([f]) => f), held[1]]).toEqual([[2, 5, 8], 11])
-    expect(() => gun.shotEvents([[1, 0x04, 0, 0]], 21, 2, 30)).toThrow(/no shot/)
+    expect(() => gun.shotEvents([[1, 0x04, 0, 0]], null, 2, 30)).toThrow(/no shot/)
   })
 
   it('puts the muzzle attachment on the gun bone where the muzzle is', () => {
@@ -135,7 +136,7 @@ describe('gun', () => {
 
   it("holsters the gun at run time where the baked holster puts it, from the thigh's skin matrix", () => {
     const plan: holster.Plan = { position: [0.1, 0.02, -0.2], rotation: [10, 90, -20], center: [0.7, 0, 1.5], prop: PROP }
-    const e = gun.entry('Deadpool', MODEL, plan, 7.5, true)
+    const e = gun.entry('Deadpool', MODEL, plan, 7.5, true, ARM)
     expect([e.bone, e.hand, e.thigh, e.nodes, e.energy, e.automatic]).toEqual([39, 27, 1, 40, 7.5, true])
     expect(e.bind).toEqual(ngbtool.pose(MODEL, null, 0)[39][1])
     const rec = { ...record(10, []), tracks: [[1, 0, [[0, ngbtool.encodeRotation(ngbtool.matQuat(holster.turn([30, -10, 45])))]]], [1, 1, [[0, ngbtool.encodeTranslation([0.2, -0.1, 0.05])]]]] as ngbtool.Track[] }
@@ -148,6 +149,15 @@ describe('gun', () => {
       const want = holster.add(holster.apply(GR, holster.sub(p, e.bind)), GT)
       skin(k(p)).forEach((x, i) => expect(x).toBeCloseTo(want[i], 5))
     }
+  })
+
+  it('reaches with the arm and everything under it but the gun', () => {
+    const plan: holster.Plan = { position: [0, 0, 0], rotation: [0, 0, 0], center: [0, 0, 0], prop: PROP }
+    const e = gun.entry('Deadpool', MODEL, plan, 0, false, ARM, 0.4)
+    expect([e.upper, e.fore, e.draw]).toEqual([23, 25, 0.4])
+    expect(e.arm).toEqual([23, 25, 27].map((b) => ngbtool.pose(MODEL, null, 0)[b][1]))
+    expect(e.moves).toEqual([[23, 24, 25, 26, 27, 38], [25, 26, 27, 38], [27]])
+    expect(gun.reachBones(MODEL, ARM, 27)).toEqual([[23, 24, 25, 26, 38, 39], [25, 26, 38, 39], []])
   })
 
   it('draws the bullet as a streak and a glow', () => {

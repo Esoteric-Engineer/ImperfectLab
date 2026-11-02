@@ -159,6 +159,7 @@ export interface BaseMotions {
   damage: number[]
   reach?: Record<string, reach.Summary>
   strikes?: Record<string, number[]>
+  sounds?: Record<string, string[]>
 }
 export type Catalog = Record<string, BaseMotions>
 
@@ -180,6 +181,7 @@ export function catalog(src: GameSource, fx: Effects): Catalog {
       const names = new Set<string>()
       const plans: Record<string, reach.Summary> = {}
       const strikes: Record<string, number[]> = {}
+      const sounds: Record<string, string[]> = {}
       for (const slot of SLOTS) {
         if (!src.has(`Bundles/${stem}${slot}.ngb`)) continue
         for (const [n, length, events] of ngbtool.events(src.entry(`Bundles/${stem}${slot}.ngb`))) {
@@ -190,17 +192,34 @@ export function catalog(src: GameSource, fx: Effects): Catalog {
           if (p) plans[k] = reach.summary(p)
           const hits = damage.strikes(events)
           if (hits.length) strikes[k] = hits
+          for (const ref of new Set(events.filter(([, t]) => t === gun.SOUND).map(([, , p, v]) => `${p}:${v}`))) (sounds[ref] ??= []).push(k)
         }
       }
       const m = resolved(src, nmstool.parse(src.entry(`Motions/${set}`)), (a) => names.has(a.toLowerCase()))
       const range = tun.num(tuning.FIELDS.super_throw_range)
       const values = damage.KEYS.map((k) => tun.num(tuning.FIELDS[k]))
-      out[key] = { body: base.body, motions: Object.fromEntries([...m].map(([k, v]) => [k, v.anim])), range, damage: values, reach: plans, strikes }
+      out[key] = { body: base.body, motions: Object.fromEntries([...m].map(([k, v]) => [k, v.anim])), range, damage: values, reach: plans, strikes, sounds }
     } catch (e) {
       if (!(e instanceof LabError)) throw e
     }
   }
   return out
+}
+
+export function soundChoices(cat: Catalog, base: string): [number, number, string[]][] {
+  const own = cat[base]
+  if (!own?.sounds) return []
+  const byAnim = new Map<string, string[]>()
+  for (const move of MOVES) {
+    for (const state of move.states) {
+      const a = own.motions[state.toLowerCase()]?.toLowerCase()
+      if (a && !byAnim.get(a)?.includes(move.label)) byAnim.set(a, [...(byAnim.get(a) ?? []), move.label])
+    }
+  }
+  return Object.entries(own.sounds).map(([ref, anims]): [number, number, string[]] => {
+    const [event, variant] = ref.split(':').map(Number)
+    return [event, variant, [...new Set(anims.flatMap((a) => byAnim.get(a) ?? []))]]
+  }).sort((a, b) => a[0] - b[0] || a[1] - b[1])
 }
 
 export function animations(cat: Catalog, base: string, move: Move): (string | null)[] | null {
@@ -554,8 +573,9 @@ function gunMoves(src: GameSource, base: R.BaseCharacter, own: nmstool.MotionSet
   }
   own.set({ state: GUN_MOTIONS.ground, anim: put(shot, groundSlots), opts: groundOpts })
   own.set({ state: GUN_MOTIONS.air, anim: put(airShot, airSlots), opts: airOpts })
-  const n = shooter.bullets
-  return `gun: with Z held, an attack fires ${n === 1 ? 'a bullet' : `a burst of ${n} bullets`} from the ${prop.side === 'R' ? 'right' : 'left'} hand instead (${base.label}'s stand on the ground, Elektra's super jump attack in the air)`
+  const n = shooter.bullets, sound = shooter.sound
+  const heard = sound ? `with sound event ${sound.join(':')}` : 'silently'
+  return `gun: with Z held, an attack fires ${n === 1 ? 'a bullet' : `a burst of ${n} bullets`} from the ${prop.side === 'R' ? 'right' : 'left'} hand instead, ${heard} (${base.label}'s stand on the ground, Elektra's super jump attack in the air)`
 }
 
 export interface MotionFiles {

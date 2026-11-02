@@ -1,6 +1,6 @@
 // A gun (manifest `z_button.gun`): holstered at the hip, drawn while Z is held, when attacks shoot it instead (game/gun.s).
 import { LabError } from '../errors'
-import { GUN_FIELD, GUN_PICK_VALUE, type GunCharacter } from '../game/dol'
+import { GUN_DRAW, GUN_FIELD, GUN_PICK_VALUE, type GunCharacter } from '../game/dol'
 import type * as R from '../game/roster'
 import * as nfxtool from '../mnroi/nfxtool'
 import * as ngbtool from '../mnroi/ngbtool'
@@ -30,6 +30,8 @@ export const DEFAULT_ENERGY = 5
 export const BULLETS: [number, number] = [1, 10]
 export const DEFAULT_BULLETS = 2
 export const THROW_SOUND = 21
+export const SOUND = 0x17
+export type Sound = [number, number]
 export const MUZZLE_KIND = 21
 export const MUZZLE_INDEX = 3
 const SPAWN = 0x4f
@@ -220,17 +222,16 @@ function withRotation(rec: ngbtool.Record, bone: number, keys: ngbtool.Key[]): n
   return { ...rec, tracks, pointers }
 }
 
-export function shotEvents(events: ngbtool.Event[], sound: number, bullets: number, length: number, grow = false, held = false): [ngbtool.Event[], number] {
+export function shotEvents(events: ngbtool.Event[], sound: Sound | null, bullets: number, length: number, grow = false, held = false): [ngbtool.Event[], number] {
   const fire = events.find(([, t]) => t === FIRE)
   if (!fire || fire[0] <= 1) throw new LabError("Elektra's throw has no shot to time the gun's from")
-  const voice = events.find(([, t, p]) => t === 0x17 && p === THROW_SOUND)?.[3] ?? 0
   const drop = new Set([...OWN_EFFECTS, ...HIT_ON, FIRE, SPAWN, PICK])
-  const kept = events.filter(([, t, p]) => !drop.has(t) && !(t === 0x17 && p === THROW_SOUND))
+  const kept = events.filter(([, t, p]) => !drop.has(t) && !(t === SOUND && p === THROW_SOUND))
   const spacing = grow || bullets < 2 ? SPACING : Math.max(1, Math.min(SPACING, Math.floor((length - TAIL - fire[0]) / (bullets - 1))))
   const first = held ? HELD_FIRST : fire[0]
   const frames = Array.from({ length: bullets }, (_, i) => first + i * spacing)
   const out: ngbtool.Event[] = [...kept, [1, PICK, GUN_PICK_VALUE, 0], [1, SPAWN, MUZZLE_INDEX, 0],
-    ...frames.flatMap((f): ngbtool.Event[] => [[f, 0x17, sound, voice], [f, FIRE, fire[2], fire[3]]])]
+    ...frames.flatMap((f): ngbtool.Event[] => [...(sound ? [[f, SOUND, ...sound] as ngbtool.Event] : []), [f, FIRE, fire[2], fire[3]]])]
   const last = frames[frames.length - 1]
   return [out.sort((x, y) => x[0] - y[0]), grow && held ? last + SPACING : grow ? Math.max(length, last + TAIL) : length]
 }
@@ -269,19 +270,33 @@ export function tracer(fx: Effects, internal: string): string {
 export interface Plan {
   holster: holster.Plan
   geometry: Geometry
-  sound: number
+  sound: Sound | null
   bullets: number
   automatic: boolean
 }
 
+// The bones under each of the arm's, the gun's left out.
+export function reachBones(model: Pick<ngmtool.Model, 'nodes'>, arm: holster.Arm, gunBone: number): number[][] {
+  const under = (top: number) => model.nodes.flatMap((_, i) => {
+    for (let n = i, k = 0; n >= 0 && n < model.nodes.length && k < model.nodes.length; n = model.nodes[n][2], k++) {
+      if (n === top) return i === gunBone ? [] : [i]
+    }
+    return []
+  })
+  return [arm.upper, arm.fore, arm.hand].map(under)
+}
+
 // The gun's entry in gun.s's table; K takes a vertex at bind to where the thigh's skin matrix puts it: R p + thigh + position - R center.
-export function entry(internal: string, model: Pick<ngmtool.Model, 'nodes'>, plan: holster.Plan, energy: number, automatic: boolean): GunCharacter {
+export function entry(internal: string, model: Pick<ngmtool.Model, 'nodes'>, plan: holster.Plan, energy: number, automatic: boolean,
+  arm: holster.Arm, draw = GUN_DRAW): GunCharacter {
   const p = plan.prop!
   const bind = ngbtool.pose(model, null, 0)
   const R = holster.turn(plan.rotation)
   const kt = holster.add(holster.sub(bind[p.anchor][1], holster.apply(R, plan.center)), plan.position)
+  const moves = reachBones(model, arm, p.bone)
   return {
-    internal, bone: p.bone, hand: p.hand!, thigh: p.anchor, nodes: Math.max(p.bone, p.hand!, p.anchor) + 1, automatic, energy,
+    internal, bone: p.bone, hand: p.hand!, thigh: p.anchor, nodes: Math.max(p.bone, p.anchor, ...moves.flat()) + 1, automatic, energy,
     bind: bind[p.bone][1], k: [...[0, 1, 2].flatMap((i) => [R[0][i], R[1][i], R[2][i]]), ...kt],
+    upper: arm.upper, fore: arm.fore, arm: [arm.upper, arm.fore, arm.hand].map((b) => bind[b][1]), draw, moves,
   }
 }
