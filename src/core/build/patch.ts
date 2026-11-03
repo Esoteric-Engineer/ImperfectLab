@@ -664,6 +664,7 @@ export function zCharacters(chars: Character[]): D.ZCharacter[] {
       internal: c.internalName, seconds: z.requires.energy?.seconds ?? 0, regen: z.requires.energy?.regen ?? false,
       undetected: z.stealth?.undetected ?? false, untouchable: z.stealth?.untouchable ?? false, visible: z.stealth?.visible ?? 1,
       costume: z.costume !== null, damage: damage.KEYS.map((k) => st[k] ?? null), taken: st.damage_taken ?? null, lift: st.lift ?? null,
+      run: st.run_speed ?? null, sprint: st.sprint_speed ?? null,
       size: z.size, slow: z.bullet, gun: z.gun !== null,
     }]
   })

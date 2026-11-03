@@ -103,10 +103,10 @@ describe.skipIf(!ISO)('main.dol', () => {
 
   it('binds Z to its actions', () => {
     const dol = gameSource().dol
-    const none = { costume: false, damage: [null, null, null, null, null], taken: null, lift: null, size: null, slow: null, gun: false }
+    const none = { costume: false, damage: [null, null, null, null, null], taken: null, lift: null, run: null, sprint: null, size: null, slow: null, gun: false }
     const out = D.zActions(dol, [
       { internal: 'Synth', seconds: 8, regen: true, undetected: false, untouchable: true, visible: 0.25, ...none },
-      { internal: 'Other', seconds: 0, regen: false, undetected: true, untouchable: false, visible: 1, ...none, costume: true, damage: [null, 30, null, null, 2.5], taken: 0.5, lift: 'heavy', size: 2.5, slow: 0.5 },
+      { internal: 'Other', seconds: 0, regen: false, undetected: true, untouchable: false, visible: 1, ...none, costume: true, damage: [null, 30, null, null, 2.5], taken: 0.5, lift: 'heavy', run: 20, sprint: 32, size: 2.5, slow: 0.5 },
       { internal: 'Small', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, ...none, size: 0.5 },
       { internal: 'Quick', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, ...none, slow: 0.25, gun: true },
     ])
@@ -134,10 +134,10 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(latin1(out, t, at(0x80137494) + 0x858)).toContain('plr_synth\0plr_altSynth\0')
     expect([u32be(out, t), u32be(out, t + 4), u32be(out, t + 8)]).toEqual([0x41000000, 5, 0x3e800000])
     const other = t + 12 + 24
-    expect([u32be(out, other), u32be(out, other + 4), u32be(out, other + 8)]).toEqual([0, 2 | 8 | 16 | 32 | 64, 0x3f800000])
-    expect([12, 16, 20, 24, 28, 32, 36, 40, 44].map((o) => u32be(out, other + o))).toEqual([0xbf800000, 0x41f00000, 0xbf800000, 0xbf800000, 0x40200000, 0x3f000000, 0x20, 0x40200000, 0x3f000000])
-    expect(latin1(out, other + 48, other + 72)).toBe('plr_other\0plr_altOther\0\0')
-    const small = other + 72
+    expect([u32be(out, other), u32be(out, other + 4), u32be(out, other + 8)]).toEqual([0, 2 | 8 | 16 | 32 | 64 | 256, 0x3f800000])
+    expect([12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52].map((o) => u32be(out, other + o))).toEqual([0xbf800000, 0x41f00000, 0xbf800000, 0xbf800000, 0x40200000, 0x3f000000, 0x20, 0x41a00000, 0x42000000, 0x40200000, 0x3f000000])
+    expect(latin1(out, other + 56, other + 80)).toBe('plr_other\0plr_altOther\0\0')
+    const small = other + 80
     expect([u32be(out, small + 4), u32be(out, small + 12)]).toEqual([32, 0x3f000000])
     expect(latin1(out, small + 16, small + 40)).toBe('plr_small\0plr_altSmall\0\0')
     const quick = small + 40
@@ -154,6 +154,7 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(() => D.zActions(dol, [{ ...one, seconds: 61 }])).toThrow(LabError)
     expect(() => D.zActions(dol, [{ ...one, visible: 0.99 }])).toThrow(LabError)
     expect(() => D.zActions(dol, [{ ...one, lift: 'huge' }])).toThrow(LabError)
+    expect(() => D.zActions(dol, [{ ...one, run: 0 }])).toThrow(LabError)
     expect(() => D.zActions(dol, [{ ...one, size: 3.5 }])).toThrow(LabError)
     expect(() => D.zActions(dol, [{ ...one, size: 0.05 }])).toThrow(LabError)
     expect(() => D.zActions(dol, [{ ...one, slow: 0.2 }])).toThrow(LabError)
@@ -166,7 +167,7 @@ describe.skipIf(!ISO)('main.dol', () => {
 
   it("adds the gun's code in a text section of its own and hooks the posing, motions, presses, events, stops and projectile pick", () => {
     const dol = D.zActions(gameSource().dol, [{ internal: 'Synth', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, costume: false,
-      damage: [null, null, null, null, null], taken: null, lift: null, size: null, slow: null, gun: true }])
+      damage: [null, null, null, null, null], taken: null, lift: null, run: null, sprint: null, size: null, slow: null, gun: true }])
     const guns: D.GunCharacter[] = [
       { internal: 'Synth', bone: 39, hand: 27, anchor: 65, nodes: 66, automatic: true, energy: 7.5, bind: [0.5, 0, 1.5], k: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0.2, 0.3],
         swap: { bone: 72, bind: [0.75, 0, 1.55], k: [0, 1, 0, -1, 0, 0, 0, 0, 1, 0.5, 0.25, 2] }, upper: 23, fore: 25, arm: [[0.2, 0, 1.55], [0.48, 0, 1.55], [0.75, 0, 1.55]], draw: 0.25, moves: [[23, 24, 25, 26, 27, 30], [25, 26, 27, 30], [27, 30]] },
@@ -476,7 +477,7 @@ describe.skipIf(!ISO)('game', () => {
     c.zButton = { stealth: { undetected: true, untouchable: false, visible: 0.5 }, costume: null, stats: null, size: null, bullet: null, gun: null, requires: { energy: { seconds: 5, regen: false } } }
     const r = new Builder(src(), c).build()
     expect(r.adds.has('Bundles/synth.ngm')).toBe(true)
-    expect(equal(r.dol!, D.zActions(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt), [{ internal: 'Synth', seconds: 5, regen: false, undetected: true, untouchable: false, visible: 0.5, costume: false, damage: [null, null, null, null, null], taken: null, lift: null, size: null, slow: null, gun: false }]))).toBe(true)
+    expect(equal(r.dol!, D.zActions(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt), [{ internal: 'Synth', seconds: 5, regen: false, undetected: true, untouchable: false, visible: 0.5, costume: false, damage: [null, null, null, null, null], taken: null, lift: null, run: null, sprint: null, size: null, slow: null, gun: false }]))).toBe(true)
     expect(report(c, r)).toContain('Stealth Mode')
     expect(r.adds.has('Bundles/synth_alt.tpl')).toBe(true)
     const t = new R.Templates(r.sets.get('Misc/Global.not')!)
@@ -507,7 +508,7 @@ describe.skipIf(!ISO)('game', () => {
     expect(latin1(r.adds.get('Bundles/synth.ngt')!)).toContain('Synth_z\r\n')
     expect(latin1(r.adds.get('Bundles/synth_alt.ngt')!)).not.toContain('Synth_altz')
     const want = D.zActions(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt),
-      [{ internal: 'Synth', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, costume: true, damage: [null, null, 40, null, null], taken: null, lift: 'light', size: 1.5, slow: 0.4, gun: false }])
+      [{ internal: 'Synth', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, costume: true, damage: [null, null, 40, null, null], taken: null, lift: 'light', run: null, sprint: null, size: 1.5, slow: 0.4, gun: false }])
     expect(equal(r.dol!, want)).toBe(true)
     expect(report(c, r)).toContain('Costume Change, Stat Change, Change Size, Bullet Time')
     c.materials = [...c.materials, { ...imperfect.newMaterial(1, 'cape', true, '_z', [64, 64]), texture: 'textures/skin.png' }]

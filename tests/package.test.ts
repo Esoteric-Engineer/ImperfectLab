@@ -368,7 +368,7 @@ describe('round trip', () => {
     expect(imperfect.load(imperfect.save(c)).zButton).toEqual(z)
     c.files.set('textures/mat0_altz.png', pngBytes())
     z.costume = { normal: { 0: 'hue:40' }, alt: { 0: 'textures/mat0_altz.png' } }
-    z.stats = { attack_damage_2: 30, damage_taken: 0.5, lift: 'heavy' }
+    z.stats = { attack_damage_2: 30, damage_taken: 0.5, run_speed: 20.5, sprint_speed: 35, lift: 'heavy' }
     expect(imperfect.load(imperfect.save(c)).zButton).toEqual(z)
     expect(imperfect.zTexture(z, 'normal', 1)).toBe('alt')
     expect(imperfect.zTexture(z, 'alt', 1)).toBe('normal')

@@ -217,7 +217,7 @@ The action picked on the **Z-Button Actions** page (`z_button`, [`FORMAT.md`](FO
 
 - **CPU players never press it.** Their input class doesn't read the table.
 - **Two players at once.** The rewrite has room for two active players, which a versus match never exceeds.
-- **Stat Change.** Attack damage is set when a move starts (`fn_800DA884`), so a change applies from the next move, not partway through one.
+- **Stat Change.** Attack damage is set when a move starts (`fn_800DA884`), so a change applies from the next move, not partway through one. Run and sprint speed are read through the same tuning getter and change at once.
 - **Change Size scales the skeleton, not the physics body.** The world matrix the bones are posed from (`fn_801A479C`) is scaled, so the model, its shadow, hit regions, attack volumes and where effects attach grow or shrink with it, on top of `model.size`. The collision radius and height that the camera, lock-on and CPU read are scaled too. The Havok body that pushes against walls and the opponent keeps its size.
 - **What else stays the same while sized**: run and sprint speed, how high the character jumps, grab, aim and pickup ranges, effect sizes, and the throw positions.
 - **Bullet Time slows the game's clock, not each thing in it.** `fn_801AF790` scales every frame's time by the world speed (on top of the game's own slow motion), and the character's own update (`fn_80094E04`, `fn_80074814`, `fn_800748A4`) is given the unslowed time. Its Havok body moves at 1 / the world speed during each physics step (`fn_80061A10`), so it covers full-speed ground and still collides, and its state timers (`fn_800BD2D0`, `fn_800BD3A8`) run at full speed.

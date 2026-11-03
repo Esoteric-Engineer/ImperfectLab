@@ -205,8 +205,8 @@ export type SoundSource = { game: string } | { file: string }
 // A Z costume texture: 'normal' or 'alt' (that costume's), 'hue:<degrees>' (costume 1's, shifted) or a textures/ member.
 export const Z_COSTUMES = ['normal', 'alt'] as const
 export type ZCostume = (typeof Z_COSTUMES)[number]
-export type ZStats = Partial<Record<DamageKey | 'damage_taken', number>> & { lift?: string }
-export const Z_STATS: (DamageKey | 'damage_taken')[] = [...DAMAGE_KEYS, 'damage_taken']
+export type ZStats = Partial<Record<DamageKey | 'damage_taken' | 'run_speed' | 'sprint_speed', number>> & { lift?: string }
+export const Z_STATS: (DamageKey | 'damage_taken' | 'run_speed' | 'sprint_speed')[] = [...DAMAGE_KEYS, 'damage_taken', 'run_speed', 'sprint_speed']
 
 export interface ZButton {
   stealth: { undetected: boolean; untouchable: boolean; visible: number | null } | null
