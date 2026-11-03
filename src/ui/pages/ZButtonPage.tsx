@@ -124,7 +124,7 @@ function Costume() {
   const included = c.materials.filter((m) => m.include)
   return (
     <div className="zaction-body">
-      <Note>While Z is held, costumes are replaced with the textures below. Uses additional in-match memory.</Note>
+      <Note>While Z is held, costumes are replaced with the textures below. Uses additional in-match memory. Holding Z overrides any health-based texture changes, if those are set.</Note>
       {!included.length ? <Note>Import a model in the Model step first.</Note> : (
         <table className="gameplay grid">
           <thead><tr><th>Material</th>{Z_COSTUMES.map((k) => <th key={k}>{COSTUME_LABELS[k]} while Z is held</th>)}</tr></thead>
@@ -213,6 +213,8 @@ function BulletTime() {
   )
 }
 
+const SPEEDS: ['run_speed' | 'sprint_speed', string][] = [['run_speed', 'Run speed'], ['sprint_speed', 'Sprint speed']]
+
 function Stats() {
   const c = store.character
   const stats = c.zButton!.stats!
@@ -241,6 +243,20 @@ function Stats() {
             <td><NumberInput className="short" disabled={stats.damage_taken === undefined} min={100 * lo} max={100 * hi} step={0.1}
               value={Math.round(1000 * (stats.damage_taken ?? taken ?? 1)) / 10} onChange={(v) => set('damage_taken', Math.round(v * 10) / 1000)} />%</td>
           </tr>
+          {SPEEDS.map(([key, label]) => {
+            const normal = c.gameplay[key] ?? bv?.gameplay[key]
+            const [min, max] = RANGES[key]
+            return (
+              <tr key={key}>
+                <td><label className="check"><input type="checkbox" checked={stats[key] !== undefined} onChange={(e) => {
+                  set(key, e.target.checked ? normal ?? min : null)
+                }} /> {label}</label></td>
+                <td className="num">{normal === undefined ? '-' : formatG(Math.round(100 * normal) / 100)}</td>
+                <td><NumberInput className="short" disabled={stats[key] === undefined} min={min} max={max} step={0.01}
+                  value={stats[key] ?? normal ?? min} onChange={(v) => set(key, v)} /></td>
+              </tr>
+            )
+          })}
           <tr>
             <td><label className="check"><input type="checkbox" checked={stats.lift !== undefined} onChange={(e) => {
               set('lift', e.target.checked ? lift ?? 'medium' : null)

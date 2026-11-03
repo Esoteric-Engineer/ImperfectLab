@@ -48,6 +48,11 @@ The ribbons on the **Aura** page (`trails`, [`FORMAT.md`](FORMAT.md)):
 - **Straight between joints.** A ribbon runs straight from one joint to the next, so it doesn't follow a bent or bulky limb's outline.
 - **Effect memory.** A color's ribbon and controllers take 206 bytes of the effect cache for the arms alone and 452 for every part, and two costumes of the same color share them. They count against what a full aura tint may grow the cache by.
 
+## Glowing eyes
+
+- **Replaces the base's eye markers.** Base effects drawn on the eyes (Storm's power-up arcs) follow the new eyes, and an Iron Man base's own glow is left out.
+- **Effect memory.** A color takes 93 bytes of the effect cache (white at size 1 is Iron Man's own and takes none).
+
 ## Tuning
 
 Every character with changed stats, a tint or changed cutscenes gets its own tuning file. Each one listed in `Misc/nvblist.txt` takes 12,354 bytes when the game boots, and the list itself has room for about 53 more bytes (a line costs its two names plus 2, so `PLAYER <internal name>` costs the name's length plus 8).
@@ -217,7 +222,7 @@ The action picked on the **Z-Button Actions** page (`z_button`, [`FORMAT.md`](FO
 
 - **CPU players never press it.** Their input class doesn't read the table.
 - **Two players at once.** The rewrite has room for two active players, which a versus match never exceeds.
-- **Stat Change.** Attack damage is set when a move starts (`fn_800DA884`), so a change applies from the next move, not partway through one.
+- **Stat Change.** Attack damage is set when a move starts (`fn_800DA884`), so a change applies from the next move, not partway through one. Run and sprint speed are read through the same tuning getter and change at once.
 - **Change Size scales the skeleton, not the physics body.** The world matrix the bones are posed from (`fn_801A479C`) is scaled, so the model, its shadow, hit regions, attack volumes and where effects attach grow or shrink with it, on top of `model.size`. The collision radius and height that the camera, lock-on and CPU read are scaled too. The Havok body that pushes against walls and the opponent keeps its size.
 - **What else stays the same while sized**: run and sprint speed, how high the character jumps, grab, aim and pickup ranges, effect sizes, and the throw positions.
 - **Bullet Time slows the game's clock, not each thing in it.** `fn_801AF790` scales every frame's time by the world speed (on top of the game's own slow motion), and the character's own update (`fn_80094E04`, `fn_80074814`, `fn_800748A4`) is given the unslowed time. Its Havok body moves at 1 / the world speed during each physics step (`fn_80061A10`), so it covers full-speed ground and still collides, and its state timers (`fn_800BD2D0`, `fn_800BD3A8`) run at full speed.
@@ -225,6 +230,14 @@ The action picked on the **Z-Button Actions** page (`z_button`, [`FORMAT.md`](FO
 - **Pushing while in Bullet Time is stronger.** The character's body moves faster within each physics step, so it shoves the opponent and props harder than usual.
 - **A few of the character's own timeouts may run long**: those measured on the game clock outside the state timers.
 - **The world speed has a floor of 25%.** Below it, the game takes physics steps only every few frames and movement stutters.
+
+## Damage stages
+
+The textures each costume changes to as health runs down (`model.damage_stages`, [`FORMAT.md`](FORMAT.md)):
+
+- **Every texture is loaded with the match.** Each picture a stage adds is a CMPR texture in that costume's bundle: 32 KB at 256x256, 128 KB at 512x512, on top of the memory above.
+- **Each stage adds parts.** Each stage that changes something adds one more part to the costume, and each part is a block in `shaders.nsa`.
+- **After Z's Costume Change is released, the costume returns to its damage stage a frame later.**
 
 ## More characters
 

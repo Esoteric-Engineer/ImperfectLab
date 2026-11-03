@@ -12,8 +12,9 @@
 # `slots`: two {actor, stamp ms, seconds, flags, entry, saved actor+0x308}.
 # `sizes`: two {actor, f32 size now, f32 target, f32 change per second, saved radius, saved height}.
 # `table`: {f32 seconds (0 drains nothing), u32 flags (1 keeps regen, 2 undetected, 4 untouchable, 8 costume, 16 stats, 32 size,
-# 64 bullet time, 128 gun (gun.s)), f32 fade, [with 16: f32 damage[5], f32 taken, u32 lift bits; -1 keeps the game's], [with 32: f32 size],
-# [with 64: f32 world speed], entity name, alt entity name}, 4-aligned, ended by 16 zero bytes and "".
+# 64 bullet time, 128 gun (gun.s), 256 run and sprint speed, only with 16, 512 a costume health.s draws), f32 fade, [with 16: f32 damage[5], f32 taken, u32 lift bits;
+# -1 keeps the game's], [with 256: f32 run speed, f32 sprint speed; -1 keeps the game's], [with 32: f32 size], [with 64: f32 world speed],
+# entity name, alt entity name}, 4-aligned, ended by 16 zero bytes and "".
 	.text
 	.globl z_update, invulnerable, air_grab_check, ai_resolve_exit, ai_enemy_skip, z_pose, z_tuning, z_taken, table
 	.globl z_time, z_rate, own_slot, own_logic, own_pose, z_step
@@ -22,6 +23,7 @@
 	.set STATS, 12
 	.set NAMES, 12
 	.set STATS_SIZE, 28
+	.set SPEEDS_SIZE, 8
 
 # From fn_800FB944 with r29 = the human input object.
 z_update:
@@ -86,6 +88,9 @@ entry:
 	andi. r9, r0, 16
 	beq 1f
 	addi r21, r21, STATS_SIZE
+1:	andi. r9, r0, 256
+	beq 1f
+	addi r21, r21, SPEEDS_SIZE
 1:	andi. r9, r0, 32
 	beq 1f
 	addi r21, r21, 4
@@ -329,21 +334,31 @@ ai_enemy_skip:
 1:	li r3, 1
 	blr
 
-# fn_800B1884's attack damage 22-26 (r4) of r3, from the table while Z changes stats.
+# fn_800B1884's attack damage 22-26 (flag 16), run speed 104 and sprint speed 157 (flag 256) (r4, with r0 = r4 - 22) of r3,
+# from the table while Z changes them.
 z_damage:
-	mflr r12
+	slwi r8, r0, 2
+	li r5, 16
+	cmplwi r0, 4
+	ble 2f
+	li r5, 256
+	li r8, STATS_SIZE
+	cmpwi r4, 104
+	beq 2f
+	li r8, STATS_SIZE + 4
+	cmpwi r4, 157
+	bne 1f
+2:	mflr r12
 	mr r11, r4
 	mr r4, r3
-	li r5, 16
 	bl stealth_test
 	mtlr r12
 	mr r4, r11
 	cmpwi r0, 0
 	beq 1f
 	lwz r9, 16(r9)
-	slwi r10, r4, 2
-	addi r9, r9, STATS - 22 * 4
-	lfsx f1, r9, r10
+	addi r9, r9, STATS
+	lfsx f1, r9, r8
 	lis r9, zero@ha
 	lfs f0, zero@l(r9)
 	fcmpu cr0, f1, f0
@@ -388,14 +403,13 @@ z_scale:
 	blr
 
 	.balign 4
-sizes:	.long 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 table:
 
 # fn_800B1884 (tuning field r4 of entity r3), in place.
 	.section .tuning, "awx"
 z_tuning:
 	addi r0, r4, -22
-	cmplwi r0, 4
+	cmplwi r0, 157 - 22
 	bgt tuning
 	b z_damage
 tuning:
@@ -528,10 +542,13 @@ grow:
 	cmpwi r25, 0
 	beq 2f
 	lwz r0, 4(r26)
-	andi. r0, r0, 16
+	andi. r11, r0, 16
 	addi r10, r26, NAMES
 	beq 1f
 	addi r10, r10, STATS_SIZE
+1:	andi. r11, r0, 256
+	beq 1f
+	addi r10, r10, SPEEDS_SIZE
 1:	lfs f1, 0(r10)
 	fsubs f0, f1, f2
 	fabs f0, f0
@@ -666,6 +683,9 @@ hasten:
 	mtlr r12
 	blr
 
+	.balign 4
+sizes:	.long 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+
 	.section .time, "awx"
 	blr
 
@@ -694,6 +714,9 @@ z_time:
 	andi. r11, r0, 16
 	beq 3f
 	addi r10, r10, STATS_SIZE
+3:	andi. r11, r0, 256
+	beq 3f
+	addi r10, r10, SPEEDS_SIZE
 3:	andi. r11, r0, 32
 	beq 4f
 	addi r10, r10, 4

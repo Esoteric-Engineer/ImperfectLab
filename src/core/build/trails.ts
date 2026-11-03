@@ -4,8 +4,9 @@ import * as nfxtool from '../mnroi/nfxtool'
 import type * as ngmtool from '../mnroi/ngmtool'
 import type { Tri } from '../model/fit'
 import type { Skeleton } from '../model/skeleton'
-import type { Flames, Trails } from '../package/imperfect'
+import type { Eyes, Flames, Trails } from '../package/imperfect'
 import { Effects, hexAlpha, hexRgb, hidden, num } from './effects'
+import * as eyes from './eyes'
 import * as flames from './flames'
 
 export const TRAIL_KIND = 68 // unused by any shipped model or effect
@@ -78,22 +79,29 @@ export function effectNames(fx: Effects, t: Trails, internal: string): [string |
   return [costume(t.color, 0), costume(t.alt_color, 1)]
 }
 
-export function alwaysOn(fx: Effects, f: Flames, t: Trails, internal: string): [string | null, string | null] | null {
-  const fire = flames.effectNames(fx, f, internal)
-  const trails = effectNames(fx, t, internal)
-  if (!fire || !trails) return fire ?? trails
+// The flames, trails and eyes per costume, under one controller when a costume has more than one.
+export function alwaysOn(fx: Effects, f: Flames, t: Trails, internal: string, e: Eyes | null = null): [string | null, string | null] | null {
+  const all = [flames.effectNames(fx, f, internal), effectNames(fx, t, internal), e ? eyes.effectNames(fx, e, internal) : null]
+    .filter((x): x is [string | null, string | null] => x !== null)
+  if (!all.length) return null
   const prefix = `${internal.slice(0, 2).toLowerCase()}tr`
-  const both = (i: number) => trails[i] === null ? fire[i] : flames.add(fx, CONTROLLER, [`effectname ${fire[i]}`, `effectname ${trails[i]}`], prefix)
-  return [both(0), both(1)]
+  const costume = (i: number): string | null => {
+    const names = all.map((x) => x[i]).filter((n): n is string => n !== null)
+    return names.length > 1 ? flames.add(fx, CONTROLLER, names.map((n) => `effectname ${n}`), prefix) : names[0] ?? null
+  }
+  return [costume(0), costume(1)]
 }
 
-export const label = (f: Flames, t: Trails) => [flames.hasAny(f) ? 'flames' : '', hasAny(t) ? 'motion trails' : ''].filter(Boolean).join(' and ')
+export function label(f: Flames, t: Trails, e: Eyes | null = null): string {
+  const on = [flames.hasAny(f) ? 'flames' : '', hasAny(t) ? 'motion trails' : '', e && eyes.hasAny(e) ? 'glowing eyes' : ''].filter(Boolean)
+  return on.length > 2 ? `${on.slice(0, -1).join(', ')} and ${on[on.length - 1]}` : on.join(' and ')
+}
 
-export function cost(f: Flames, t: Trails): number {
-  if (!flames.hasAny(f) && !hasAny(t)) return 0
+export function cost(f: Flames, t: Trails, e: Eyes | null = null): number {
+  if (!flames.hasAny(f) && !hasAny(t) && !(e && eyes.hasAny(e))) return 0
   const fx = new Effects(new Uint8Array())
   fx.append([new nfxtool.Block(nfxtool.TYPES.indexOf('partsys'), flames.BODY, [`partsys ${flames.BODY}`, 'material x', 'end'], true)])
   const before = fx.used()
-  alwaysOn(fx, f, t, 'xx')
+  alwaysOn(fx, f, t, 'xx', e)
   return fx.used() - before
 }

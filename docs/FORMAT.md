@@ -21,7 +21,7 @@ A ZIP archive (deflate). Only these members may appear, and nothing else is read
 
 Readers must reject:
 - any other member name, an absolute path, `..`, a backslash, a directory entry, or a duplicate member;
-- more than 64 members, or more than 64 MB unpacked;
+- more than 256 members, or more than 64 MB unpacked;
 - a member over 1 MB that compresses more than 200:1;
 - a member whose SHA-256 differs from the manifest's `files` list, or a list that names a member the archive
   lacks or misses one it has;
@@ -62,12 +62,15 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
       "two_sided": false,
       "texture": "textures/body.png",
       "alt": "textures/body_alt.png",
-      "bind": null
-    }]
+      "bind": null,
+      "damage": { "normal": ["textures/mat0_d1.png", "prev", "hue:-30"], "alt": ["textures/mat0_d1_alt.png", "prev", "prev"] }
+    }],
+    "damage_stages": [{ "enabled": true, "health": 75 }, { "enabled": false, "health": 50 }, { "enabled": true, "health": 25 }]
   },
   "aura": {"mode": "swap", "tint": "all", "color": "#40A0FF", "alt_color": "#50FF50"},
   "flames": {"parts": ["head"], "body": false, "color": null, "alt_color": "#40A0FF", "size": 1.2, "base_effect": true},
   "trails": {"parts": ["arms", "legs"], "color": "#FFFFFF60", "alt_color": "#40A0FF80", "length": 0.2},
+  "eyes": {"color": "#FF2000", "alt_color": "#40A0FF", "size": 1.2, "position": [0.033, 0.129, 0.046]},
   "stats": {"display": {"normal": [7, 4, 3, 6, 5, 4], "alt": [7, 4, 3, 6, 5, 4]}, "gameplay": {"damage_taken": 0.7, "lift": "medium", "wire_swing": false}},
   "ui": {"select": {"ready": {"scale": 0.8, "anchor": [210, 75], "glow": "#3CFF5A6E"}}, "fade": 36, "strip_scale": null, "ready_voice": null, "banner": true},
   "base_moves": {},
@@ -97,7 +100,7 @@ Game bone numbers in `model` belong to the base's body class (male, female or br
 - `mapping`: game bone number (a node of the base's skeleton, as ImperfectLab lists them) to the name of a joint of the GLB's skin. A GLB mesh with no skin is bound to its node, named `mesh:<node name>`.
 - `overrides`: joint name to game bone number, for joints that are not the primary choice of any game bone (for example a middle finger following the index finger's game bone). Every other joint follows its nearest mapped ancestor.
 - `fit.scale`: `null` (the legs are made the base's length) or a number. `fit.torso_squash`: fit the torso to the base's shoulder height. `fit.flip`: `null` (detected from the arms), or whether the model faces backwards. `fit.floor_from_mesh`: measure the ankles' height from the model's lowest point instead of its origin, for a model whose origin isn't at its feet. Absent means off, and a file only carries it when on.
-- `size`: 0.1-3.0, the character's size in the game as a multiple of the base's. The fitted model, the base's skeleton, its own animations (except how far the character travels off the ground), hit regions, attack volumes and collision body grow or shrink with it ([`LIMITATIONS.md`](LIMITATIONS.md)). Absent means 1, and a file only carries it when it isn't. Older ImperfectLab builds refuse a file with it.
+- `size`: 0.1-3.0, the character's size in the game as a multiple of the base's. The fitted model, the base's skeleton, its own animations (except how far the character travels off the ground), hit regions, attack volumes and collision body grow or shrink with it ([`LIMITATIONS.md`](LIMITATIONS.md)). Absent means 1, and a file only carries it when it isn't.
 - `materials`: one entry per GLB material used.
   - `include`: draw it or not.
   - `suffix`: its game material is `<internal_name>[_alt]<suffix>`; empty or `_` plus 1-7 letters and digits,
@@ -107,6 +110,11 @@ Game bone numbers in `model` belong to the base's body class (male, female or br
   - `texture`: a `textures/` member, or `null` for the GLB's own base color image.
   - `alt`: the alternate costume's texture: `"same"`, a `textures/` member, or `"hue:<degrees>"`.
   - `bind`: `null`, or a game bone number every vertex of the material is fixed to (a prop).
+  - `damage`: optional, `normal` and `alt`, each three entries (one per damage stage): `"prev"` (the previous enabled
+    stage's texture, or the costume's own before the first), `"hue:<degrees>"` (the costume's own texture, hue-shifted) or a
+    `textures/` member. A costume left out is all `"prev"`.
+- `damage_stages`: optional, three `{enabled, health}`. An enabled stage shows from `health` (an integer 1-99, % of max
+  health) down; the enabled stages' `health` must fall. Absent means all off at 75, 50 and 25.
 
 ### `aura`
 `mode`:
@@ -129,15 +137,17 @@ Optional; left out when every key has its default. Fire that burns on the charac
 - `size` (default `1`): 0.5-2.0, scales the flames.
 - `base_effect` (default `true`): `false` removes the base's own always-on effect, such as Human Torch's body fire.
 
-Older ImperfectLab builds refuse a file with `flames`.
-
 ### `trails`
 Optional; left out when `parts` is empty. See-through ribbons that trail behind body parts as they move, the game's blade trails (`trail` blocks) swept between joints:
 - `parts`: any of `arms legs body head`.
 - `color`, `alt_color` (default `#FFFFFF60`): the costume's trail color, `#RRGGBB` or `#RRGGBBAA`.
 - `length` (default `0.2`): 0.05-0.5, how long in seconds a ribbon lingers.
 
-Older ImperfectLab builds refuse a file with `trails`.
+### `eyes`
+Optional; left out when off. Iron Man's eye glow on two eye markers on the head bone:
+- `color`, `alt_color` (defaults `#FFFFFF`, `#00FF00`): `#RRGGBB` or `#RRGGBBAA`; fully transparent means no glow.
+- `size` (default `1`): 0.25-3, times Iron Man's.
+- `position` (default `[0.033, 0.129, 0.046]`): metres from the head bone. X (0-0.3) is each eye's distance from the middle; Y (forward) and Z (up) are -0.3-0.3.
 
 ### `stats`
 - `display`: six integers 1-7 per costume: intel, strength, speed, durability, energy, skill. Shown on the
@@ -223,7 +233,7 @@ Not allowed on `SuperAttackFar` with `base_moves.throw_reach`. See [`LIMITATIONS
 
 ### `move_idle`
 Optional, left out when empty. A list of move ids (not `Stand`, and none in `moves`) that play the character's idle (`Stand`) animation instead of their own. A move that plays once keeps its length, events and root (its travel and turning), with the idle's pose on every other bone. A looping move (`Run`, `Walk`) plays the idle itself, at the idle's own rate instead of the move's stride. The victim's side of a throw is unchanged.
-Not allowed with `move_reach` on the same move, nor on `SuperAttackFar` with `base_moves.throw_reach`. Older ImperfectLab builds refuse the key. See [`LIMITATIONS.md`](LIMITATIONS.md).
+Not allowed with `move_reach` on the same move, nor on `SuperAttackFar` with `base_moves.throw_reach`. See [`LIMITATIONS.md`](LIMITATIONS.md).
 
 ### `cutscenes`
 Optional, and left out when the character keeps its base's cutscenes and audio.
@@ -251,9 +261,9 @@ Optional, left out when Z does nothing (default). Holding Z runs every action gi
   - `untouchable`: `true` when enemies can't hit or grab the character. Optional, `false` by default.
   - `visible`: how visible the character is, from 0 (not drawn) to 0.95. Optional, left out when the character doesn't fade.
 - `costume`: optional, Costume Change. `normal` (costume 1) and `alt` (costume 2) each map a material's `gltf_material` to the texture it draws while Z is held: `normal` or `alt` (that costume's texture), `hue:<degrees>` (costume 1's, hue-shifted, as a material's `alt`) or a `textures/` member. A material left out switches to the other costume's texture.
-- `stats`: optional, Stat Change. The values that replace the character's own while Z is held, at least one of them: `attack_damage_1` to `_5` and `damage_taken`, with the ranges of `stats.gameplay`, and `lift`.
+- `stats`: optional, Stat Change. The values that replace the character's own while Z is held, at least one of them: `attack_damage_1` to `_5`, `damage_taken`, `run_speed` and `sprint_speed`, with the ranges of `stats.gameplay`, and `lift`.
 - `size`: optional, Change Size. 0.1-3.0, the character's size while Z is held as a multiple of its own (`model.size` included). It grows or shrinks over a quarter of a second, and back on release.
-- `bullet`: optional, Bullet Time. 0.25-0.9, the speed everything but the character runs at while Z is held: opponents, CPU players, projectiles, thrown objects and effects. The world eases into it over at most a quarter of a second, and back on release. Older ImperfectLab builds refuse a file with it.
+- `bullet`: optional, Bullet Time. 0.25-0.9, the speed everything but the character runs at while Z is held: opponents, CPU players, projectiles, thrown objects and effects. The world eases into it over at most a quarter of a second, and back on release.
 - `gun`: optional, Gun. The gun rides in a holster at a hip or on the back; holding Z draws it, and once it's in hand any attack but a rise attack, on the ground or in the air, fires it instead. On the ground the character keeps standing, walking or running while it fires. Any base.
   - `side`: `right` or `left` (default `right`), the hand that holds and shoots it.
   - `damage`: integer 1-1000 (default 10), each bullet's damage.
@@ -267,8 +277,6 @@ Optional, left out when Z does nothing (default). Holding Z runs every action gi
   - `sound`: optional, what each shot plays from the character's sound bank: a sound event and its variant as `"<event>:<variant>"` (event 0-65535, variant 0-4294967295), as an animation event 0x17 has them. Left out, the gun is silent.
 - `requires`: optional, left out when empty. What the action needs.
   - `energy`: the action drains energy and can't start with none. `seconds` (1 to 60) is how long a full bar lasts. `regen` (optional, `false` by default) keeps the game's energy regeneration running while active, so the bar lasts longer.
-
-Older ImperfectLab builds refuse the key. See [`LIMITATIONS.md`](LIMITATIONS.md).
 
 ### `gun`
 Only in files from ImperfectLab builds before the gun became a Z action, where R drew it. A reader takes it as `z_button.gun` and ignores its `drawn`; a writer leaves it out.

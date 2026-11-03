@@ -3,6 +3,7 @@ import { type Batch, buildBatch, checkBatch } from '../core/build/batch'
 import * as cutscenes from '../core/build/cutscenes'
 import { Builder, glowRgba, gunPlanOf, onBackPlan, patch, type Progress, propShape, report, type Result, WIRE, write } from '../core/build/patch'
 import * as effects from '../core/build/effects'
+import * as eyes from '../core/build/eyes'
 import * as gun from '../core/build/gun'
 import * as moves from '../core/build/moves'
 import * as portraits from '../core/build/portraits'
@@ -25,7 +26,7 @@ import { Model } from '../core/model/glb'
 import * as mapping from '../core/model/mapping'
 import { Skeleton } from '../core/model/skeleton'
 import * as imperfect from '../core/package/imperfect'
-import { baseMeshes, type BoneLine, costumeImage, fittedMeshes, gameBones, holsteredTris, materialImages, type MeshData, sourceBones, sourceMeshes } from '../core/preview'
+import { baseMeshes, type BoneLine, costumeImage, damageImages, fittedMeshes, gameBones, holsteredTris, materialImages, type MeshData, pointMeshes, sourceBones, sourceMeshes } from '../core/preview'
 import type { BaseDetails, BaseInfo, CheckResult, ComposeArgs, DiscInfo, ImportedModel, BatchCheckResult, LayoutInfo, ModelInfo, MovePreview, PreviewResult } from './protocol'
 
 const DEFAULT_SIZES: Record<string, [number, number]> = {
@@ -401,6 +402,26 @@ export class Service {
     }
   }
 
+  // The model with a dot at each glowing eye, in costume 1's color (costume 2's when costume 1 has none).
+  eyesPreview(c: imperfect.Character): { meshes: MeshData[]; bones: BoneLine[]; focus: [[number, number, number], number] } | string {
+    if (!c.eyes.on) return 'the glowing eyes are off'
+    try {
+      const { m, sk, included, tris } = this.fitted(c)
+      const images = materialImages(m, c)
+      const bySlot = new Map(included.map((x, i) => [i, images.get(x.gltfMaterial) ?? null]))
+      const color = effects.hexAlpha(c.eyes.color) ? c.eyes.color : c.eyes.alt_color
+      const at = eyes.positions(sk, c.eyes).map((p) => p.map((v) => v * c.size) as [number, number, number])
+      const dots = pointMeshes(at, 0.012 * c.eyes.size * c.size, [...effects.hexRgb(color), 255])
+      // framed on the head
+      const head = sk.nodes[sk.node('head')!].pos.map((v) => v * c.size)
+      const middle = [0, 1, 2].map((i) => (at[0][i] + at[1][i] + head[i]) / 3) as [number, number, number]
+      return { meshes: [...previewTextures(fittedMeshes(tris, bySlot, c.size)), dots], bones: gameBones(sk, c.size), focus: [middle, 0.25 * c.size] }
+    } catch (e) {
+      if (!(e instanceof LabError)) throw e
+      return e.message
+    }
+  }
+
   movePreview(c: imperfect.Character, moveId: string, from: string | null = null): MovePreview | string {
     const move = moves.MOVE_IDS.get(moveId)
     if (!move) return `there is no move ${moveId}`
@@ -464,7 +485,8 @@ export class Service {
     return null
   }
 
-  materialThumbs(c: imperfect.Character): [RgbaImage | null, RgbaImage | null][] {
+  // Per material: costume 1, costume 2, and each costume's damage stages (null where a stage is off).
+  materialThumbs(c: imperfect.Character): [RgbaImage | null, RgbaImage | null, (RgbaImage | null)[][]][] {
     return c.materials.map((x) => {
       const small = shrink(this.materialSource(c, x), 128)
       let alt = small
@@ -473,23 +495,33 @@ export class Service {
       } catch (e) {
         if (!(e instanceof LabError)) throw e
       }
-      return [small, alt]
+      return [small, alt, [small, alt].map((own, k) => this.stageImages(c, x, own, k).map((im) => shrink(im, 128)))]
     })
   }
 
-  materialPngs(c: imperfect.Character, index: number | null): [Uint8Array | null, Uint8Array | null][] {
+  materialPngs(c: imperfect.Character, index: number | null): [Uint8Array | null, Uint8Array | null, (Uint8Array | null)[][]][] {
     return c.materials.map((x, i) => {
-      if (index !== null && i !== index) return [null, null]
+      if (index !== null && i !== index) return [null, null, []]
       const im = this.materialSource(c, x)
-      if (!im) return [null, null]
-      let alt: Uint8Array | null = null
+      if (!im) return [null, null, []]
+      let alt: Uint8Array | null = null, altIm = im
       try {
-        if (x.alt !== 'same') alt = encodePng(costumeImage(im, x.alt, c.files))
+        altIm = costumeImage(im, x.alt, c.files)
+        if (x.alt !== 'same') alt = encodePng(altIm)
       } catch (e) {
         if (!(e instanceof LabError)) throw e
       }
-      return [encodePng(im), alt]
+      return [encodePng(im), alt, [im, altIm].map((own, k) => this.stageImages(c, x, own, k).map((s) => (s ? encodePng(s) : null)))]
     })
+  }
+
+  private stageImages(c: imperfect.Character, x: imperfect.Material, own: RgbaImage | null, k: number): (RgbaImage | null)[] {
+    try {
+      if (own) return damageImages(own, x.damage[imperfect.Z_COSTUMES[k]], c.damageStages, c.files)
+    } catch (e) {
+      if (!(e instanceof LabError)) throw e
+    }
+    return c.damageStages.map(() => null)
   }
 
   private layout(): portraits.SelectLayout {

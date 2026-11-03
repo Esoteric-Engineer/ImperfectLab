@@ -3,7 +3,7 @@
 #   powerpc-eabi-as -mgekko -mregnames -o gun.o gun.s
 #   powerpc-eabi-ld -Ttext=0x80700000 -e gun_pose \
 #     --defsym fn_8019D5E0=0x8019D5E0 --defsym fn_80434900=0x80434900 --defsym fn_804317BC=0x804317BC \
-#     --defsym fn_8042FF2C=0x8042FF2C --defsym strcmp=0x80172654 --defsym stealth_test=0x801377C0 \
+#     --defsym fn_8042FF2C=0x8042FF2C --defsym strcmp=0x80172654 --defsym stealth_test=0x801377CC \
 #     --defsym fn_80084B68=0x80084B68 --defsym fn_80084A60=0x80084A60 --defsym fn_800CC5E0=0x800CC5E0 \
 #     --defsym fn_800CC148=0x800CC148 --defsym fn_80097CE8=0x80097CE8 --defsym fn_800CDA20=0x800CDA20 \
 #     --defsym fn_800F0C70=0x800F0C70 -o gun.elf gun.o

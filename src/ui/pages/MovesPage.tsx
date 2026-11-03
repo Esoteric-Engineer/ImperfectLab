@@ -624,7 +624,7 @@ export function HolsterPlace({ h, from, view, kind = 'club', title = 'Holster Lo
             ))}
           </tbody>
         </table>
-        <HolsterView first={view} kind={kind} />
+        <PlacementView first={view} method="holsterPreview" args={[kind]} what="the holster" />
       </div>
     </>
   )
@@ -632,12 +632,14 @@ export function HolsterPlace({ h, from, view, kind = 'club', title = 'Holster Lo
 
 export type HolsterKind = 'club' | 'gun' | 'swap'
 
-function HolsterView({ first, kind }: { first: 'back' | 'right' | 'front'; kind: HolsterKind }) {
+// The fitted model from a worker preview (holsterPreview, eyesPreview), turnable to three views.
+export function PlacementView({ first, method, args = [], what }: { first: 'back' | 'right' | 'front'; method: string; args?: unknown[]; what: string }) {
   const s = useStore()
   const canvas = useRef<HTMLCanvasElement>(null)
   const view = useRef<Viewport | null>(null)
   const framed = useRef(false)
   const [report, setReport] = useState('')
+  const argKey = JSON.stringify(args)
   useEffect(() => {
     view.current = new Viewport(canvas.current!)
     view.current.showBones = false
@@ -647,7 +649,7 @@ function HolsterView({ first, kind }: { first: 'back' | 'right' | 'front'; kind:
     if (!s.model) return
     let live = true
     const timer = window.setTimeout(() => {
-      engine.call<{ meshes: MeshData[]; bones: BoneLine[] } | string>('holsterPreview', [copyCharacter({ ...store.character, glb: null }), kind]).then((r) => {
+      engine.call<{ meshes: MeshData[]; bones: BoneLine[]; focus?: [[number, number, number], number] } | string>(method, [copyCharacter({ ...store.character, glb: null }), ...(JSON.parse(argKey) as unknown[])]).then((r) => {
         if (!live || !view.current) return
         if (typeof r === 'string') {
           setReport('✖ ' + r)
@@ -656,7 +658,10 @@ function HolsterView({ first, kind }: { first: 'back' | 'right' | 'front'; kind:
         }
         setReport('')
         view.current.setScene(r.meshes, r.bones, !framed.current)
-        if (!framed.current) view.current.view(first)
+        if (!framed.current) {
+          if (r.focus) view.current.focus(...r.focus)
+          view.current.view(first)
+        }
         framed.current = true
       }, (e) => live && setReport('✖ ' + errorText(e)))
     }, 200)
@@ -664,11 +669,11 @@ function HolsterView({ first, kind }: { first: 'back' | 'right' | 'front'; kind:
       live = false
       clearTimeout(timer)
     }
-  }, [s.versions.character, s.versions.model, s.versions.mapping, s.model, first, kind])
+  }, [s.versions.character, s.versions.model, s.versions.mapping, s.model, first, method, argKey])
   return (
     <div className="holster-view">
       <canvas ref={canvas} className="viewport" />
-      {!s.model ? <Note>Import a model on the Model page to see the holster.</Note> : report && <Note>{report}</Note>}
+      {!s.model ? <Note>Import a model on the Model page to see {what}.</Note> : report && <Note>{report}</Note>}
       <div className="row">
         {(['back', 'right', 'front'] as const).map((n) => (
           <button key={n} className="small" onClick={() => view.current?.view(n)}>{n[0].toUpperCase() + n.slice(1)}</button>

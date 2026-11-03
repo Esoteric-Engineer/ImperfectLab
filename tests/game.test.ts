@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import * as cutscenes from '../src/core/build/cutscenes'
 import * as damage from '../src/core/build/damage'
 import * as effects from '../src/core/build/effects'
+import * as eyes from '../src/core/build/eyes'
 import { EFFECT_FIELDS } from '../src/core/build/effectslots'
 import * as flames from '../src/core/build/flames'
 import * as gun from '../src/core/build/gun'
@@ -103,10 +104,10 @@ describe.skipIf(!ISO)('main.dol', () => {
 
   it('binds Z to its actions', () => {
     const dol = gameSource().dol
-    const none = { costume: false, damage: [null, null, null, null, null], taken: null, lift: null, size: null, slow: null, gun: false }
+    const none = { costume: false, damage: [null, null, null, null, null], taken: null, lift: null, run: null, sprint: null, size: null, slow: null, gun: false }
     const out = D.zActions(dol, [
       { internal: 'Synth', seconds: 8, regen: true, undetected: false, untouchable: true, visible: 0.25, ...none },
-      { internal: 'Other', seconds: 0, regen: false, undetected: true, untouchable: false, visible: 1, ...none, costume: true, damage: [null, 30, null, null, 2.5], taken: 0.5, lift: 'heavy', size: 2.5, slow: 0.5 },
+      { internal: 'Other', seconds: 0, regen: false, undetected: true, untouchable: false, visible: 1, ...none, costume: true, damage: [null, 30, null, null, 2.5], taken: 0.5, lift: 'heavy', run: 20, sprint: 32, size: 2.5, slow: 0.5 },
       { internal: 'Small', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, ...none, size: 0.5 },
       { internal: 'Quick', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, ...none, slow: 0.25, gun: true },
     ])
@@ -134,10 +135,10 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(latin1(out, t, at(0x80137494) + 0x858)).toContain('plr_synth\0plr_altSynth\0')
     expect([u32be(out, t), u32be(out, t + 4), u32be(out, t + 8)]).toEqual([0x41000000, 5, 0x3e800000])
     const other = t + 12 + 24
-    expect([u32be(out, other), u32be(out, other + 4), u32be(out, other + 8)]).toEqual([0, 2 | 8 | 16 | 32 | 64, 0x3f800000])
-    expect([12, 16, 20, 24, 28, 32, 36, 40, 44].map((o) => u32be(out, other + o))).toEqual([0xbf800000, 0x41f00000, 0xbf800000, 0xbf800000, 0x40200000, 0x3f000000, 0x20, 0x40200000, 0x3f000000])
-    expect(latin1(out, other + 48, other + 72)).toBe('plr_other\0plr_altOther\0\0')
-    const small = other + 72
+    expect([u32be(out, other), u32be(out, other + 4), u32be(out, other + 8)]).toEqual([0, 2 | 8 | 16 | 32 | 64 | 256, 0x3f800000])
+    expect([12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52].map((o) => u32be(out, other + o))).toEqual([0xbf800000, 0x41f00000, 0xbf800000, 0xbf800000, 0x40200000, 0x3f000000, 0x20, 0x41a00000, 0x42000000, 0x40200000, 0x3f000000])
+    expect(latin1(out, other + 56, other + 80)).toBe('plr_other\0plr_altOther\0\0')
+    const small = other + 80
     expect([u32be(out, small + 4), u32be(out, small + 12)]).toEqual([32, 0x3f000000])
     expect(latin1(out, small + 16, small + 40)).toBe('plr_small\0plr_altSmall\0\0')
     const quick = small + 40
@@ -154,6 +155,7 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(() => D.zActions(dol, [{ ...one, seconds: 61 }])).toThrow(LabError)
     expect(() => D.zActions(dol, [{ ...one, visible: 0.99 }])).toThrow(LabError)
     expect(() => D.zActions(dol, [{ ...one, lift: 'huge' }])).toThrow(LabError)
+    expect(() => D.zActions(dol, [{ ...one, run: 0 }])).toThrow(LabError)
     expect(() => D.zActions(dol, [{ ...one, size: 3.5 }])).toThrow(LabError)
     expect(() => D.zActions(dol, [{ ...one, size: 0.05 }])).toThrow(LabError)
     expect(() => D.zActions(dol, [{ ...one, slow: 0.2 }])).toThrow(LabError)
@@ -166,7 +168,7 @@ describe.skipIf(!ISO)('main.dol', () => {
 
   it("adds the gun's code in a text section of its own and hooks the posing, motions, presses, events, stops and projectile pick", () => {
     const dol = D.zActions(gameSource().dol, [{ internal: 'Synth', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, costume: false,
-      damage: [null, null, null, null, null], taken: null, lift: null, size: null, slow: null, gun: true }])
+      damage: [null, null, null, null, null], taken: null, lift: null, run: null, sprint: null, size: null, slow: null, gun: true }])
     const guns: D.GunCharacter[] = [
       { internal: 'Synth', bone: 39, hand: 27, anchor: 65, nodes: 66, automatic: true, energy: 7.5, bind: [0.5, 0, 1.5], k: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0.2, 0.3],
         swap: { bone: 72, bind: [0.75, 0, 1.55], k: [0, 1, 0, -1, 0, 0, 0, 0, 1, 0.5, 0.25, 2] }, upper: 23, fore: 25, arm: [[0.2, 0, 1.55], [0.48, 0, 1.55], [0.75, 0, 1.55]], draw: 0.25, moves: [[23, 24, 25, 26, 27, 30], [25, 26, 27, 30], [27, 30]] },
@@ -212,6 +214,44 @@ describe.skipIf(!ISO)('main.dol', () => {
     }
     expect(() => D.gun(dol, Array.from({ length: 5 }, () => guns[0]))).toThrow(/room/)
     expect(() => D.gun(dol, [{ ...guns[0], moves: [[23, 130], [], []] }])).toThrow(/128/)
+  })
+
+  it("adds the damage stages' code in a text section of its own and hooks the posing", () => {
+    const chars: D.HealthCharacter[] = [{ internal: 'Synth', stages: [0.75, 0.25], kept: 1, z: null }, { internal: 'Other', stages: [0.5], kept: 2, z: 1 }]
+    expect(() => D.health(gameSource().dol, chars)).toThrow(/Z-button/)
+    const dol = D.zActions(gameSource().dol, [{ internal: 'Other', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, costume: true, staged: true,
+      damage: [null, null, null, null, null], taken: null, lift: null, run: null, sprint: null, size: null, slow: null, gun: false }])
+    const lo = D.arenaLo(dol)
+    const out = D.health(dol, chars)
+    const slot = [2, 3, 4, 5, 6].find((i) => u32be(out, 0x90 + 4 * i))!
+    expect(u32be(out, 0x48 + 4 * slot)).toBe(lo)
+    const size = u32be(out, 0x90 + 4 * slot), at = u32be(out, 4 * slot)
+    expect(D.arenaLo(out)).toBe(lo + size)
+    const target = (o: Uint8Array, from: number) => (from + ((((u32be(o, D.fileOffset(o, from)) << 6) >> 6) & ~3))) >>> 0
+    expect(target(out, 0x801a4814)).toBe(lo + D.HEALTH_POSE)
+    expect(u32be(out, D.fileOffset(out, 0x801a4814)) & 1).toBe(1)
+    const table = at + D.HEALTH_DATA
+    expect(u32be(out, table)).toBe(0)
+    expect(u32be(out, table + D.HEALTH_COUNT)).toBe(2)
+    const first = table + D.HEALTH_ENTRIES, second = first + D.HEALTH_ENTRY_SIZE
+    expect([0, 4, 8].map((o) => f32be(out, first + o))).toEqual([0.75, 0.25, -1].map(Math.fround))
+    expect([...out.subarray(first + 0xc, first + 0xf)]).toEqual([1, 0xff, 4])
+    expect([0, 4, 8].map((o) => f32be(out, second + o))).toEqual([0.5, -1, -1])
+    expect([...out.subarray(second + 0xc, second + 0xf)]).toEqual([2, 1, 4])
+    expect(latin1(out, first + 0x10, first + 0x50)).toBe('plr_synth' + '\0'.repeat(23) + 'plr_altSynth' + '\0'.repeat(20))
+    const changed = [...out.subarray(0, dol.length)].flatMap((b, i) => (b !== dol[i] ? [i] : []))
+    const site = D.fileOffset(out, 0x801a4814)
+    expect(changed.every((i) => i < 0x100 || (i >= site && i < site + 4) || [0x177bc4, 0x177bc8, 0x177bfc, 0x177c00].some((r) => i >= r && i < r + 4))).toBe(true)
+    expect(() => D.health(out, chars)).toThrow(LabError)
+
+    const gunned = D.gun(out, [{ internal: 'Other', bone: 81, hand: 27, anchor: 58, nodes: 82, automatic: false, energy: 0, bind: [0, 0, 1], k: new Array(12).fill(0), swap: null,
+      upper: 23, fore: 25, arm: [[0, 0, 0], [0, 0, 0], [0, 0, 0]], draw: D.GUN_DRAW, moves: [[], [], []] }])
+    expect(target(gunned, 0x801a4814)).toBe(lo + D.HEALTH_POSE)
+    expect(target(gunned, 0x801a4a08)).toBe(lo + size)
+
+    for (const bad of [{ stages: [] }, { stages: [0.5, 0.75] }, { stages: [1] }, { stages: [0.5, 0.4, 0.3, 0.2] }, { kept: 0 }, { kept: 1, z: 1 }]) {
+      expect(() => D.health(dol, [{ ...chars[1], ...bad }])).toThrow(LabError)
+    }
   })
 
   it('refuses a patched main.dol', () => {
@@ -476,7 +516,7 @@ describe.skipIf(!ISO)('game', () => {
     c.zButton = { stealth: { undetected: true, untouchable: false, visible: 0.5 }, costume: null, stats: null, size: null, bullet: null, gun: null, requires: { energy: { seconds: 5, regen: false } } }
     const r = new Builder(src(), c).build()
     expect(r.adds.has('Bundles/synth.ngm')).toBe(true)
-    expect(equal(r.dol!, D.zActions(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt), [{ internal: 'Synth', seconds: 5, regen: false, undetected: true, untouchable: false, visible: 0.5, costume: false, damage: [null, null, null, null, null], taken: null, lift: null, size: null, slow: null, gun: false }]))).toBe(true)
+    expect(equal(r.dol!, D.zActions(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt), [{ internal: 'Synth', seconds: 5, regen: false, undetected: true, untouchable: false, visible: 0.5, costume: false, damage: [null, null, null, null, null], taken: null, lift: null, run: null, sprint: null, size: null, slow: null, gun: false }]))).toBe(true)
     expect(report(c, r)).toContain('Stealth Mode')
     expect(r.adds.has('Bundles/synth_alt.tpl')).toBe(true)
     const t = new R.Templates(r.sets.get('Misc/Global.not')!)
@@ -507,11 +547,60 @@ describe.skipIf(!ISO)('game', () => {
     expect(latin1(r.adds.get('Bundles/synth.ngt')!)).toContain('Synth_z\r\n')
     expect(latin1(r.adds.get('Bundles/synth_alt.ngt')!)).not.toContain('Synth_altz')
     const want = D.zActions(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt),
-      [{ internal: 'Synth', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, costume: true, damage: [null, null, 40, null, null], taken: null, lift: 'light', size: 1.5, slow: 0.4, gun: false }])
+      [{ internal: 'Synth', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, costume: true, damage: [null, null, 40, null, null], taken: null, lift: 'light', run: null, sprint: null, size: 1.5, slow: 0.4, gun: false }])
     expect(equal(r.dol!, want)).toBe(true)
     expect(report(c, r)).toContain('Costume Change, Stat Change, Change Size, Bullet Time')
     c.materials = [...c.materials, { ...imperfect.newMaterial(1, 'cape', true, '_z', [64, 64]), texture: 'textures/skin.png' }]
     expect(() => new Builder(src(), c).build()).toThrow(/both be named synth_z/)
+  })
+
+  it('builds damage stages, with and without a Z costume', () => {
+    const c = imperfect.newCharacter()
+    c.internalName = 'Synth'
+    c.displayName = 'SYNTH'
+    c.base = 'wolverine'
+    c.glb = makeGlb()
+    c.materials = [{ ...imperfect.newMaterial(0, 'skin', true, '', [64, 64]), texture: 'textures/skin.png',
+      damage: { normal: ['textures/mat0_d1.png', 'hue:30', 'hue:90'], alt: ['prev', 'prev', 'prev'] } }]
+    c.files = new Map([['textures/skin.png', pngBytes()], ['textures/mat0_d1.png', pngBytes()], ['ui/hud.png', pngBytes(64, 64)]])
+    c.damageStages = [{ enabled: true, health: 75 }, { enabled: false, health: 50 }, { enabled: true, health: 25 }]
+    const auto = mapping.autoMap(new Model(c.glb), Skeleton.ofBase(new R.BaseCharacter(src(), c.base)))
+    c.mapping = auto.mapping
+    c.overrides = auto.overrides
+    const patched = () => D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt)
+    const parts = (r: ReturnType<Builder['build']>, name: string) => ngmtool.read(r.adds.get(name)!)[1][0].parts
+
+    let r = new Builder(src(), c).build()
+    expect(parts(r, 'Bundles/synth.ngm')).toEqual(['Synth', 'Synth_zo', 'Synth_d1', 'Synth_d3'])
+    expect(parts(r, 'Bundles/synth_alt.ngm')).toEqual(['Synth_alt', 'Synth_altzo', 'Synth_altd1', 'Synth_altd3'])
+    const nsa = shaders.blocks(r.sets.get('Materials/Shaders/shaders.nsa')!)
+    expect(['synth_zo', 'synth_d1', 'synth_d3', 'synth_altzo', 'synth_altd1', 'synth_altd3'].map((n) => nsa.get(n)!.get('texture')))
+      .toEqual(['Synth', 'Synth_d1', 'Synth_d3', 'Synth_alt', 'Synth_alt', 'Synth_alt'])
+    const ngt = latin1(r.adds.get('Bundles/synth.ngt')!)
+    expect(ngt).toContain('Synth_d1\r\n')
+    expect(ngt).toContain('Synth_d3\r\n')
+    expect(ngt).not.toContain('Synth_d2')
+    expect(latin1(r.adds.get('Bundles/synth_alt.ngt')!)).not.toContain('Synth_altd')
+    expect(equal(r.dol!, D.health(patched(), [{ internal: 'Synth', stages: [0.75, 0.25], kept: 1, z: null }]))).toBe(true)
+    expect(r.notes).toContain('damage stages at 75%, 25% health: 2 textures, 4 KB')
+    expect(report(c, r)).toContain('fn_801A479C')
+
+    c.zButton = { stealth: null, costume: { normal: {}, alt: {} }, stats: null, size: null, bullet: null, gun: null, requires: {} }
+    const z: D.ZCharacter = { internal: 'Synth', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, costume: true,
+      damage: [null, null, null, null, null], taken: null, lift: null, run: null, sprint: null, size: null, slow: null, gun: false }
+    r = new Builder(src(), c).build()
+    expect(parts(r, 'Bundles/synth.ngm')).toEqual(['Synth', 'Synth_z', 'Synth_zo', 'Synth_d1', 'Synth_d3'])
+    expect(equal(r.dol!, D.health(D.zActions(patched(), [{ ...z, staged: true }]), [{ internal: 'Synth', stages: [0.75, 0.25], kept: 2, z: 1 }]))).toBe(true)
+
+    c.materials = [{ ...c.materials[0], damage: imperfect.noDamage() }]
+    expect(imperfect.problems(c)).toContainEqual(['warning', 'damage stages are ticked but no material changes texture at them: pick textures on the Materials page'])
+    r = new Builder(src(), c).build()
+    expect(parts(r, 'Bundles/synth.ngm')).toEqual(['Synth', 'Synth_z', 'Synth_zo'])
+    expect(equal(r.dol!, D.zActions(patched(), [z]))).toBe(true)
+
+    c.materials = [{ ...c.materials[0], damage: { normal: ['prev', 'prev', 'hue:90'], alt: ['prev', 'prev', 'prev'] } }]
+    c.damageStages = [{ enabled: true, health: 25 }, { enabled: false, health: 50 }, { enabled: true, health: 30 }]
+    expect(() => new Builder(src(), c).build()).toThrow(/lower health than the one before/)
   })
 
   it('points every field naming a tinted effect at its copy', () => {
@@ -693,6 +782,63 @@ describe.skipIf(!ISO)('game', () => {
     trails.alwaysOn(fx, imperfect.defaultFlames(), t, 'Synth')
     expect(Math.abs(fx.used() - before - trails.cost(imperfect.defaultFlames(), t))).toBeLessThan(16)
     expect(trails.cost(imperfect.defaultFlames(), imperfect.defaultTrails())).toBe(0)
+  })
+
+  it('puts glowing eyes on the head bone, replacing the base\'s eye markers', () => {
+    // Iron Man's own eye markers are kind 20 on the head bone at Iron Man's place
+    const iron = new R.BaseCharacter(src(), 'ironman')
+    const ironModel = ngmtool.read(iron.bundleFiles()[0])[1][0]
+    const head = Skeleton.ofBase(iron).node('head')
+    expect(ironModel.attachments.filter(([, k]) => k === eyes.EYE_KIND).map(([n, , i, m]) => [n, i, ...m.slice(12, 15).map((v) => Math.round(v * 1000) / 1000)]))
+      .toEqual([[head, 1, -0.033, 0.129, 0.046], [head, 2, 0.033, 0.129, 0.046]])
+    for (const base of ['wolverine', 'storm']) {
+      const c = tinted(base)
+      c.aura = { ...c.aura, mode: 'base' }
+      c.eyes = { ...imperfect.defaultEyes(), on: true, color: '#FF2000', alt_color: '#0040FF80', size: 1.5, position: [0.04, 0.1, 0.05] }
+      const r = new Builder(src(), c).build()
+      const sk = Skeleton.ofBase(new R.BaseCharacter(src(), base))
+      for (const costume of ['', '_alt']) {
+        const m = ngmtool.read(r.adds.get(`Bundles/synth${costume}.ngm`)!)[1][0]
+        expect(m.attachments.filter(([, k]) => k === eyes.EYE_KIND).map(([n, , i, mat]) => [n, i, ...mat.slice(12, 15).map((v) => Math.fround(v))]))
+          .toEqual([[sk.node('head'), 1, ...[-0.04, 0.1, 0.05].map(Math.fround)], [sk.node('head'), 2, ...[0.04, 0.1, 0.05].map(Math.fround)]])
+      }
+      const T = new R.Templates(r.sets.get('Misc/Global.not')!)
+      const by = new Map(nfxtool.blocks(nfxtool.readNfx(r.sets.get('Misc/game.nfx')!)).map((b) => [b.name, b]))
+      const glow = (t: string) => Object.fromEntries(by.get(R.text(T.prop(t, R.P_EFFECT2))!)!.records()[0].map((rec) => [nfxtool.KEYS[rec.key], rec.value]))
+      expect(['plr_Synth', 'plr_altSynth'].map((t) => by.get(R.text(T.prop(t, R.P_EFFECT2))!)!.type)).toEqual([nfxtool.TYPES.indexOf('billboard'), nfxtool.TYPES.indexOf('billboard')])
+      expect([glow('plr_Synth').startcol, glow('plr_altSynth').startcol, glow('plr_Synth').markertype, glow('plr_Synth').width]).toEqual([0xb4ff2000, 0x5a0040ff, 20, Math.fround(0.15)])
+      // Storm keeps her hair; only an effect drawn on the eyes alone gives way
+      expect(R.text(T.prop('plr_Synth', R.P_EFFECT1))).toBe(base === 'storm' ? 'strmHair' : null)
+    }
+  })
+
+  it('replaces Iron Man\'s own eye glow and leaves out a hidden costume\'s', () => {
+    const c = tinted('ironman')
+    c.aura = { ...c.aura, mode: 'base' }
+    c.eyes = { ...imperfect.defaultEyes(), on: true, alt_color: '#00FF0000' }
+    const r = new Builder(src(), c).build()
+    const T = new R.Templates(r.sets.get('Misc/Global.not')!)
+    for (const t of ['act_Synth', 'plr_Synth', 'plr_altSynth']) expect(T.get(t).get(R.P_EFFECT1), t).toBeNull()
+    // white at Iron Man's size is his own irnManFX, which costs nothing
+    expect(R.text(T.prop('plr_Synth', R.P_EFFECT2))).toBe('irnManFX')
+    expect(T.get('plr_altSynth').get(R.P_EFFECT2)).toBeNull()
+    expect(r.notes.some((n) => n.includes('replace Iron Man'))).toBe(true)
+  })
+
+  it('combines glowing eyes with flames and trails, and counts them', () => {
+    const f = { ...imperfect.defaultFlames(), parts: ['head'] }, t = { ...imperfect.defaultTrails(), parts: ['arms'] }
+    const e = { ...imperfect.defaultEyes(), on: true, color: '#FF0000' }
+    const fx = new effects.Effects(src().entry('Misc/game.nfx'))
+    const before = fx.used()
+    const [normal] = trails.alwaysOn(fx, f, t, 'Synth', e)!
+    const kids = fx.by.get(normal!.toLowerCase())!.records()[0].filter((rec) => nfxtool.KEYS[rec.key] === 'effectname').map((rec) => fx.by.get((rec.value as string).toLowerCase())!.type)
+    expect(kids).toEqual([nfxtool.TYPES.indexOf('controller'), nfxtool.TYPES.indexOf('controller'), nfxtool.TYPES.indexOf('billboard')])
+    expect(Math.abs(fx.used() - before - trails.cost(f, t, e))).toBeLessThan(16)
+    expect(trails.cost(imperfect.defaultFlames(), imperfect.defaultTrails(), imperfect.defaultEyes())).toBe(0)
+    expect(trails.cost(imperfect.defaultFlames(), imperfect.defaultTrails(), e)).toBeGreaterThan(0)
+    expect(trails.label(f, t, e)).toBe('flames, motion trails and glowing eyes')
+    const src0 = new effects.Effects(src().entry('Misc/game.nfx'))
+    expect(['irnManFX', 'altIrnManFX', 'strmHair', 'htBodyFire'].map((n) => src0.eyesOnly(n))).toEqual([true, true, false, false])
   })
 
   it('counts flames in the memory a tint may take', () => {

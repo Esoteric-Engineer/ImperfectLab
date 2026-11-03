@@ -12,7 +12,7 @@ import { type Character, gunOf, hasCutscenes, problems as characterProblems, typ
 import * as effects from './effects'
 import * as moves from './moves'
 import { motionSetName, SLOTS } from './moves'
-import { Builder, mirrors, ownMotions, ownSounds, paintsReach, type PatchOutput, type Progress, Result, splitsCharge, throwsDamage, tuningFields, write, zCharacters } from './patch'
+import { Builder, mirrors, ownMotions, ownSounds, paintsReach, type PatchOutput, type Progress, Result, splitsCharge, throwsDamage, tuningFields, write, zCharacters, healthCharacters } from './patch'
 import { templateNames } from './templates'
 import * as tuning from './tuning'
 import * as ui from './ui'
@@ -48,7 +48,7 @@ export function batchTints(source: GameSource, chars: Batch): [(string | null)[]
   const seen = new Map<string, number>()
   for (const t of tries) {
     const key = t.join()
-    if (!seen.has(key)) seen.set(key, effects.sharedExtra(source, t.map((level, i) => [bases[i], level, effects.hidden(chars[i].aura.color, chars[i].aura.alt_color)]), chars.map((c) => [c.flames, c.trails]), lines))
+    if (!seen.has(key)) seen.set(key, effects.sharedExtra(source, t.map((level, i) => [bases[i], level, effects.hidden(chars[i].aura.color, chars[i].aura.alt_color)]), chars.map((c) => [c.flames, c.trails, c.eyes]), lines))
     if (seen.get(key)! <= effects.TINT_ALL_LIMIT) return [t, seen.get(key)!]
   }
   const last = tries[tries.length - 1]
@@ -129,6 +129,8 @@ export function buildBatch(source: GameSource, chars: Batch, progress: Progress 
   if (batch.some(throwsDamage)) r.dol = D.throwDamage(r.dol)
   if (batch.some(ownSounds)) r.dol = D.soundBanks(r.dol, batch.filter(ownSounds).map((c) => c.internalName))
   if (batch.some((c) => c.zButton)) r.dol = D.zActions(r.dol, zCharacters(batch))
+  const health = healthCharacters(batch)
+  if (health.length) r.dol = D.health(r.dol, health)
   const guns = results.flatMap((x) => (x.gun ? [x.gun] : []))
   if (guns.length) r.dol = D.gun(r.dol, guns)
   r.notes = [...notes, ...results.flatMap((x, i) => x.notes.map((n) => `${batch[i].displayName}: ${n}`))]

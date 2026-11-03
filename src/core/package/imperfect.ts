@@ -25,6 +25,7 @@ export const VERSION = 1
 const GAME = 'GVLE69-0'
 const MAX_TOTAL = 64 << 20
 const MAX_RATIO = 200
+const MAX_MEMBERS = 256
 export const MAX_IMAGE_SIDE = 4096
 const STAT_RANGE = [1, 7]
 
@@ -44,6 +45,9 @@ export const FLAME_PARTS = ['head', 'chest', 'r_hand', 'l_hand', 'r_foot', 'l_fo
 export const FLAME_SIZE: [number, number] = [0.5, 2.0]
 export const TRAIL_PARTS = ['arms', 'legs', 'body', 'head']
 export const TRAIL_LENGTH: [number, number] = [0.05, 0.5]
+export const EYE_SIZE: [number, number] = [0.25, 3.0]
+export const EYE_X: [number, number] = [0, 0.3]
+export const EYE_YZ: [number, number] = [-0.3, 0.3]
 export const SIZE: [number, number] = [0.1, 3.0]
 export const LIFT = ['light', 'medium', 'heavy']
 export const GAMEPLAY: Record<string, [number, number, boolean]> = {
@@ -120,6 +124,26 @@ export interface Material {
   texture: string | null
   alt: string
   bind: number | null
+  damage: Record<ZCostume, string[]>
+}
+
+// A material's damage entries are 'prev', 'hue:<degrees>' or a textures/ member.
+export interface DamageStage {
+  enabled: boolean
+  health: number
+}
+export const DAMAGE_STAGES = 3
+export const DAMAGE_HEALTH: [number, number] = [1, 99]
+const STAGE_HEALTH = [75, 50, 25]
+export const defaultDamageStages = (): DamageStage[] => STAGE_HEALTH.map((health) => ({ enabled: false, health }))
+export const noDamage = (): Record<ZCostume, string[]> => ({ normal: ['prev', 'prev', 'prev'], alt: ['prev', 'prev', 'prev'] })
+export const damages = (m: Material) => Z_COSTUMES.some((k) => m.damage[k].some((v) => v !== 'prev'))
+export const damageMember = (v: string) => v !== 'prev' && !v.startsWith('hue:')
+export const damageUpload = (gltfMaterial: number, stage: number, costume: ZCostume) => `textures/mat${gltfMaterial}_d${stage + 1}${costume === 'alt' ? '_alt' : ''}.png`
+
+export function damageStages(c: Pick<Character, 'damageStages' | 'materials'>): [number, number][] {
+  return c.damageStages.flatMap((s, k): [number, number][] =>
+    s.enabled && c.materials.some((m) => m.include && Z_COSTUMES.some((co) => m.damage[co][k] !== 'prev')) ? [[k, s.health / 100]] : [])
 }
 
 export interface Placement {
@@ -184,6 +208,14 @@ export interface Trails {
   length: number
 }
 
+export interface Eyes {
+  on: boolean
+  color: string
+  alt_color: string
+  size: number
+  position: [number, number, number]
+}
+
 export const MOVE_EFFECTS = ['theirs', 'none'] as const
 export type MoveEffect = (typeof MOVE_EFFECTS)[number]
 export interface MoveLines {
@@ -205,8 +237,8 @@ export type SoundSource = { game: string } | { file: string }
 // A Z costume texture: 'normal' or 'alt' (that costume's), 'hue:<degrees>' (costume 1's, shifted) or a textures/ member.
 export const Z_COSTUMES = ['normal', 'alt'] as const
 export type ZCostume = (typeof Z_COSTUMES)[number]
-export type ZStats = Partial<Record<DamageKey | 'damage_taken', number>> & { lift?: string }
-export const Z_STATS: (DamageKey | 'damage_taken')[] = [...DAMAGE_KEYS, 'damage_taken']
+export type ZStats = Partial<Record<DamageKey | 'damage_taken' | 'run_speed' | 'sprint_speed', number>> & { lift?: string }
+export const Z_STATS: (DamageKey | 'damage_taken' | 'run_speed' | 'sprint_speed')[] = [...DAMAGE_KEYS, 'damage_taken', 'run_speed', 'sprint_speed']
 
 export interface ZButton {
   stealth: { undetected: boolean; untouchable: boolean; visible: number | null } | null
@@ -236,9 +268,11 @@ export interface Character {
   fit: { scale: number | null; torso_squash: boolean; flip: boolean | null; floor_from_mesh?: boolean }
   size: number
   materials: Material[]
+  damageStages: DamageStage[]
   aura: { mode: string; tint: string; color: string; alt_color: string }
   flames: Flames
   trails: Trails
+  eyes: Eyes
   stats: { normal: number[]; alt: number[] }
   gameplay: Gameplay
   baseMoves: BaseMoves
@@ -266,6 +300,12 @@ export function defaultTrails(): Trails {
   return { parts: [], color: '#FFFFFF60', alt_color: '#FFFFFF60', length: 0.2 }
 }
 
+// Iron Man's eye glow (irnManFX) and its markers' place
+export const EYE_POSITION: [number, number, number] = [0.033, 0.129, 0.046]
+export function defaultEyes(): Eyes {
+  return { on: false, color: '#FFFFFF', alt_color: '#00FF00', size: 1, position: [...EYE_POSITION] }
+}
+
 export function hasCutscenes(c: Cutscenes): boolean {
   return CUTSCENE_KINDS.some((k) => c[k] !== undefined) || Object.keys(c.audio).length > 0 || Object.keys(c.animation).length > 0
 }
@@ -275,7 +315,7 @@ export function hasFlames(f: Flames): boolean {
 }
 
 export function newMaterial(gltfMaterial: number, name: string, include = true, suffix = '', size: [number, number] = [256, 256]): Material {
-  return { gltfMaterial, name, include, suffix, size, twoSided: false, texture: null, alt: 'same', bind: null }
+  return { gltfMaterial, name, include, suffix, size, twoSided: false, texture: null, alt: 'same', bind: null, damage: noDamage() }
 }
 
 export function newCharacter(): Character {
@@ -291,9 +331,11 @@ export function newCharacter(): Character {
     fit: { scale: null, torso_squash: true, flip: null },
     size: 1,
     materials: [],
+    damageStages: defaultDamageStages(),
     aura: { mode: 'base', tint: 'all', color: '#40A0FF', alt_color: '#50FF50' },
     flames: defaultFlames(),
     trails: defaultTrails(),
+    eyes: defaultEyes(),
     stats: defaultStats(),
     gameplay: {},
     baseMoves: {},
@@ -328,7 +370,7 @@ export function textureMember(name: string): string {
 
 function materialJson(m: Material): Json {
   return { gltf_material: m.gltfMaterial, name: m.name, include: m.include, suffix: m.suffix, size: [...m.size],
-    two_sided: m.twoSided, texture: m.texture, alt: m.alt, bind: m.bind }
+    two_sided: m.twoSided, texture: m.texture, alt: m.alt, bind: m.bind, damage: damages(m) ? m.damage : undefined }
 }
 
 function sha(body: Uint8Array): string {
@@ -355,10 +397,12 @@ export function manifest(c: Character): Json {
       fit: fitJson(c.fit),
       size: c.size !== 1 ? c.size : undefined,
       materials: c.materials.map(materialJson),
+      damage_stages: c.damageStages.some((st, k) => st.enabled || st.health !== STAGE_HEALTH[k]) ? c.damageStages : undefined,
     },
     aura: c.aura,
     flames: hasFlames(c.flames) ? c.flames : undefined,
     trails: c.trails.parts.length ? c.trails : undefined,
+    eyes: c.eyes.on ? { color: c.eyes.color, alt_color: c.eyes.alt_color, size: c.eyes.size, position: c.eyes.position } : undefined,
     stats: { display: c.stats, gameplay: c.gameplay },
     ui: c.ui,
     base_moves: c.baseMoves,
@@ -394,6 +438,19 @@ export function problems(c: Character): Problem[] {
   const suffixes = c.materials.filter((m) => m.include).map((m) => m.suffix)
   if (new Set(suffixes).size !== suffixes.length) out.push(['error', 'two materials have the same game name suffix'])
   for (const m of c.materials) if (m.texture && !c.files.has(m.texture)) out.push(['error', `the texture of ${m.name} is missing`])
+  const enabled = c.damageStages.map((st, k): [DamageStage, number] => [st, k]).filter(([st]) => st.enabled)
+  if (enabled.some(([st], i) => i && st.health >= enabled[i - 1][0].health)) out.push(['error', 'each damage stage must be at a lower health than the one before it: change the levels on the Materials page'])
+  for (const m of c.materials) {
+    if (!m.include) continue
+    for (const [, k] of enabled) {
+      for (const co of Z_COSTUMES) {
+        const v = m.damage[co][k]
+        if (damageMember(v) && !c.files.has(v)) out.push(['error', `the damage stage ${k + 1} texture of ${m.name} (costume ${co === 'alt' ? 2 : 1}) is missing`])
+      }
+    }
+  }
+  if (enabled.length && !damageStages(c).length) out.push(['warning', 'damage stages are ticked but no material changes texture at them: pick textures on the Materials page'])
+  if (c.files.size + 2 > MAX_MEMBERS) out.push(['error', `a .imperfect file holds at most ${MAX_MEMBERS - 2} pictures, sounds and cutscenes: remove some`])
   const unsupported = Object.keys(c.baseMoves).filter((k) => !(BASE_MOVES[c.base] ?? []).includes(k as keyof BaseMoves))
   if (unsupported.length) out.push(['error', `${unsupported.join(', ')} only apply to a ${movesBases(unsupported[0])} base: untick them on the Moves page`])
   if (c.gameplay.attack_damage_throw !== undefined && c.base !== 'daredevil') out.push(['error', 'the baton throw damage only applies to a Daredevil base: untick it on the Stats page'])
@@ -568,6 +625,27 @@ function readGun(v: unknown, what: string, legacy = false): Gun {
   }
 }
 
+function readDamage(v: unknown, files: Map<string, Uint8Array>): Record<ZCostume, string[]> {
+  const out = noDamage()
+  if (v === undefined || v === null) return out
+  const dm = keys(v, [...Z_COSTUMES], "a material's damage")
+  for (const k of Z_COSTUMES) {
+    if (dm[k] === undefined) continue
+    const list = typed<unknown[]>(dm[k], 'array', `material damage.${k}`)
+    if (list.length !== DAMAGE_STAGES) throw new LabError(`manifest: a material's damage.${k} has ${DAMAGE_STAGES} stages`)
+    out[k] = list.map((v0) => {
+      const s = str(v0, `material damage.${k}`, 80)!
+      if (s.startsWith('hue:')) num(/^hue:-?\d{1,3}(\.\d+)?$/.test(s) ? parseFloat(s.slice(4)) : null, 'damage hue', -360, 360, false)
+      else if (damageMember(s)) {
+        if (!MEMBER.test(s) || !s.startsWith('textures/')) throw new LabError(`manifest: a material's damage.${k} texture is not valid`)
+        if (!files.has(s)) throw new LabError(`manifest: a material's damage.${k} names ${s}, which the file lacks`)
+      }
+      return s
+    })
+  }
+  return out
+}
+
 function upgrade(m: Record<string, unknown>): Record<string, unknown> {
   const v = m.version
   if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) throw new LabError('not a valid .imperfect file (no version)')
@@ -576,7 +654,7 @@ function upgrade(m: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Character {
-  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'trails', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'cutscenes', 'sounds', 'z_button', 'gun', 'files'], 'the manifest')
+  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'trails', 'eyes', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'cutscenes', 'sounds', 'z_button', 'gun', 'files'], 'the manifest')
   if (m.format !== FORMAT) throw new LabError('not a .imperfect file')
   upgrade(m)
   if (m.game !== GAME) throw new LabError(`this file is for ${m.game}, not ${GAME}`)
@@ -598,7 +676,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
         license: str(o.license ?? '', 'credits.assets', 500)!, url: str(o.url ?? '', 'credits.assets', 500)! }
     }),
   }
-  const mo = keys(m.model ?? {}, ['mapping', 'overrides', 'fit', 'size', 'materials'], 'model')
+  const mo = keys(m.model ?? {}, ['mapping', 'overrides', 'fit', 'size', 'materials', 'damage_stages'], 'model')
   const mapping = typed<Record<string, unknown>>(mo.mapping ?? {}, 'object', 'model.mapping')
   if (Object.keys(mapping).length > 256) throw new LabError('manifest: the mapping is too long')
   for (const [k, v] of Object.entries(mapping)) {
@@ -619,7 +697,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   const mats = typed<unknown[]>(mo.materials ?? [], 'array', 'model.materials')
   if (mats.length > 16) throw new LabError('manifest: at most 16 materials')
   for (const d0 of mats) {
-    const d = keys(d0, ['gltf_material', 'name', 'include', 'suffix', 'size', 'two_sided', 'texture', 'alt', 'bind'], 'a material')
+    const d = keys(d0, ['gltf_material', 'name', 'include', 'suffix', 'size', 'two_sided', 'texture', 'alt', 'bind', 'damage'], 'a material')
     const size = typed<unknown[]>(d.size ?? [256, 256], 'array', 'material size')
     if (size.length !== 2 || size.some((s) => num(s, 'material size', 8, 1024, false, true)! & ((s as number) - 1))) {
       throw new LabError('manifest: material sizes are powers of two from 8 to 1024')
@@ -638,6 +716,15 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
       texture: tex,
       alt,
       bind: num(d.bind, 'material bind', 0, 255, true, true),
+      damage: readDamage(d.damage, files),
+    })
+  }
+  if (mo.damage_stages !== undefined) {
+    const stages = typed<unknown[]>(mo.damage_stages, 'array', 'model.damage_stages')
+    if (stages.length !== DAMAGE_STAGES) throw new LabError(`manifest: model.damage_stages has ${DAMAGE_STAGES} stages`)
+    c.damageStages = stages.map((s0) => {
+      const s = keys(s0, ['enabled', 'health'], 'a damage stage')
+      return { enabled: typed<boolean>(s.enabled ?? false, 'boolean', 'damage stage enabled'), health: num(s.health, 'damage stage health', ...DAMAGE_HEALTH, false, true)! }
     })
   }
   const au = keys(m.aura ?? {}, ['mode', 'tint', 'color', 'alt_color'], 'aura')
@@ -665,6 +752,20 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     color: color(tr.color ?? dt.color, 'trails.color'),
     alt_color: color(tr.alt_color ?? dt.alt_color, 'trails.alt_color'),
     length: num(tr.length ?? dt.length, 'trails.length', ...TRAIL_LENGTH, false)!,
+  }
+  const de = defaultEyes()
+  if (m.eyes === undefined) c.eyes = de
+  else {
+    const ey = keys(m.eyes, ['color', 'alt_color', 'size', 'position'], 'eyes')
+    const at = typed<unknown[]>(ey.position ?? de.position, 'array', 'eyes.position')
+    if (at.length !== 3) throw new LabError('manifest: eyes.position is three numbers')
+    c.eyes = {
+      on: true,
+      color: color(ey.color ?? de.color, 'eyes.color'),
+      alt_color: color(ey.alt_color ?? de.alt_color, 'eyes.alt_color'),
+      size: num(ey.size ?? de.size, 'eyes.size', ...EYE_SIZE, false)!,
+      position: at.map((v, i) => num(v, 'eyes.position', ...(i ? EYE_YZ : EYE_X), false)!) as [number, number, number],
+    }
   }
   const st = keys(m.stats ?? {}, ['display', 'gameplay'], 'stats')
   const disp = keys(st.display ?? defaultStats(), ['normal', 'alt'], 'stats.display')
@@ -890,7 +991,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
 
 export function load(data: Uint8Array): Character {
   const infos = listZip(data)
-  if (infos.length > 64) throw new LabError('the file has too many members')
+  if (infos.length > MAX_MEMBERS) throw new LabError('the file has too many members')
   let total = 0
   for (const info of infos) {
     const name = info.name

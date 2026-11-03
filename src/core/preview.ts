@@ -13,7 +13,8 @@ import * as holster from './build/holster'
 import { conv, type Tri, unit } from './model/fit'
 import type { Model } from './model/glb'
 import type { Skeleton } from './model/skeleton'
-import { type Character, type Holster, image as readImage } from './package/imperfect'
+import { type Character, type DamageStage, type Holster, image as readImage } from './package/imperfect'
+import { LabError } from './errors'
 
 export interface MeshData {
   positions: Float32Array
@@ -88,6 +89,22 @@ export function costumeImage(im: RgbaImage, alt: string, files: Map<string, Uint
   return im
 }
 
+// A costume's texture at each damage stage from its undamaged one, null where the stage is off.
+export function damageImages(own: RgbaImage, choices: string[], stages: DamageStage[], files: Map<string, Uint8Array>): (RgbaImage | null)[] {
+  let prev = own
+  return stages.map((st, k) => {
+    if (!st.enabled) return null
+    const v = choices[k]
+    if (v.startsWith('hue:')) prev = hueShift(own, parseFloat(v.slice(4)))
+    else if (v !== 'prev') {
+      const body = files.get(v)
+      if (!body) throw new LabError(`the damage stage ${k + 1} texture ${v} is missing`)
+      prev = readImage(body)
+    }
+    return prev
+  })
+}
+
 export function sourceMeshes(model: Model, c: Character, flip = false): MeshData[] {
   const images = materialImages(model, c)
   return model.prims.map((prim) => {
@@ -103,6 +120,21 @@ export function fittedMeshes(trisByMat: Map<number, Tri[]>, images: Map<number, 
     for (const t of trisByMat.get(slot)!) for (const [p, n, u, w] of t) b.vertex([p[0] * size, p[1] * size, p[2] * size], n, u, w)
     return b.done(images.get(slot) ?? null)
   })
+}
+
+// A small solid diamond at each point, for markers such as the glowing eyes.
+export function pointMeshes(points: [number, number, number][], radius: number, rgba: [number, number, number, number]): MeshData {
+  const b = new MeshBuilder()
+  const axes = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+  for (const p of points) {
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+      const corner = [axes[0].map((v) => v * sx), axes[1].map((v) => v * sy), axes[2].map((v) => v * sz)]
+      const tri = sx * sy * sz > 0 ? corner : [corner[0], corner[2], corner[1]]
+      const n = unit([sx, sy, sz])
+      for (const d of tri) b.vertex([p[0] + d[0] * radius, p[1] + d[1] * radius, p[2] + d[2] * radius], n, [0.5, 0.5], [])
+    }
+  }
+  return b.done(RgbaImage.filled(1, 1, rgba))
 }
 
 // What is fixed to the prop bone alone, moved into the holster on the anchor bone.
