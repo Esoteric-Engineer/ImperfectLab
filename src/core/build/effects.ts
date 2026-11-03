@@ -9,7 +9,7 @@ import type { GameSource } from '../game/source'
 import { readTpl, roundHalfEven } from '../mnroi/gxtex'
 import * as nfxtool from '../mnroi/nfxtool'
 import * as nvbtool from '../mnroi/nvbtool'
-import { AURA_TINTS, type Flames, type Trails } from '../package/imperfect'
+import { AURA_TINTS, type Eyes, type Flames, type Trails } from '../package/imperfect'
 import { hlsToRgb, rgbToHls } from './colorsys'
 import * as flames from './flames'
 import * as templates from './templates'
@@ -102,7 +102,7 @@ export function tintPlans(source: GameSource, base: BaseCharacter): Record<strin
 }
 
 // How much several characters' tints and flames grow the cache together.
-export function sharedExtra(source: GameSource, tints: [BaseCharacter, string | null, Hidden?][], fires: [Flames, Trails][] = [], more: (fx: Effects) => void = () => {}): number {
+export function sharedExtra(source: GameSource, tints: [BaseCharacter, string | null, Hidden?][], fires: [Flames, Trails, Eyes?][] = [], more: (fx: Effects) => void = () => {}): number {
   const fx = new Effects(source.entry('Misc/game.nfx'))
   tints.forEach(([base, level, hide = [false, false]], i) => {
     if (level === null) return
@@ -110,7 +110,7 @@ export function sharedExtra(source: GameSource, tints: [BaseCharacter, string | 
     fx.tinted(normal, stand(hide[0]), copyPrefix(`x${i}`, false))
     fx.tinted(alt, stand(hide[1]), copyPrefix(`x${i}`, true))
   })
-  fires.forEach(([f, t], i) => trails.alwaysOn(fx, f, t, `x${i}`))
+  fires.forEach(([f, t, e], i) => trails.alwaysOn(fx, f, t, `x${i}`, e ?? null))
   more(fx)
   return cacheSize(fx.used()) - nfxtool.CACHE_SIZE
 }
@@ -298,6 +298,13 @@ export class Effects {
   // A grab line: a constraint drawn between the two fighters (ddNeckAtt, spidSupAttL).
   isLine(name: string): boolean {
     return this.tree([name]).some((b) => nfxtool.TYPES[b.type] === 'constraint')
+  }
+
+  // Whether the effect only draws on the eye markers (Iron Man's irnManFX), so glowing eyes replace it.
+  eyesOnly(name: string | null): boolean {
+    const blocks = this.tree([name])
+    return blocks.length > 0 && blocks.every((b) => nfxtool.TYPES[b.type] === 'billboard' &&
+      b.lines.slice(1).map(nfxtool.tokens).some((t) => t.length >= 2 && t[0].toLowerCase() === 'markertype' && Number(t[1]) === 20))
   }
 
   // Each constraint in the effect's tree, null when unset.

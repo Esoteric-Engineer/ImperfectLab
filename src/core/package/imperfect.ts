@@ -45,6 +45,9 @@ export const FLAME_PARTS = ['head', 'chest', 'r_hand', 'l_hand', 'r_foot', 'l_fo
 export const FLAME_SIZE: [number, number] = [0.5, 2.0]
 export const TRAIL_PARTS = ['arms', 'legs', 'body', 'head']
 export const TRAIL_LENGTH: [number, number] = [0.05, 0.5]
+export const EYE_SIZE: [number, number] = [0.25, 3.0]
+export const EYE_X: [number, number] = [0, 0.3]
+export const EYE_YZ: [number, number] = [-0.3, 0.3]
 export const SIZE: [number, number] = [0.1, 3.0]
 export const LIFT = ['light', 'medium', 'heavy']
 export const GAMEPLAY: Record<string, [number, number, boolean]> = {
@@ -205,6 +208,14 @@ export interface Trails {
   length: number
 }
 
+export interface Eyes {
+  on: boolean
+  color: string
+  alt_color: string
+  size: number
+  position: [number, number, number]
+}
+
 export const MOVE_EFFECTS = ['theirs', 'none'] as const
 export type MoveEffect = (typeof MOVE_EFFECTS)[number]
 export interface MoveLines {
@@ -261,6 +272,7 @@ export interface Character {
   aura: { mode: string; tint: string; color: string; alt_color: string }
   flames: Flames
   trails: Trails
+  eyes: Eyes
   stats: { normal: number[]; alt: number[] }
   gameplay: Gameplay
   baseMoves: BaseMoves
@@ -286,6 +298,12 @@ export function defaultFlames(): Flames {
 
 export function defaultTrails(): Trails {
   return { parts: [], color: '#FFFFFF60', alt_color: '#FFFFFF60', length: 0.2 }
+}
+
+// Iron Man's eye glow (irnManFX) and its markers' place
+export const EYE_POSITION: [number, number, number] = [0.033, 0.129, 0.046]
+export function defaultEyes(): Eyes {
+  return { on: false, color: '#FFFFFF', alt_color: '#00FF00', size: 1, position: [...EYE_POSITION] }
 }
 
 export function hasCutscenes(c: Cutscenes): boolean {
@@ -317,6 +335,7 @@ export function newCharacter(): Character {
     aura: { mode: 'base', tint: 'all', color: '#40A0FF', alt_color: '#50FF50' },
     flames: defaultFlames(),
     trails: defaultTrails(),
+    eyes: defaultEyes(),
     stats: defaultStats(),
     gameplay: {},
     baseMoves: {},
@@ -383,6 +402,7 @@ export function manifest(c: Character): Json {
     aura: c.aura,
     flames: hasFlames(c.flames) ? c.flames : undefined,
     trails: c.trails.parts.length ? c.trails : undefined,
+    eyes: c.eyes.on ? { color: c.eyes.color, alt_color: c.eyes.alt_color, size: c.eyes.size, position: c.eyes.position } : undefined,
     stats: { display: c.stats, gameplay: c.gameplay },
     ui: c.ui,
     base_moves: c.baseMoves,
@@ -634,7 +654,7 @@ function upgrade(m: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Character {
-  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'trails', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'cutscenes', 'sounds', 'z_button', 'gun', 'files'], 'the manifest')
+  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'trails', 'eyes', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'cutscenes', 'sounds', 'z_button', 'gun', 'files'], 'the manifest')
   if (m.format !== FORMAT) throw new LabError('not a .imperfect file')
   upgrade(m)
   if (m.game !== GAME) throw new LabError(`this file is for ${m.game}, not ${GAME}`)
@@ -732,6 +752,20 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     color: color(tr.color ?? dt.color, 'trails.color'),
     alt_color: color(tr.alt_color ?? dt.alt_color, 'trails.alt_color'),
     length: num(tr.length ?? dt.length, 'trails.length', ...TRAIL_LENGTH, false)!,
+  }
+  const de = defaultEyes()
+  if (m.eyes === undefined) c.eyes = de
+  else {
+    const ey = keys(m.eyes, ['color', 'alt_color', 'size', 'position'], 'eyes')
+    const at = typed<unknown[]>(ey.position ?? de.position, 'array', 'eyes.position')
+    if (at.length !== 3) throw new LabError('manifest: eyes.position is three numbers')
+    c.eyes = {
+      on: true,
+      color: color(ey.color ?? de.color, 'eyes.color'),
+      alt_color: color(ey.alt_color ?? de.alt_color, 'eyes.alt_color'),
+      size: num(ey.size ?? de.size, 'eyes.size', ...EYE_SIZE, false)!,
+      position: at.map((v, i) => num(v, 'eyes.position', ...(i ? EYE_YZ : EYE_X), false)!) as [number, number, number],
+    }
   }
   const st = keys(m.stats ?? {}, ['display', 'gameplay'], 'stats')
   const disp = keys(st.display ?? defaultStats(), ['normal', 'alt'], 'stats.display')

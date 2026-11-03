@@ -87,4 +87,27 @@ describe.skipIf(!ISO)('move preview', () => {
     expect(c.moves).toEqual({})
     expect(ok(s.movePreview(c, 'Attack1', 'daredevil')).variants[0].rec.name).toBe(own)
   })
+
+  it('shows the glowing eyes on the head, framed on them', async () => {
+    const s = service()
+    const c = character('wolverine', true)
+    await s.importModel(c.glb!)
+    expect(s.eyesPreview(c)).toBe('the glowing eyes are off')
+    c.eyes = { ...imperfect.defaultEyes(), on: true, color: '#FF0000', position: [0.05, 0.1, 0.02] }
+    const r = s.eyesPreview(c)
+    if (typeof r === 'string') throw new Error(r)
+    const dots = r.meshes[r.meshes.length - 1]
+    expect(dots.positions.length).toBe(2 * 8 * 3 * 3)
+    const sk = Skeleton.ofBase(new R.BaseCharacter(gameSource(), 'wolverine'))
+    const head = sk.nodes[sk.node('head')!].pos
+    const mean = (from: number) => [0, 1, 2].map((k) => {
+      let sum = 0
+      for (let i = from; i < from + 24; i++) sum += dots.positions[i * 3 + k]
+      return sum / 24
+    })
+    expect(mean(0).map((v, k) => v - head[k])).toEqual([-0.05, 0.1, 0.02].map((v) => expect.closeTo(v, 4)))
+    expect(mean(24).map((v, k) => v - head[k])).toEqual([0.05, 0.1, 0.02].map((v) => expect.closeTo(v, 4)))
+    expect(Array.from(dots.image!.data.slice(0, 4))).toEqual([255, 0, 0, 255])
+    expect(r.focus[1]).toBeCloseTo(0.25)
+  })
 })

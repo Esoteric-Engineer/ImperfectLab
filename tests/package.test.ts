@@ -634,6 +634,17 @@ describe('round trip', () => {
     expect(imperfect.load(imperfect.save(c)).trails).toEqual({ ...c.trails, parts: ['arms', 'legs'] })
   })
 
+  it('saves and loads glowing eyes, and leaves them out when off', () => {
+    const c = character()
+    expect(imperfect.manifest(c).eyes).toBeUndefined()
+    expect(imperfect.load(imperfect.save(c)).eyes).toEqual(imperfect.defaultEyes())
+    c.eyes = { on: true, color: '#FF000080', alt_color: '#00FF0000', size: 1.5, position: [0.05, 0.11, -0.02] }
+    expect(imperfect.manifest(c).eyes).toEqual({ color: '#FF000080', alt_color: '#00FF0000', size: 1.5, position: [0.05, 0.11, -0.02] })
+    expect(imperfect.load(imperfect.save(c)).eyes).toEqual(c.eyes)
+    c.eyes.on = false
+    expect(imperfect.manifest(c).eyes).toBeUndefined()
+  })
+
   it('keeps flames to the body or to parts', () => {
     const c = character()
     c.flames = { ...imperfect.defaultFlames(), parts: ['head'], body: true }
@@ -733,6 +744,13 @@ describe('hostile files', () => {
       (m) => (m.trails = { parts: ['arms'], length: 1 }),
       (m) => (m.trails = { parts: ['arms'], color: 'white' }),
       (m) => (m.trails = { parts: ['arms'], width: 2 }),
+      (m) => (m.eyes = { size: 5 }),
+      (m) => (m.eyes = { position: [-0.01, 0, 0] }),
+      (m) => (m.eyes = { position: [0, 0.5, 0] }),
+      (m) => (m.eyes = { position: [0, 0] }),
+      (m) => (m.eyes = { color: 'red' }),
+      (m) => (m.eyes = { on: true }),
+      (m) => (m.eyes = true),
     ]
     for (const edit of cases) rejected(withManifest(files(), edit))
   })

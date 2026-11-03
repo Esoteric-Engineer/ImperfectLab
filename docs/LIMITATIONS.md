@@ -48,6 +48,11 @@ The ribbons on the **Aura** page (`trails`, [`FORMAT.md`](FORMAT.md)):
 - **Straight between joints.** A ribbon runs straight from one joint to the next, so it doesn't follow a bent or bulky limb's outline.
 - **Effect memory.** A color's ribbon and controllers take 206 bytes of the effect cache for the arms alone and 452 for every part, and two costumes of the same color share them. They count against what a full aura tint may grow the cache by.
 
+## Glowing eyes
+
+- **Replaces the base's eye markers.** Base effects drawn on the eyes (Storm's power-up arcs) follow the new eyes, and an Iron Man base's own glow is left out.
+- **Effect memory.** A color takes 93 bytes of the effect cache (white at size 1 is Iron Man's own and takes none).
+
 ## Tuning
 
 Every character with changed stats, a tint or changed cutscenes gets its own tuning file. Each one listed in `Misc/nvblist.txt` takes 12,354 bytes when the game boots, and the list itself has room for about 53 more bytes (a line costs its two names plus 2, so `PLAYER <internal name>` costs the name's length plus 8).

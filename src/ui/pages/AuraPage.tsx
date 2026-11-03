@@ -1,8 +1,9 @@
 import * as effects from '../../core/build/effects'
 import * as trails from '../../core/build/trails'
-import { FLAME_SIZE, TRAIL_LENGTH } from '../../core/package/imperfect'
+import { EYE_POSITION, EYE_SIZE, EYE_X, EYE_YZ, FLAME_SIZE, TRAIL_LENGTH } from '../../core/package/imperfect'
 import { ColorButton, Note, NumberInput, Warning } from '../components/common'
 import { store, useStore } from '../store'
+import { PlacementView } from './MovesPage'
 
 const TEXTS: [string, string][] = [
   ['base', "Base: The normal base character's"],
@@ -26,6 +27,8 @@ const PARTS: [string, string][] = [
 ]
 
 const TRAIL_PARTS: [string, string][] = [['arms', 'Arms'], ['legs', 'Legs'], ['body', 'Body'], ['head', 'Head']]
+
+const EYE_AXES: [string, [number, number]][] = [['X (apart)', EYE_X], ['Y (forward)', EYE_YZ], ['Z (up)', EYE_YZ]]
 
 const kb = (n: number) => (n / 1024).toFixed(1)
 
@@ -52,9 +55,12 @@ export function AuraPage() {
   const f = c.flames
   const flameMode = f.body ? 'body' : f.parts.length ? 'parts' : 'none'
   const t = c.trails
-  const extraBytes = trails.cost(f, t)
+  const e = c.eyes
+  const extraBytes = trails.cost(f, t, e)
   const fireBytes = trails.cost(f, { ...t, parts: [] })
-  const extras = trails.label(f, t)
+  const trailBytes = trails.cost(f, t) - fireBytes
+  const eyeBytes = extraBytes - fireBytes - trailBytes
+  const extras = trails.label(f, t, e)
   const plans = details?.tint ?? {}
   const hide = effects.hidden(c.aura.color, c.aura.alt_color)
   const tooBig = (level: string) => effects.tintLevel(plans, level, extraBytes, hide) !== level
@@ -92,6 +98,10 @@ export function AuraPage() {
   }
   const togglePart = (part: string, on: boolean) => {
     f.parts = PARTS.map(([p]) => p).filter((p) => (p === part ? on : f.parts.includes(p)))
+    edited()
+  }
+  const setEye = (k: number, v: number) => {
+    e.position = e.position.map((p, i) => (i === k ? Math.round(v * 1000) / 1000 : p)) as typeof e.position
     edited()
   }
   const toggleTrail = (part: string, on: boolean) => {
@@ -187,8 +197,48 @@ export function AuraPage() {
         <NumberInput value={t.length} min={TRAIL_LENGTH[0]} max={TRAIL_LENGTH[1]} step={0.05} disabled={!t.parts.length} onChange={(v) => { t.length = v; edited() }} />
       </div>
       <p>
-        {t.parts.length ? `The trails add ${extraBytes - fireBytes} bytes to the game's effect memory.` : ''}
+        {t.parts.length ? `The trails add ${trailBytes} bytes to the game's effect memory.` : ''}
       </p>
+      <h3>Glowing Eyes</h3>
+      <label className="check block">
+        <input type="checkbox" checked={e.on} onChange={(ev) => { e.on = ev.target.checked; edited() }} /> Add glowing eyes
+      </label>
+      {e.on && c.base === 'ironman' && <Note>These replace Iron Man's own eye glow.</Note>}
+      <div className="form">
+        <label>Costume 1 eyes</label>
+        <ColorButton color={e.color} alpha disabled={!e.on} onChange={(v) => { e.color = v; edited() }} />
+        <label>Costume 2 eyes</label>
+        <ColorButton color={e.alt_color} alpha disabled={!e.on} onChange={(v) => { e.alt_color = v; edited() }} />
+        <label>Glow size</label>
+        <NumberInput value={e.size} min={EYE_SIZE[0]} max={EYE_SIZE[1]} step={0.05} disabled={!e.on} onChange={(v) => { e.size = v; edited() }} />
+      </div>
+      <Note>A fully transparent color (0%) gives that costume no glowing eyes.</Note>
+      {e.on && (
+        <>
+          <h4>Eye Location</h4>
+          <Note>
+            Where the eyes sit from the head bone. X moves both eyes away from the middle, one to each side.
+          </Note>
+          <div className="row">
+            <div>
+              <table className="gameplay grid">
+                <thead><tr><th>Axis</th><th>Position</th></tr></thead>
+                <tbody>
+                  {EYE_AXES.map(([axis, [lo, hi]], k) => (
+                    <tr key={axis}>
+                      <td>{axis}</td>
+                      <td><span><NumberInput min={lo} max={hi} step={0.005} value={e.position[k]} onChange={(v) => setEye(k, v)} /> m</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <button onClick={() => { e.position = [...EYE_POSITION]; edited() }}>Reset to Iron Man's</button>
+            </div>
+            <PlacementView first="front" method="eyesPreview" what="the eyes" />
+          </div>
+          <p>{eyeBytes ? `The eyes add ${eyeBytes} bytes to the game's effect memory.` : ''}</p>
+        </>
+      )}
       <h3>Always-On Effect</h3>
       <label className="check block">
         <input type="checkbox" checked={f.base_effect} onChange={(e) => { f.base_effect = e.target.checked; edited() }} />

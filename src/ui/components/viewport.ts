@@ -230,6 +230,14 @@ export class Viewport {
     this.dist = 1.15 * Math.max(halfH / t, halfW / (t * aspect)) + halfW
   }
 
+  // Looks at a sphere about p (a spot of interest, such as the eyes) instead of the whole scene.
+  focus(p: Vec3, radius: number) {
+    this.center = [...p]
+    this.dist = (1.15 * radius) / Math.tan((FOV * Math.PI) / 360)
+    this.frameOnResize = false
+    this.update()
+  }
+
   view(name: 'front' | 'right' | 'back' | 'left') {
     this.yaw = { front: 0.0, right: Math.PI / 2, back: Math.PI, left: -Math.PI / 2 }[name]
     this.pitch = 0.1

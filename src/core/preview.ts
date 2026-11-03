@@ -122,6 +122,21 @@ export function fittedMeshes(trisByMat: Map<number, Tri[]>, images: Map<number, 
   })
 }
 
+// A small solid diamond at each point, for markers such as the glowing eyes.
+export function pointMeshes(points: [number, number, number][], radius: number, rgba: [number, number, number, number]): MeshData {
+  const b = new MeshBuilder()
+  const axes = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+  for (const p of points) {
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+      const corner = [axes[0].map((v) => v * sx), axes[1].map((v) => v * sy), axes[2].map((v) => v * sz)]
+      const tri = sx * sy * sz > 0 ? corner : [corner[0], corner[2], corner[1]]
+      const n = unit([sx, sy, sz])
+      for (const d of tri) b.vertex([p[0] + d[0] * radius, p[1] + d[1] * radius, p[2] + d[2] * radius], n, [0.5, 0.5], [])
+    }
+  }
+  return b.done(RgbaImage.filled(1, 1, rgba))
+}
+
 // What is fixed to the prop bone alone, moved into the holster on the anchor bone.
 export function holsteredTris(trisByMat: Map<number, Tri[]>, skeleton: Skeleton, h: Pick<Holster, 'position' | 'rotation'>, bone = CLUB, anchor = holster.CHEST): Map<number, Tri[]> {
   const C = holster.center(trisByMat.values(), bone)

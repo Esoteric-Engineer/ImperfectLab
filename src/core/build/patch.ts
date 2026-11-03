@@ -28,6 +28,7 @@ import * as cutscenes from './cutscenes'
 import * as damage from './damage'
 import * as effects from './effects'
 import * as basemoves from './basemoves'
+import * as eyes from './eyes'
 import * as flames from './flames'
 import * as gun from './gun'
 import * as holster from './holster'
@@ -83,6 +84,7 @@ export class Builder {
   selectId = ui.NEW_ID
   tint: string | null = null
   greyTint: [boolean, boolean] = [false, false] // whether tinted effects draw the grey fire sprite
+  eyesReplace = false // whether the glowing eyes replace the base's own always-on effect
   moveFx: moves.EffectPlan | null = null
   propCenter: [number, number, number] | null = null
   gunGeometry: gun.Geometry | null = null
@@ -297,6 +299,7 @@ export class Builder {
         const empty = flames.markers(render, sk, copy, c.flames.parts)
         if (!alt && empty.length) this.note(`flames: no part of the model follows the ${empty.join(', ')} bone, so its flame sits on the bone itself`)
       }
+      if (eyes.hasAny(c.eyes)) eyes.markers(render, sk, c.eyes)
       if (trails.hasAny(c.trails) && !effects.hidden(c.trails.color, c.trails.alt_color)[alt ? 1 : 0]) {
         const empty = trails.markers(render, sk, copy, c.trails.parts)
         if (empty.length) this.note(`motion trails: no part of the model follows the ${empty.join(', ')} bone, so its trail ends at the bone itself`)
@@ -354,8 +357,8 @@ export class Builder {
   // The aura tint's copies, the flames' blocks and the swapped and stretched moves' recolored lines, in one effect file.
   effects(): [[string, string] | null, Map<number, string[]> | null, nottool.Template[], [string | null, string | null] | null] {
     const c = this.c
-    const tinted = c.aura.mode === 'tint', fire = flames.hasAny(c.flames), trailed = trails.hasAny(c.trails), theirs = Object.values(c.moveEffects).includes('theirs'), lined = paintsReach(c)
-    if (!tinted && !fire && !trailed && !theirs && !lined && !gunOf(c)) return [null, null, [], null]
+    const tinted = c.aura.mode === 'tint', fire = flames.hasAny(c.flames), trailed = trails.hasAny(c.trails), theirs = Object.values(c.moveEffects).includes('theirs'), lined = paintsReach(c), eyed = eyes.hasAny(c.eyes)
+    if (!tinted && !fire && !trailed && !theirs && !lined && !eyed && !gunOf(c)) return [null, null, [], null]
     const fx = new effects.Effects(this.src.entry('Misc/game.nfx'))
     const before = fx.used()
     const prefixes: [string, string] = [effects.copyPrefix(c.internalName, false), effects.copyPrefix(c.internalName, true)]
@@ -380,7 +383,14 @@ export class Builder {
       power = new Map([...(power ?? []), [gun.FIELD, Array(tuning.SLOTS).fill(bullet.name)]])
       this.note(`gun: each bullet launches ${bullet.name} (Elektra's sai without its model) from tuning field ${gun.FIELD}, hitting for ${g.damage}`)
     }
-    const effect2 = trails.alwaysOn(fx, c.flames, c.trails, c.internalName)
+    const effect2 = trails.alwaysOn(fx, c.flames, c.trails, c.internalName, c.eyes)
+    if (eyed) {
+      const p = c.eyes.position.map((v) => formatG(v)).join(', ')
+      const hiddenIn = ['1', '2'].filter((_, i) => effects.hidden(c.eyes.color, c.eyes.alt_color)[i])
+      this.note(`glowing eyes: at ±${p} m from the head bone, ${formatG(c.eyes.size)}x Iron Man's size${hiddenIn.length ? `; costume ${hiddenIn[0]} has none` : ''}`)
+      this.eyesReplace = Boolean(this.base.effect1) && fx.eyesOnly(this.base.effect1) && fx.eyesOnly(this.base.altEffect1)
+      if (this.eyesReplace) this.note(`glowing eyes: they replace ${this.base.label}'s own (${this.base.effect1})`)
+    }
     if (fire) this.note(`flames: ${c.flames.body ? "over the whole body (Human Torch's body fire)" : `on the ${c.flames.parts.join(', ')}`}`)
     if (trailed) {
       const hiddenIn = ['1', '2'].filter((_, i) => effects.hidden(c.trails.color, c.trails.alt_color)[i])
@@ -399,7 +409,7 @@ export class Builder {
     const c = this.c, base = this.base
     const tun = new tuning.Tuning(this.src, base)
     const hide = effects.hidden(c.aura.color, c.aura.alt_color)
-    const level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, base), 'all', trails.cost(c.flames, c.trails), hide) : c.aura.tint)
+    const level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, base), 'all', trails.cost(c.flames, c.trails, c.eyes), hide) : c.aura.tint)
     if (this.tint === null && level !== c.aura.tint) this.note(`aura tint: ${base.label}'s full tint needs more memory than a match can spare; its idle and power-up effects are tinted`)
     const [rootsN, rootsA] = effects.roots(fx, tun, base, level)
     if (!rootsN.length && !rootsA.length) throw new LabError(`${base.label} has no effects to tint; use the Base or Swap aura`)
@@ -538,7 +548,7 @@ export class Builder {
     if (stretchReturns(c)) on |= reach.RETURN_ABILITY
     const mode = c.aura.mode === 'swap' ? 'swap' : 'base'
     this.r.sets.set('Misc/Global.not', templates.build(this.src.entry('Misc/Global.not'), this.base, c.internalName, mode, effect1, description,
-      on || off ? [on, off] : null, gp.health ?? null, extra, motionSet, (c.baseMoves.throw_cable ?? true) && c.flames.base_effect, effect2, c.size))
+      on || off ? [on, off] : null, gp.health ?? null, extra, motionSet, (c.baseMoves.throw_cable ?? true) && c.flames.base_effect && !this.eyesReplace, effect2, c.size))
   }
 
   picture(slot: string): RgbaImage | null {

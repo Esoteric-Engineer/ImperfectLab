@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import * as cutscenes from '../src/core/build/cutscenes'
 import * as damage from '../src/core/build/damage'
 import * as effects from '../src/core/build/effects'
+import * as eyes from '../src/core/build/eyes'
 import { EFFECT_FIELDS } from '../src/core/build/effectslots'
 import * as flames from '../src/core/build/flames'
 import * as gun from '../src/core/build/gun'
@@ -781,6 +782,63 @@ describe.skipIf(!ISO)('game', () => {
     trails.alwaysOn(fx, imperfect.defaultFlames(), t, 'Synth')
     expect(Math.abs(fx.used() - before - trails.cost(imperfect.defaultFlames(), t))).toBeLessThan(16)
     expect(trails.cost(imperfect.defaultFlames(), imperfect.defaultTrails())).toBe(0)
+  })
+
+  it('puts glowing eyes on the head bone, replacing the base\'s eye markers', () => {
+    // Iron Man's own eye markers are kind 20 on the head bone at Iron Man's place
+    const iron = new R.BaseCharacter(src(), 'ironman')
+    const ironModel = ngmtool.read(iron.bundleFiles()[0])[1][0]
+    const head = Skeleton.ofBase(iron).node('head')
+    expect(ironModel.attachments.filter(([, k]) => k === eyes.EYE_KIND).map(([n, , i, m]) => [n, i, ...m.slice(12, 15).map((v) => Math.round(v * 1000) / 1000)]))
+      .toEqual([[head, 1, -0.033, 0.129, 0.046], [head, 2, 0.033, 0.129, 0.046]])
+    for (const base of ['wolverine', 'storm']) {
+      const c = tinted(base)
+      c.aura = { ...c.aura, mode: 'base' }
+      c.eyes = { ...imperfect.defaultEyes(), on: true, color: '#FF2000', alt_color: '#0040FF80', size: 1.5, position: [0.04, 0.1, 0.05] }
+      const r = new Builder(src(), c).build()
+      const sk = Skeleton.ofBase(new R.BaseCharacter(src(), base))
+      for (const costume of ['', '_alt']) {
+        const m = ngmtool.read(r.adds.get(`Bundles/synth${costume}.ngm`)!)[1][0]
+        expect(m.attachments.filter(([, k]) => k === eyes.EYE_KIND).map(([n, , i, mat]) => [n, i, ...mat.slice(12, 15).map((v) => Math.fround(v))]))
+          .toEqual([[sk.node('head'), 1, ...[-0.04, 0.1, 0.05].map(Math.fround)], [sk.node('head'), 2, ...[0.04, 0.1, 0.05].map(Math.fround)]])
+      }
+      const T = new R.Templates(r.sets.get('Misc/Global.not')!)
+      const by = new Map(nfxtool.blocks(nfxtool.readNfx(r.sets.get('Misc/game.nfx')!)).map((b) => [b.name, b]))
+      const glow = (t: string) => Object.fromEntries(by.get(R.text(T.prop(t, R.P_EFFECT2))!)!.records()[0].map((rec) => [nfxtool.KEYS[rec.key], rec.value]))
+      expect(['plr_Synth', 'plr_altSynth'].map((t) => by.get(R.text(T.prop(t, R.P_EFFECT2))!)!.type)).toEqual([nfxtool.TYPES.indexOf('billboard'), nfxtool.TYPES.indexOf('billboard')])
+      expect([glow('plr_Synth').startcol, glow('plr_altSynth').startcol, glow('plr_Synth').markertype, glow('plr_Synth').width]).toEqual([0xb4ff2000, 0x5a0040ff, 20, Math.fround(0.15)])
+      // Storm keeps her hair; only an effect drawn on the eyes alone gives way
+      expect(R.text(T.prop('plr_Synth', R.P_EFFECT1))).toBe(base === 'storm' ? 'strmHair' : null)
+    }
+  })
+
+  it('replaces Iron Man\'s own eye glow and leaves out a hidden costume\'s', () => {
+    const c = tinted('ironman')
+    c.aura = { ...c.aura, mode: 'base' }
+    c.eyes = { ...imperfect.defaultEyes(), on: true, alt_color: '#00FF0000' }
+    const r = new Builder(src(), c).build()
+    const T = new R.Templates(r.sets.get('Misc/Global.not')!)
+    for (const t of ['act_Synth', 'plr_Synth', 'plr_altSynth']) expect(T.get(t).get(R.P_EFFECT1), t).toBeNull()
+    // white at Iron Man's size is his own irnManFX, which costs nothing
+    expect(R.text(T.prop('plr_Synth', R.P_EFFECT2))).toBe('irnManFX')
+    expect(T.get('plr_altSynth').get(R.P_EFFECT2)).toBeNull()
+    expect(r.notes.some((n) => n.includes('replace Iron Man'))).toBe(true)
+  })
+
+  it('combines glowing eyes with flames and trails, and counts them', () => {
+    const f = { ...imperfect.defaultFlames(), parts: ['head'] }, t = { ...imperfect.defaultTrails(), parts: ['arms'] }
+    const e = { ...imperfect.defaultEyes(), on: true, color: '#FF0000' }
+    const fx = new effects.Effects(src().entry('Misc/game.nfx'))
+    const before = fx.used()
+    const [normal] = trails.alwaysOn(fx, f, t, 'Synth', e)!
+    const kids = fx.by.get(normal!.toLowerCase())!.records()[0].filter((rec) => nfxtool.KEYS[rec.key] === 'effectname').map((rec) => fx.by.get((rec.value as string).toLowerCase())!.type)
+    expect(kids).toEqual([nfxtool.TYPES.indexOf('controller'), nfxtool.TYPES.indexOf('controller'), nfxtool.TYPES.indexOf('billboard')])
+    expect(Math.abs(fx.used() - before - trails.cost(f, t, e))).toBeLessThan(16)
+    expect(trails.cost(imperfect.defaultFlames(), imperfect.defaultTrails(), imperfect.defaultEyes())).toBe(0)
+    expect(trails.cost(imperfect.defaultFlames(), imperfect.defaultTrails(), e)).toBeGreaterThan(0)
+    expect(trails.label(f, t, e)).toBe('flames, motion trails and glowing eyes')
+    const src0 = new effects.Effects(src().entry('Misc/game.nfx'))
+    expect(['irnManFX', 'altIrnManFX', 'strmHair', 'htBodyFire'].map((n) => src0.eyesOnly(n))).toEqual([true, true, false, false])
   })
 
   it('counts flames in the memory a tint may take', () => {
