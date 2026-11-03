@@ -5,6 +5,7 @@ import { sha256 } from '@noble/hashes/sha2.js'
 import { toHex } from '../bytes'
 import { formatG } from '../format'
 import { LabError } from '../errors'
+import { GUN_MOTIONS } from '../game/dol'
 import * as R from '../game/roster'
 import type { GameSource } from '../game/source'
 import * as ngbtool from '../mnroi/ngbtool'
@@ -16,6 +17,7 @@ import type { MoveEffect, MoveLines, MoveReach } from '../package/imperfect'
 import * as basemoves from './basemoves'
 import * as damage from './damage'
 import * as energy from './energy'
+import * as gun from './gun'
 import * as holster from './holster'
 import type { Effects } from './effects'
 import { EFFECT_FIELDS, effectNames, OWN_EFFECTS, Slots } from './effectslots'
@@ -142,7 +144,7 @@ export function motionSetOf(base: R.BaseCharacter): string {
 export const stemOf = (set: string) => set.replace(/\.nms$/i, '').toLowerCase()
 
 // The motions the game ends up with: the base set's, then the set's own, dropping any whose animation no bundle has.
-function resolved(src: GameSource, own: nmstool.MotionSet, has: (anim: string) => boolean): Map<string, nmstool.Motion> {
+export function resolved(src: GameSource, own: nmstool.MotionSet, has: (anim: string) => boolean): Map<string, nmstool.Motion> {
   const out = new Map<string, nmstool.Motion>()
   const based = own.basedon && src.has(`Motions/${own.basedon}.nms`) ? nmstool.parse(src.entry(`Motions/${own.basedon}.nms`)).motions() : new Map<string, nmstool.Motion>()
   for (const list of [based, own.motions()]) for (const [k, m] of list) if (has(m.anim)) out.set(k, m)
@@ -157,6 +159,7 @@ export interface BaseMotions {
   damage: number[]
   reach?: Record<string, reach.Summary>
   strikes?: Record<string, number[]>
+  sounds?: Record<string, string[]>
 }
 export type Catalog = Record<string, BaseMotions>
 
@@ -178,6 +181,7 @@ export function catalog(src: GameSource, fx: Effects): Catalog {
       const names = new Set<string>()
       const plans: Record<string, reach.Summary> = {}
       const strikes: Record<string, number[]> = {}
+      const sounds: Record<string, string[]> = {}
       for (const slot of SLOTS) {
         if (!src.has(`Bundles/${stem}${slot}.ngb`)) continue
         for (const [n, length, events] of ngbtool.events(src.entry(`Bundles/${stem}${slot}.ngb`))) {
@@ -188,17 +192,34 @@ export function catalog(src: GameSource, fx: Effects): Catalog {
           if (p) plans[k] = reach.summary(p)
           const hits = damage.strikes(events)
           if (hits.length) strikes[k] = hits
+          for (const ref of new Set(events.filter(([, t]) => t === gun.SOUND).map(([, , p, v]) => `${p}:${v}`))) (sounds[ref] ??= []).push(k)
         }
       }
       const m = resolved(src, nmstool.parse(src.entry(`Motions/${set}`)), (a) => names.has(a.toLowerCase()))
       const range = tun.num(tuning.FIELDS.super_throw_range)
       const values = damage.KEYS.map((k) => tun.num(tuning.FIELDS[k]))
-      out[key] = { body: base.body, motions: Object.fromEntries([...m].map(([k, v]) => [k, v.anim])), range, damage: values, reach: plans, strikes }
+      out[key] = { body: base.body, motions: Object.fromEntries([...m].map(([k, v]) => [k, v.anim])), range, damage: values, reach: plans, strikes, sounds }
     } catch (e) {
       if (!(e instanceof LabError)) throw e
     }
   }
   return out
+}
+
+export function soundChoices(cat: Catalog, base: string): [number, number, string[]][] {
+  const own = cat[base]
+  if (!own?.sounds) return []
+  const byAnim = new Map<string, string[]>()
+  for (const move of MOVES) {
+    for (const state of move.states) {
+      const a = own.motions[state.toLowerCase()]?.toLowerCase()
+      if (a && !byAnim.get(a)?.includes(move.label)) byAnim.set(a, [...(byAnim.get(a) ?? []), move.label])
+    }
+  }
+  return Object.entries(own.sounds).map(([ref, anims]): [number, number, string[]] => {
+    const [event, variant] = ref.split(':').map(Number)
+    return [event, variant, [...new Set(anims.flatMap((a) => byAnim.get(a) ?? []))]]
+  }).sort((a, b) => a[0] - b[0] || a[1] - b[1])
 }
 
 export function animations(cat: Catalog, base: string, move: Move): (string | null)[] | null {
@@ -316,7 +337,7 @@ export function idleOpts(opts: string[], stand: string[]): string[] {
 }
 
 // A track over the move's time: looped every period from its first frame and cut at length.
-function fitTrack([bone, ch, keys]: ngbtool.Track, period: number, length: number): ngbtool.Track {
+export function fitTrack([bone, ch, keys]: ngbtool.Track, period: number, length: number): ngbtool.Track {
   if (keys.length < 2 || period <= 0) return [bone, ch, keys]
   const out: ngbtool.Key[] = []
   for (let start = 0; start < length; start += period) {
@@ -517,20 +538,72 @@ function reachFor(move: Move, p: reach.Plan, want: MoveReach, far: reach.Limb | 
   return { distance: want.distance ?? 0, limbs, returns, far: returns ? far : null, pull, hold: want.hold }
 }
 
+// The gun's shots, under motion ids no base uses (game/gun.s plays them in place of the attacks while Z holds the gun).
+function gunMoves(src: GameSource, base: R.BaseCharacter, own: nmstool.MotionSet, bundles: Map<string, ngbtool.Record[]>, model: ngmtool.Model,
+  shooter: gun.Plan, size: number): string {
+  const prop = shooter.holster.prop!, g = gun.sized(shooter.geometry, size)
+  const arm = holster.armOf(new Skeleton(model, base.body), prop.side)
+  const donor = source(src, base, gun.DONOR)
+  const map = boneMap(donor.other.body, base.body, model.nodes.length)
+  const taken = (state: string): [ngbtool.Record, string[], string[]] => {
+    const m = donor.motions.get(state)
+    const slots = SLOTS.filter((slot) => donor.bundles.get(slot)?.some((r) => r.name.toLowerCase() === m?.anim.toLowerCase()))
+    if (!m || !slots.length) throw new LabError(`${donor.other.label} has no ${state} to take the gun's shots from`)
+    const rec = donor.bundles.get(slots[0])!.find((r) => r.name.toLowerCase() === m.anim.toLowerCase())!
+    const moved = remapRecord(rec, map)
+    return [size !== 1 ? scaleRecord(moved, size) : moved, slots, m.opts]
+  }
+  const stand = resolved(src, own, holds(bundles)).get('stand')
+  const standRec = stand && bundles.get('')?.find((r) => r.name.toLowerCase() === stand.anim.toLowerCase())
+  if (!standRec) throw new LabError(`${base.label} has no stand to aim the gun from`)
+  const loop = (state: string) => {
+    const m = resolved(src, own, holds(bundles)).get(state)
+    const rec = m && [...bundles.values()].flat().find((r) => r.name.toLowerCase() === m.anim.toLowerCase())
+    if (!rec) throw new LabError(`${base.label} has no ${state} to aim the gun from`)
+    return rec
+  }
+  const [ground, groundSlots, groundOpts] = taken(gun.DONOR_GROUND)
+  const [air, airSlots, airOpts] = taken(gun.DONOR_AIR)
+  const [groundEvents, length] = gun.shotEvents(ground.events, shooter.sound, shooter.bullets, ground.length, true, shooter.automatic)
+  const shot = gun.armOnly(gun.aim({ ...ground, name: 'Gun_Shot.nad', length, tracks: standRec.tracks.map((t) => fitTrack(t, standRec.length, length)),
+    pointers: standRec.pointers, events: groundEvents }, model, prop, g, arm, shooter.automatic), arm)
+  const moving = (state: string, name: string) =>
+    gun.armOnly(gun.aim({ ...ground, name, length, ...gun.meanPose(loop(state), length), events: groundEvents }, model, prop, g, arm, shooter.automatic), arm)
+  const airShot = gun.aim({ ...air, name: 'Gun_AirShot.nad', events: gun.shotEvents(air.events, shooter.sound, shooter.bullets, air.length)[0] }, model, prop, g, arm)
+  const put = (rec: ngbtool.Record, slots: string[]) => {
+    const named = ownName(rec)
+    for (const slot of slots) {
+      if (!bundles.has(slot)) bundles.set(slot, [])
+      const into = bundles.get(slot)!
+      if (!into.some((r) => r.name.toLowerCase() === named.toLowerCase())) into.push({ ...rec, name: named })
+    }
+    return named
+  }
+  own.set({ state: GUN_MOTIONS.ground, anim: put(shot, groundSlots), opts: [...groundOpts, ...gun.MIXED] })
+  own.set({ state: GUN_MOTIONS.run, anim: put(moving('run', 'Gun_RunShot.nad'), groundSlots), opts: [...groundOpts, ...gun.MIXED] })
+  own.set({ state: GUN_MOTIONS.walk, anim: put(moving('walk', 'Gun_WalkShot.nad'), groundSlots), opts: [...groundOpts, ...gun.MIXED] })
+  own.set({ state: GUN_MOTIONS.air, anim: put(airShot, airSlots), opts: airOpts })
+  const n = shooter.bullets, sound = shooter.sound
+  const heard = sound ? `with sound event ${sound.join(':')}` : 'silently'
+  return `gun: with Z held, an attack fires ${n === 1 ? 'a bullet' : `a burst of ${n} bullets`} from the ${prop.side === 'R' ? 'right' : 'left'} hand instead, ${heard} (the arm aimed over ${base.label}'s stand, walk or run on the ground, Elektra's super jump attack in the air)`
+}
+
 export interface MotionFiles {
   motionSet: string
   files: Map<string, Uint8Array>
   notes: string[]
+  model: ngmtool.Model
 }
 
 export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: string, moves: Record<string, string>, throwReach?: number,
   choice: Record<string, MoveEffect> = {}, plan: EffectPlan | null = null, stretches: Record<string, MoveReach> = {}, fx: Effects | null = null,
-  size = 1, idle: string[] = [], onBack: holster.Plan | null = null, throwDamage = false): MotionFiles {
+  size = 1, idle: string[] = [], onBack: holster.Plan | null = null, throwDamage = false, shooter: gun.Plan | null = null): MotionFiles {
   const set = motionSetOf(base), stem = stemOf(set), name = internal.toLowerCase()
   const own = nmstool.parse(src.entry(`Motions/${set}`))
   const bundles = loadBundles(src, stem)
   const before = [...bundles.values()].reduce((n, rs) => n + rs.reduce((k, r) => k + ngbtool.writeRecord(r).length, 0), 0)
   const [, models] = ngmtool.read(base.bundleFiles()[0])
+  if (shooter) models[0] = gun.rig(models[0], base.body, shooter.holster.prop!.side, shooter.swap !== null)
   const mine = resolved(src, own, holds(bundles))
   const notes: string[] = []
   const sized = new Set<string>()
@@ -719,14 +792,18 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       notes.push(`reach: ${move.label} stretches the ${r.limbs.map((l) => reach.LIMB_LABELS[l]).join(' and ')} ${how}${r.returns ? ', coming back from where it hits' : ''}${r.hold ? ', held while airborne' : ''}`)
     }
   }
-  if (onBack) {
-    const plan = holster.sized(onBack, size)
-    const groups = new Map<string, [Exclude<holster.Role, 'drawn'>, string, nmstool.Motion[]]>()
+  if (shooter) notes.push(gunMoves(src, base, own, bundles, models[0], shooter, size))
+  const carried = onBack ?? shooter?.holster ?? null
+  if (carried) {
+    const plan = holster.sized(carried, size)
+    const pinned = plan.prop?.hand != null
+    const holdArm = holster.armOf(new Skeleton(models[0], base.body), plan.prop?.side)
+    const groups = new Map<string, [holster.Role, string, nmstool.Motion[]]>()
     for (const m of resolved(src, own, holds(bundles)).values()) {
       const own = holster.role(m.state)
-      const picked = onBack.drawn?.[MOVE_OF.get(m.state.toLowerCase()) ?? '']
-      const role = (own === 'stowed' || own === 'drawn') && picked !== undefined ? (picked ? 'drawn' : 'stowed') : own
-      if (role === null || role === 'drawn') continue
+      const picked = carried.drawn?.[MOVE_OF.get(m.state.toLowerCase()) ?? '']
+      const role = shooter ? (own === null || own === 'free' ? own : 'stowed') : (own === 'stowed' || own === 'drawn') && picked !== undefined ? (picked ? 'drawn' : 'stowed') : own
+      if (role === null || (role === 'drawn' && !pinned)) continue
       const key = `${role} ${m.anim.toLowerCase()}`
       if (!groups.has(key)) groups.set(key, [role, m.anim.toLowerCase(), []])
       groups.get(key)![2].push(m)
@@ -740,8 +817,9 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       if (!found.length) continue
       const out = found.map(([, rec]) => {
         if (role === 'stowed') return holster.stow(rec, models[0], plan)
-        if (role === 'free') return holster.free(rec)
-        return holster.draw(rec, models[0], plan, arm!, role)
+        if (role === 'drawn') return holster.hold(rec, models[0], plan)
+        if (role === 'free') return holster.free(rec, plan.prop?.bone)
+        return holster.draw(rec, models[0], plan, holdArm, role)
       })
       const named = ownName(out[0])
       found.forEach(([slot], i) => {
@@ -752,7 +830,9 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       displaced.add(anim)
       held++
     }
-    notes.push(`holster: ${base.label}'s club rides on the back outside power mode (${held} animations); power-on draws it and power-off puts it back; the baton throw's catch ends in the power-stand grip`)
+    notes.push(shooter
+      ? `gun: holstered ${gun.PLACE_TEXT[shooter.place]} (${held} animations), and drawn while Z is held${shooter.swap ? `, when what the ${shooter.holster.prop!.side === 'R' ? 'right' : 'left'} hand holds (game bone ${shooter.swap.bone}) goes into the holster in its place` : ''}`
+      : `holster: ${base.label}'s club rides on the back outside power mode (${held} animations); power-on draws it and power-off puts it back; the baton throw's catch ends in the power-stand grip`)
   }
   // the base's records the moves replaced, unless another state still plays them
   const used = new Set([...resolved(src, own, () => true).values()].map((m) => m.anim.toLowerCase()))
@@ -779,6 +859,39 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     after += data.length
     files.set(`Bundles/${name}${slot}.ngb`, data)
   }
-  if (Object.keys(moves).length || idle.length || size !== 1 || onBack) notes.push(`${size !== 1 ? 'size' : 'moves'}: animations ${Math.round(after / 1024)} KB (${base.label}'s ${Math.round(before / 1024)} KB)`)
-  return { motionSet: motionSetName(internal), files, notes }
+  if (Object.keys(moves).length || idle.length || size !== 1 || carried) notes.push(`${size !== 1 ? 'size' : 'moves'}: animations ${Math.round(after / 1024)} KB (${base.label}'s ${Math.round(before / 1024)} KB)`)
+  return { motionSet: motionSetName(internal), files, notes, model: models[0] }
+}
+
+export interface Played {
+  state: string
+  slot: string
+  opts: string[]
+  rec: ngbtool.Record
+}
+
+// Victim states are left out: they play on the opponent's skeleton.
+export function played(src: GameSource, mf: MotionFiles, internal: string, move: Move): Played[] {
+  const bundles = new Map<string, ngbtool.Record[]>()
+  for (const slot of SLOTS) {
+    const data = mf.files.get(`Bundles/${internal.toLowerCase()}${slot}.ngb`)
+    if (data) bundles.set(slot, ngbtool.parse(data))
+  }
+  const now = resolved(src, nmstool.parse(mf.files.get(`Motions/${mf.motionSet}`)!), holds(bundles))
+  return move.states.filter((s) => !VICTIM.test(s)).flatMap((state) => {
+    const m = now.get(state.toLowerCase())
+    if (!m) return []
+    const out: Played[] = []
+    for (const slot of SLOTS) {
+      const rec = bundles.get(slot)?.find((r) => r.name.toLowerCase() === m.anim.toLowerCase())
+      if (rec && !out.some((p) => ngbtool.sameMotion(p.rec, rec))) out.push({ state: m.state, slot, opts: m.opts, rec })
+    }
+    return out
+  })
+}
+
+export function motionFps(opts: string[]): number {
+  const i = opts.findIndex((o) => o.toLowerCase() === 'fps')
+  const v = i >= 0 ? Number(opts[i + 1]) : NaN
+  return v > 0 ? v : 30
 }

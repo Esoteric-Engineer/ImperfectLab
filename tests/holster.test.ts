@@ -117,6 +117,35 @@ describe('holster', () => {
     for (const t of [18, 20]) close(posed(out, t)[39][1], posed(rec, t)[39][1], 2e-3)
   })
 
+  const PINNED: holster.Plan = { ...PLAN, position: [0.1, 0, -0.2], rotation: [0, 90, 0], prop: { bone: 39, anchor: 1, side: 'R', hand: 27 } }
+  const inHand = (rec: ngbtool.Record, t: number) => holster.heldAt(MODEL, PINNED.prop!)(posed(rec, t))
+
+  it('holds a prop no animation keys in the hand as at bind', () => {
+    const rec = { ...record(10), tracks: [...record(10).tracks.filter(([b]) => b !== 39), [27, 0, [[0, rotZ(0)], [10, rotZ(40)]]] as ngbtool.Track] }
+    expect(Math.hypot(...holster.sub(posed(rec, 10)[39][1], inHand(rec, 10)[1]))).toBeGreaterThan(0.01)
+    const out = holster.hold(rec, MODEL, PINNED)
+    for (const t of [0, 3.5, 10]) {
+      const [R, T] = inHand(out, t)
+      close(posed(out, t)[39][1], T, 2e-3)
+      sameRot(posed(out, t)[39][0], R, 5e-3)
+    }
+  })
+
+  it('holsters a pinned prop on its own anchor and draws it into the hand', () => {
+    const rec = { ...record(20), tracks: record(20).tracks.filter(([b]) => b !== 39) }
+    const stowed = holster.stow(rec, MODEL, PINNED)
+    for (const t of [0, 10, 20]) close(posed(stowed, t)[39][1], holster.stowedAt(MODEL, PINNED)(posed(stowed, t))[1], 2e-3)
+    const out = holster.draw(rec, MODEL, PINNED, ARM, 'on')
+    close(posed(out, 4)[39][1], holster.stowedAt(MODEL, PINNED)(posed(out, 4))[1], 2e-3)
+    for (const t of [12, 20]) close(posed(out, t)[39][1], inHand(out, t)[1], 2e-3)
+  })
+
+  it('finds the arm on either side', () => {
+    const sk = { node: (r: string) => ({ 'R.upper_arm': 23, 'R.forearm': 25, 'R.hand': 27, 'L.upper_arm': 43, 'L.forearm': 45, 'L.hand': 47 } as Record<string, number>)[r] }
+    expect(holster.armOf(sk as never, 'L')).toEqual({ upper: 43, fore: 45, hand: 47 })
+    expect(holster.armOf(sk as never)).toEqual(ARM)
+  })
+
   it('puts the club back on power-off', () => {
     const rec = record(20)
     const out = holster.draw(rec, MODEL, PLAN, ARM, 'off')

@@ -15,7 +15,7 @@ export function templateNames(internal: string): [string, string, string] {
   return ['act_' + internal, 'plr_' + internal, 'plr_alt' + internal]
 }
 
-function clone(src: nottool.Template, newName: string, parent?: string): nottool.Template {
+export function clone(src: nottool.Template, newName: string, parent?: string): nottool.Template {
   const t = new nottool.Template(nottool.name32(newName), src.props.map(([p, v]) => [p, v.slice()]), new Uint8Array([0]))
   if (parent) t.set(0x00, nottool.vStr(parent))
   return t

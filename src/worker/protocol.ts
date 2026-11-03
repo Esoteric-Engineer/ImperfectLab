@@ -2,6 +2,8 @@ import type { TintPlan } from '../core/build/effects'
 import type { BatchCheck } from '../core/build/batch'
 import type { RgbaImage } from '../core/image/rgba'
 import type { Material, Pose } from '../core/package/imperfect'
+import type * as ngbtool from '../core/mnroi/ngbtool'
+import type * as ngmtool from '../core/mnroi/ngmtool'
 import type { BoneLine, MeshData } from '../core/preview'
 
 export type DiscInput = { kind: 'file'; file: File } | { kind: 'folder'; name: string; files: [string, File][] }
@@ -60,6 +62,21 @@ export interface PreviewResult {
   gameBones: BoneLine[]
   sourceBones: BoneLine[]
   stats: [number, number, number, number] | string
+}
+
+export interface MoveVariant {
+  state: string
+  slot: string
+  fps: number
+  rec: ngbtool.Record
+}
+
+export interface MovePreview {
+  nodes: ngmtool.Node[]
+  variants: MoveVariant[]
+  custom: MeshData[] | null
+  base: MeshData[]
+  notes: string[]
 }
 
 export interface LayoutInfo {

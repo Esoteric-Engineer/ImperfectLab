@@ -1,5 +1,6 @@
 // Unindexed triangle lists for the 3D preview, all in the game's frame (Z up, facing +Y).
 import { u16be, f32be, latin1 } from './bytes'
+import type { Mat3, Vec3 } from './mnroi/ngbtool'
 import type { BaseCharacter } from './game/roster'
 import type { GameSource } from './game/source'
 import { RgbaImage } from './image/rgba'
@@ -104,16 +105,16 @@ export function fittedMeshes(trisByMat: Map<number, Tri[]>, images: Map<number, 
   })
 }
 
-// What is fixed to the club alone, moved onto the back as the holster carries it.
-export function holsteredTris(trisByMat: Map<number, Tri[]>, skeleton: Skeleton, h: Holster): Map<number, Tri[]> {
-  const C = holster.center(trisByMat.values())
-  const chest = skeleton.positions()[holster.CHEST]
+// What is fixed to the prop bone alone, moved into the holster on the anchor bone.
+export function holsteredTris(trisByMat: Map<number, Tri[]>, skeleton: Skeleton, h: Pick<Holster, 'position' | 'rotation'>, bone = CLUB, anchor = holster.CHEST): Map<number, Tri[]> {
+  const C = holster.center(trisByMat.values(), bone)
+  const chest = skeleton.positions()[anchor]
   const R = holster.turn(h.rotation)
   const at = (p: number[]) => {
     const v = holster.apply(R, [p[0] - C[0], p[1] - C[1], p[2] - C[2]])
     return [0, 1, 2].map((k) => chest[k] + h.position[k] + v[k]) as [number, number, number]
   }
-  const onClub = (w: [number, number][]) => w.some(([b, x]) => b === CLUB && x > 0) && !w.some(([b, x]) => b !== CLUB && x > 0)
+  const onClub = (w: [number, number][]) => w.some(([b, x]) => b === bone && x > 0) && !w.some(([b, x]) => b !== bone && x > 0)
   return new Map([...trisByMat].map(([slot, tris]) => [slot, tris.map((t) => t.map((v): Tri[number] => (onClub(v[3]) ? [at(v[0]), holster.apply(R, v[1]), v[2], v[3]] : v)) as Tri)]))
 }
 
@@ -180,4 +181,49 @@ export function gameBones(skeleton: Skeleton, size = 1): BoneLine[] {
 
 export function sourceBones(model: Model, flip = false): BoneLine[] {
   return model.joints.filter((j) => j.parent !== null).map((j) => [conv(model.joint(j.parent!).pos, flip), conv(j.pos, flip), j.name])
+}
+
+// Bind rotations are the identity, so each vertex follows its bones from where they rest.
+export function skin(mesh: MeshData, posed: [Mat3, Vec3][], rest: Vec3[], pos: Float32Array, nrm: Float32Array) {
+  const bones = mesh.keys.map((k) => (typeof k === 'number' && k < posed.length ? k : -1))
+  const n = mesh.positions.length / 3
+  for (let i = 0; i < n; i++) {
+    const px = mesh.positions[i * 3], py = mesh.positions[i * 3 + 1], pz = mesh.positions[i * 3 + 2]
+    const nx = mesh.normals[i * 3], ny = mesh.normals[i * 3 + 1], nz = mesh.normals[i * 3 + 2]
+    let x = 0, y = 0, z = 0, a = 0, b = 0, c = 0, sum = 0
+    for (let k = 0; k < 3; k++) {
+      const key = mesh.influenceKeys[i * 3 + k], w = mesh.influences[i * 3 + k]
+      const bone = key < 0 ? -1 : bones[key]
+      if (bone < 0 || w <= 0) continue
+      const [R, T] = posed[bone], o = rest[bone]
+      const dx = px - o[0], dy = py - o[1], dz = pz - o[2]
+      x += w * (R[0][0] * dx + R[0][1] * dy + R[0][2] * dz + T[0])
+      y += w * (R[1][0] * dx + R[1][1] * dy + R[1][2] * dz + T[1])
+      z += w * (R[2][0] * dx + R[2][1] * dy + R[2][2] * dz + T[2])
+      a += w * (R[0][0] * nx + R[0][1] * ny + R[0][2] * nz)
+      b += w * (R[1][0] * nx + R[1][1] * ny + R[1][2] * nz)
+      c += w * (R[2][0] * nx + R[2][1] * ny + R[2][2] * nz)
+      sum += w
+    }
+    if (sum > 0) {
+      pos[i * 3] = x / sum
+      pos[i * 3 + 1] = y / sum
+      pos[i * 3 + 2] = z / sum
+      nrm[i * 3] = a / sum
+      nrm[i * 3 + 1] = b / sum
+      nrm[i * 3 + 2] = c / sum
+    } else {
+      pos.set([px, py, pz], i * 3)
+      nrm.set([nx, ny, nz], i * 3)
+    }
+  }
+}
+
+export function posedBones(nodes: ngmtool.Node[], posed: [Mat3, Vec3][]): BoneLine[] {
+  const out: BoneLine[] = []
+  for (let i = 0; i < nodes.length; i++) {
+    const parent = nodes[i][2]
+    if (parent >= 0 && parent < i) out.push([posed[parent][1], posed[i][1], i])
+  }
+  return out
 }

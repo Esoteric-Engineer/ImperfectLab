@@ -4,9 +4,10 @@ import * as holster from '../../core/build/holster'
 import * as reach from '../../core/build/reach'
 import { formatG } from '../../core/format'
 import { keys, label } from '../../core/game/roster'
-import { BASE_MOVES, copyCharacter, defaultHolster, GAMEPLAY, HOLSTER_POSITION, HOLSTER_ROTATION, type MoveEffect, STUN_BASES, THROW_REACH, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
+import { BASE_MOVES, copyCharacter, defaultHolster, GAMEPLAY, type Holster as HolsterPlan, HOLSTER_POSITION, HOLSTER_ROTATION, type MoveEffect, STUN_BASES, THROW_REACH, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
 import type { BoneLine, MeshData } from '../../core/preview'
 import { ColorButton, Note, NumberInput, Warning } from '../components/common'
+import { MovePreviewDialog } from '../components/MovePreviewDialog'
 import { Viewport } from '../components/viewport'
 import { engine, errorText } from '../engine'
 import { store, useStore } from '../store'
@@ -106,42 +107,55 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
   const idle = c.moveIdle.includes(move.id), offer = move.id !== 'Stand'
   const first = own.find((a) => a !== null) ?? null
   const more = own.filter((a) => a !== null).length - 1
+  const choose = (v: string) => {
+    if (move.id === 'SuperThrow') pickSuperThrow(cat, v && v !== IDLE ? v : undefined)
+    c.moveIdle = c.moveIdle.filter((id) => id !== move.id)
+    if (v && v !== IDLE) c.moves[move.id] = v
+    else {
+      delete c.moves[move.id]
+      delete c.moveEffects[move.id]
+    }
+    if (v === IDLE) {
+      delete c.moveReach[move.id]
+      c.moveIdle = [...c.moveIdle, move.id]
+    }
+    store.touch('character')
+  }
   return (
     <tr>
       <td title={move.states.join(', ')}>{move.label}</td>
       <td className="anim">{stem(first)}{more > 0 ? ` (+${more})` : ''}</td>
       <td>
-        <select value={idle ? IDLE : at >= 0 ? opts[at].from[0] : (picked ?? '')} disabled={locked || (!opts.length && !offer && !picked)}
-          title={locked ? 'The baton throw reach changes this move: untick it below to swap the move' : undefined}
-          onChange={(e) => {
-            const v = e.target.value
-            if (move.id === 'SuperThrow') pickSuperThrow(cat, v && v !== IDLE ? v : undefined)
-            c.moveIdle = c.moveIdle.filter((id) => id !== move.id)
-            if (v && v !== IDLE) c.moves[move.id] = v
-            else {
-              delete c.moves[move.id]
-              delete c.moveEffects[move.id]
-            }
-            if (v === IDLE) {
-              delete c.moveReach[move.id]
-              c.moveIdle = [...c.moveIdle, move.id]
-            }
-            store.touch('character')
-          }}>
-          <option value="">{label(c.base)} (base)</option>
-          {offer && <option value={IDLE}>Idle: {stem(cat[c.moves.Stand ?? c.base]?.motions.stand ?? null)}</option>}
-          {opts.map((o) => (
-            <option key={o.from[0]} value={o.from[0]}>
-              {o.from.map(label).join(', ')}: {stem(o.anims.find((a) => a !== null) ?? null)}{o.body !== cat[c.base].body ? ` (${o.body}, approximate)` : ''}
-            </option>
-          ))}
-          {picked && at < 0 && <option value={picked}>{label(picked)} (not available for {label(c.base)})</option>}
-        </select>
+        <div className="move-pick">
+          <select value={idle ? IDLE : at >= 0 ? opts[at].from[0] : (picked ?? '')} disabled={locked || (!opts.length && !offer && !picked)}
+            title={locked ? 'The baton throw reach changes this move: untick it below to swap the move' : undefined}
+            onChange={(e) => choose(e.target.value)}>
+            <option value="">{label(c.base)} (base)</option>
+            {offer && <option value={IDLE}>Idle: {stem(cat[c.moves.Stand ?? c.base]?.motions.stand ?? null)}</option>}
+            {opts.map((o) => (
+              <option key={o.from[0]} value={o.from[0]}>
+                {o.from.map(label).join(', ')}: {stem(o.anims.find((a) => a !== null) ?? null)}{o.body !== cat[c.base].body ? ` (${o.body}, approximate)` : ''}
+              </option>
+            ))}
+            {picked && at < 0 && <option value={picked}>{label(picked)} (not available for {label(c.base)})</option>}
+          </select>
+          <PreviewButton move={move} onSave={locked ? undefined : (from) => choose(from === c.base ? '' : from)} />
+        </div>
         {!opts.length && !offer && !picked && <span className="muted"> no other version</span>}
       </td>
       <td className="fx">{picked && <MoveEffects id={move.id} from={picked} />}</td>
       {c.baseMoves.holster && <td><InHand move={move} /></td>}
     </tr>
+  )
+}
+
+function PreviewButton({ move, disabled = false, onSave }: { move: Move; disabled?: boolean; onSave?: (from: string) => void }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button className="small" disabled={disabled} title="Preview the move's animation" aria-label={`Preview ${move.label}`} onClick={() => setOpen(true)}>▶</button>
+      {open && <MovePreviewDialog move={move} onSave={onSave} onClose={() => setOpen(false)} />}
+    </>
   )
 }
 
@@ -289,26 +303,30 @@ function WallRow({ cat, move, required }: { cat: Catalog; move: Move; required: 
   const opts = addOptions(cat, c.base, move)
   const picked = c.moves[move.id]
   const at = picked ? opts.findIndex((o) => o.from.includes(picked)) : -1
+  const choose = (v: string) => {
+    if (v) c.moves[move.id] = v
+    else {
+      delete c.moves[move.id]
+      delete c.moveEffects[move.id]
+    }
+    store.touch('character')
+  }
   return (
     <tr>
       <td>{move.label}</td>
       <td>
-        <select value={at >= 0 ? opts[at].from[0] : (picked ?? '')} onChange={(e) => {
-          if (e.target.value) c.moves[move.id] = e.target.value
-          else {
-            delete c.moves[move.id]
-            delete c.moveEffects[move.id]
-          }
-          store.touch('character')
-        }}>
-          {(!required || !picked) && <option value="">{required ? '(pick one)' : 'None'}</option>}
-          {opts.map((o) => (
-            <option key={o.from[0]} value={o.from[0]}>
-              {o.from.map(label).join(', ')}: {stem(o.anims.find((a) => a !== null) ?? null)}{o.body !== cat[c.base].body ? ` (${o.body}, approximate)` : ''}
-            </option>
-          ))}
-          {picked && at < 0 && <option value={picked}>{label(picked)} (has no {move.label.toLowerCase()})</option>}
-        </select>
+        <div className="move-pick">
+          <select value={at >= 0 ? opts[at].from[0] : (picked ?? '')} onChange={(e) => choose(e.target.value)}>
+            {(!required || !picked) && <option value="">{required ? '(pick one)' : 'None'}</option>}
+            {opts.map((o) => (
+              <option key={o.from[0]} value={o.from[0]}>
+                {o.from.map(label).join(', ')}: {stem(o.anims.find((a) => a !== null) ?? null)}{o.body !== cat[c.base].body ? ` (${o.body}, approximate)` : ''}
+              </option>
+            ))}
+            {picked && at < 0 && <option value={picked}>{label(picked)} (has no {move.label.toLowerCase()})</option>}
+          </select>
+          <PreviewButton move={move} disabled={!picked} onSave={choose} />
+        </div>
       </td>
       <td className="fx">{picked && <MoveEffects id={move.id} from={picked} />}</td>
     </tr>
@@ -569,25 +587,30 @@ const AXES = ["X (character's right)", 'Y (forward)', 'Z (up)']
 
 function Holster() {
   const c = store.character
-  const h = c.baseMoves.holster!
+  return <HolsterPlace h={c.baseMoves.holster!} from="the chest" view="back" onChange={(next) => {
+    c.baseMoves.holster = next
+    store.touch('character')
+  }} />
+}
+
+// Where a holster sits from its bone (from), as numbers and in 3D.
+export function HolsterPlace({ h, from, view, kind = 'club', title = 'Holster Location', what = "the prop's middle", onChange }: {
+  h: HolsterPlan; from: string; view: 'back' | 'right' | 'front'; kind?: HolsterKind; title?: string; what?: string; onChange: (h: HolsterPlan) => void
+}) {
   const changed = Object.keys(h.drawn ?? {}).length
   const set = (what: 'position' | 'rotation', k: number, v: number) => {
     const next = [...h[what]] as [number, number, number]
     next[k] = what === 'position' ? Math.round(v * 1000) / 1000 : Math.round(v * 10) / 10
-    c.baseMoves.holster = { ...h, [what]: next }
-    store.touch('character')
+    onChange({ ...h, [what]: next })
   }
   return (
     <>
-      <h4>Holster Location</h4>
+      <h4>{title}</h4>
       <Note>
-        Where the prop's middle sits from the chest.<br />
-        The "Prop in Hand" column of the Moves tables above picks where it is during each move.
+        Where {what} sits from {from}.
+        {kind === 'club' && <><br />The "Prop in Hand" column of the Moves tables above picks where it is during each move.</>}
       </Note>
-      {changed > 0 && <div className="row"><span>{changed} move{changed === 1 ? '' : 's'} changed from the default</span><button onClick={() => {
-        c.baseMoves.holster = { position: h.position, rotation: h.rotation }
-        store.touch('character')
-      }}>Set all back</button></div>}
+      {changed > 0 && <div className="row"><span>{changed} move{changed === 1 ? '' : 's'} changed from the default</span><button onClick={() => onChange({ position: h.position, rotation: h.rotation })}>Set all back</button></div>}
       <div className="row">
         <table className="gameplay grid">
           <thead><tr><th>Axis</th><th>Position</th><th>Rotation</th></tr></thead>
@@ -601,13 +624,15 @@ function Holster() {
             ))}
           </tbody>
         </table>
-        <HolsterView />
+        <HolsterView first={view} kind={kind} />
       </div>
     </>
   )
 }
 
-function HolsterView() {
+export type HolsterKind = 'club' | 'gun' | 'swap'
+
+function HolsterView({ first, kind }: { first: 'back' | 'right' | 'front'; kind: HolsterKind }) {
   const s = useStore()
   const canvas = useRef<HTMLCanvasElement>(null)
   const view = useRef<Viewport | null>(null)
@@ -622,7 +647,7 @@ function HolsterView() {
     if (!s.model) return
     let live = true
     const timer = window.setTimeout(() => {
-      engine.call<{ meshes: MeshData[]; bones: BoneLine[] } | string>('holsterPreview', [copyCharacter({ ...store.character, glb: null })]).then((r) => {
+      engine.call<{ meshes: MeshData[]; bones: BoneLine[] } | string>('holsterPreview', [copyCharacter({ ...store.character, glb: null }), kind]).then((r) => {
         if (!live || !view.current) return
         if (typeof r === 'string') {
           setReport('✖ ' + r)
@@ -631,7 +656,7 @@ function HolsterView() {
         }
         setReport('')
         view.current.setScene(r.meshes, r.bones, !framed.current)
-        if (!framed.current) view.current.view('back')
+        if (!framed.current) view.current.view(first)
         framed.current = true
       }, (e) => live && setReport('✖ ' + errorText(e)))
     }, 200)
@@ -639,7 +664,7 @@ function HolsterView() {
       live = false
       clearTimeout(timer)
     }
-  }, [s.versions.character, s.versions.model, s.versions.mapping, s.model])
+  }, [s.versions.character, s.versions.model, s.versions.mapping, s.model, first, kind])
   return (
     <div className="holster-view">
       <canvas ref={canvas} className="viewport" />

@@ -9,7 +9,7 @@ import * as asftool from '../mnroi/asftool'
 import * as cuttool from '../mnroi/cuttool'
 import type * as ngbtool from '../mnroi/ngbtool'
 import * as ngmtool from '../mnroi/ngmtool'
-import { type Character, CUTSCENE_KINDS, type CutsceneKind, type Cutscenes } from '../package/imperfect'
+import { type Character, CUTSCENE_KINDS, gunOf, type CutsceneKind, type Cutscenes } from '../package/imperfect'
 import * as fxs from './effects'
 import { OWN_EFFECTS, Slots } from './effectslots'
 import * as moves from './moves'
@@ -345,7 +345,7 @@ export function effectFit(src: GameSource, baseKey: string, c: EffectChoices): E
   return out
 }
 
-// `stow` reworks the character's animation in the intros (the holster's club on the back).
+// `stow` reworks the character's animation in the intros (the holster's club on the back, or the gun at the hip).
 export function plan(src: GameSource, base: R.BaseCharacter, c: Character, given = moveSlots(src, base, c),
   stow: ((rec: ngbtool.Record) => ngbtool.Record) | null = null): Plan {
   const out: Plan = { fields: new Map(), files: new Map(), notes: [] }
@@ -417,7 +417,7 @@ export function plan(src: GameSource, base: R.BaseCharacter, c: Character, given
       }
     }
     for (const [f, fid] of FIELDS[kind].entries()) out.fields.set(fid, names[f].map((v) => renamed.get(v.trim().toLowerCase())!))
-    const what = [from !== base ? `${from.label}'s` : '', clips.length ? `${clips.length} new audio` : '', anims.length ? `${anims.length} new animation${anims.length === 1 ? '' : 's'}` : '', stowed && anims.length < firsts.length ? 'club on the back' : ''].filter(Boolean).join(', ')
+    const what = [from !== base ? `${from.label}'s` : '', clips.length ? `${clips.length} new audio` : '', anims.length ? `${anims.length} new animation${anims.length === 1 ? '' : 's'}` : '', stowed && anims.length < firsts.length ? (gunOf(c) ? 'gun holstered' : 'club on the back') : ''].filter(Boolean).join(', ')
     let note = `cutscenes: ${LABELS[kind].toLowerCase()} ${what}`
     if (c.cutscenes.effects[kind] === 'theirs' && from !== base) {
       const lost = missed.get(kind) ?? 0

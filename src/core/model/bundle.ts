@@ -178,12 +178,18 @@ export function scaleModel(model: ngmtool.Model, s: number): ngmtool.Model {
   return m
 }
 
-export function buildNgm(baseNgm: Uint8Array, render: ngmtool.Model, renames: Map<string, string>, size = 1): [Uint8Array, ngmtool.Model[]] {
+// extra: nodes appended to the render model, which the base's other models with as many nodes get too.
+export function buildNgm(baseNgm: Uint8Array, render: ngmtool.Model, renames: Map<string, string>, size = 1, extra: ngmtool.Node[] = []): [Uint8Array, ngmtool.Model[]] {
   const [head, models] = ngmtool.read(baseNgm)
   let out = [render]
-  for (const m of models.slice(1)) {
-    const next = renames.get(m.name.toLowerCase())
-    out.push(next ? renamed(m, next) : m)
+  for (const m0 of models.slice(1)) {
+    const next = renames.get(m0.name.toLowerCase())
+    let m = next ? renamed(m0, next) : m0
+    if (extra.length && m.nodes.length === models[0].nodes.length) {
+      m = m.clone()
+      m.nodes = [...m.nodes, ...extra]
+    }
+    out.push(m)
   }
   if (size !== 1) out = out.map((m) => scaleModel(m, size))
   const h = [...head]

@@ -19,15 +19,16 @@ import * as nvbtool from '../mnroi/nvbtool'
 import type * as ngbtool from '../mnroi/ngbtool'
 import * as ngmtool from '../mnroi/ngmtool'
 import * as bundle from '../model/bundle'
-import { Fit, type MaterialSlots } from '../model/fit'
+import { Fit, type MaterialSlots, type Tri } from '../model/fit'
 import { Model } from '../model/glb'
 import { Skeleton } from '../model/skeleton'
-import { type Character, hasCutscenes, image as readImage, type Material, problems, type Placement, WALL, type WallKey, type ZCostume, zTexture } from '../package/imperfect'
+import { type Character, gunOf, hasCutscenes, image as readImage, type Material, problems, type Placement, WALL, type WallKey, type ZCostume, zTexture } from '../package/imperfect'
 import * as cutscenes from './cutscenes'
 import * as damage from './damage'
 import * as effects from './effects'
 import * as basemoves from './basemoves'
 import * as flames from './flames'
+import * as gun from './gun'
 import * as holster from './holster'
 import * as moves from './moves'
 import * as portraits from './portraits'
@@ -55,6 +56,7 @@ export class Result {
   sets = new Map<string, Uint8Array>()
   adds = new Map<string, Uint8Array>()
   notes: string[] = []
+  gun: D.GunCharacter | null = null
 }
 
 export function colorInt(color: string): number {
@@ -82,6 +84,8 @@ export class Builder {
   greyTint: [boolean, boolean] = [false, false] // whether tinted effects draw the grey fire sprite
   moveFx: moves.EffectPlan | null = null
   propCenter: [number, number, number] | null = null
+  gunGeometry: gun.Geometry | null = null
+  swapCenter: [number, number, number] | null = null
 
   constructor(source: GameSource, character: Character, progress?: Progress, model?: Model) {
     this.src = source
@@ -131,6 +135,7 @@ export class Builder {
     if (throwsDamage(c)) this.r.dol = D.throwDamage(this.r.dol)
     if (ownSounds(c)) this.r.dol = D.soundBanks(this.r.dol, [c.internalName])
     if (c.zButton) this.r.dol = D.zActions(this.r.dol, zCharacters([c]))
+    if (this.r.gun) this.r.dol = D.gun(this.r.dol, [this.r.gun])
     return this.r
   }
 
@@ -198,7 +203,10 @@ export class Builder {
   buildModel(): (string | [string, string])[] {
     const c = this.c, base = this.base
     const model = this.model ?? new Model(c.glb!)
-    const sk = Skeleton.ofBase(base)
+    const side = gunOf(c) ? gunSide(c) : null
+    const baseModel = ngmtool.read(base.bundleFiles()[0])[1][0]
+    const extraNodes = side ? gun.extraNode(baseModel, base.body, side, gunSwaps(c)) : []
+    const sk = side ? new Skeleton(gun.rig(baseModel, base.body, side, gunSwaps(c)), base.body) : Skeleton.ofBase(base)
     const f = new Fit(model, sk, c.mapping, c.overrides, c.fit.scale, c.fit.torso_squash ?? true, c.fit.flip, c.fit.floor_from_mesh ?? false)
     const included = c.materials.filter((m) => m.include)
     const slots: MaterialSlots = new Map()
@@ -208,7 +216,7 @@ export class Builder {
       if (m.bind !== null && m.bind >= sk.nodes.length) throw new LabError(`material ${m.name} is bound to game bone ${m.bind}, which ${base.label} does not have`)
     }
     const tris = f.triangles(slots)
-    this.propCenter = c.baseMoves.holster ? holster.center(tris.values()) : null
+    ;[this.propCenter, this.gunGeometry, this.swapCenter] = propShape(c, baseModel, base.body, tris, sk)
     const far = Object.keys(c.moveReach).length ? moves.farLimb(this.src, base, c.moveReach, c.moves) : null
     const imgs = this.materialImages(model)
     const normals = new bundle.NormalIndex(bundle.readNormals(this.src.entry('Misc/NormalTable.ngn')))
@@ -221,7 +229,7 @@ export class Builder {
     for (const [costume, alt] of [['', false], ['_alt', true]] as [string, boolean][]) {
       const [ngm, ngt, tpl] = base.bundleFiles(alt)
       const [, models] = ngmtool.read(ngm)
-      const renderBase = models[0]
+      const renderBase = side ? gun.rig(models[0], base.body, side, gunSwaps(c)) : models[0]
       const replaced = new Set<string>(), keptByOthers = new Set<string>()
       for (const part of renderBase.parts) {
         const keys = nsa.get(part.toLowerCase()) ?? new Map<string, string>()
@@ -261,6 +269,7 @@ export class Builder {
       const render = bundle.renderModel(renderBase, copy, normals, nm.MODEL, [...mats, ...zs.map(([name]) => name), ...kept],
         renderBase.meshes.length ? renderBase.meshes[0][5] : [0, 0, 0], stats)
       if (c.baseMoves.throw_reach !== undefined) basemoves.hitSegment(render)
+      if (side && this.gunGeometry) render.attachments.push(gun.muzzleAttachment(gun.bone(models[0], base.body, side)[0], renderBase, this.gunGeometry))
       if (far && reach.farVolume(render, far, reach.bonesOf(sk)[far]) && !alt) {
         this.note(`reach: ${base.label}'s long hit segment (attachments 43 and 44) moves to the ${reach.LIMB_LABELS[far]}, so moves that hit with it hit from there`)
       }
@@ -272,7 +281,7 @@ export class Builder {
         const empty = trails.markers(render, sk, copy, c.trails.parts)
         if (empty.length) this.note(`motion trails: no part of the model follows the ${empty.join(', ')} bone, so its trail ends at the bone itself`)
       }
-      const [data] = bundle.buildNgm(ngm, render, renames, c.size)
+      const [data] = bundle.buildNgm(ngm, render, renames, c.size, extraNodes)
       const otherNames = new Set(models.slice(1).map((m) => m.name.toLowerCase()))
       const missing = [...renames.keys()].filter((old) => !otherNames.has(old))
       if (missing.length) this.note(`the base bundle has no model named ${missing.join(', ')}`)
@@ -314,7 +323,7 @@ export class Builder {
   effects(): [[string, string] | null, Map<number, string[]> | null, nottool.Template[], [string | null, string | null] | null] {
     const c = this.c
     const tinted = c.aura.mode === 'tint', fire = flames.hasAny(c.flames), trailed = trails.hasAny(c.trails), theirs = Object.values(c.moveEffects).includes('theirs'), lined = paintsReach(c)
-    if (!tinted && !fire && !trailed && !theirs && !lined) return [null, null, [], null]
+    if (!tinted && !fire && !trailed && !theirs && !lined && !gunOf(c)) return [null, null, [], null]
     const fx = new effects.Effects(this.src.entry('Misc/game.nfx'))
     const before = fx.used()
     const prefixes: [string, string] = [effects.copyPrefix(c.internalName, false), effects.copyPrefix(c.internalName, true)]
@@ -322,7 +331,7 @@ export class Builder {
       const used = hasCutscenes(c.cutscenes) ? cutscenes.effectKs(this.src, this.base, c.cutscenes) : []
       this.moveFx = moves.planEffects(this.src, this.base, c.moveEffects, fx, c.moveLines, prefixes, used, moves.movedEffects(this.src, this.base, c.moves))
     }
-    const [effect1, tintPower, extra] = tinted ? this.tinted(fx) : [null, null, []]
+    const [effect1, tintPower, extra]: [[string, string] | null, Map<number, string[]> | null, nottool.Template[]] = tinted ? this.tinted(fx) : [null, null, []]
     let power = tintPower
     if (lined) {
       const fids = moves.reachLineFields(this.src, this.base, c.moveReach, c.moves, c.moveEffects, fx)
@@ -331,6 +340,13 @@ export class Builder {
         power = new Map([...(power ?? []), ...paints])
         this.note(`reach: ${paints.size} line effect${paints.size === 1 ? '' : 's'} recolored, in every move that draws ${paints.size === 1 ? 'it' : 'them'}`)
       }
+    }
+    const g = gunOf(c)
+    if (g) {
+      const bullet = gun.bullet(this.base.t, c.internalName, g.damage, gun.tracer(fx, c.internalName))
+      extra.push(bullet)
+      power = new Map([...(power ?? []), [gun.FIELD, Array(tuning.SLOTS).fill(bullet.name)]])
+      this.note(`gun: each bullet launches ${bullet.name} (Elektra's sai without its model) from tuning field ${gun.FIELD}, hitting for ${g.damage}`)
     }
     const effect2 = trails.alwaysOn(fx, c.flames, c.trails, c.internalName)
     if (fire) this.note(`flames: ${c.flames.body ? "over the whole body (Human Torch's body fire)" : `on the ${c.flames.parts.join(', ')}`}`)
@@ -403,11 +419,12 @@ export class Builder {
     const fields = tuningFields(c)
     const strings = new Map(power)
     if (fields.pickup_range !== undefined) this.note(`pickup: props can be grabbed from ${fields.pickup_range} m away`)
-    const onBack = this.onBack()
+    const onBack = this.onBack() ?? this.gunPlan()?.holster ?? null
     if (hasCutscenes(c.cutscenes) || onBack) {
       let stow: ((rec: ngbtool.Record) => ngbtool.Record) | null = null
       if (onBack) {
-        const own = ngmtool.read(this.base.bundleFiles()[0])[1][0]
+        const base0 = ngmtool.read(this.base.bundleFiles()[0])[1][0]
+        const own = gunOf(c) ? gun.rig(base0, this.base.body, gunSide(c), gunSwaps(c)) : base0
         const model = c.size !== 1 ? bundle.scaleModel(own, c.size) : own, plan = holster.sized(onBack, c.size)
         stow = (rec) => holster.stow(rec, model, plan)
       }
@@ -427,8 +444,21 @@ export class Builder {
 
   // The holster's plan, once the model has given the prop's middle.
   onBack(): holster.Plan | null {
-    const h = this.c.baseMoves.holster
-    return h && this.propCenter ? { ...h, center: this.propCenter } : null
+    return onBackPlan(this.c, this.propCenter)
+  }
+
+  // The gun's plan, once the model has given the gun's middle and shape.
+  gunPlan(): gun.Plan | null {
+    return gunPlanOf(this.c, ngmtool.read(this.base.bundleFiles()[0])[1][0], this.base.body, this.propCenter, this.gunGeometry, this.swapCenter)
+  }
+
+  gunEntry(plan: gun.Plan): D.GunCharacter {
+    const g = gunOf(this.c)!
+    const rigged = gun.rig(ngmtool.read(this.base.bundleFiles()[0])[1][0], this.base.body, gunSide(this.c), gunSwaps(this.c))
+    const model = this.c.size !== 1 ? bundle.scaleModel(rigged, this.c.size) : rigged
+    const arm = holster.armOf(new Skeleton(rigged, this.base.body), gunSide(this.c))
+    const swap = plan.swap && { ...holster.sized(plan.swap, this.c.size), bone: plan.swap.bone }
+    return gun.entry(this.c.internalName, model, holster.sized(plan.holster, this.c.size), g.energy, g.automatic, arm, swap)
   }
 
   // The character's own motion set, when a move changes an animation.
@@ -437,7 +467,9 @@ export class Builder {
     if (!ownMotions(c)) return null
     const thrown = c.baseMoves.throw_reach
     const fx = Object.keys(c.moveReach).length ? new effects.Effects(this.src.entry('Misc/game.nfx')) : null
-    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, this.onBack(), throwsDamage(c))
+    const shooter = this.gunPlan()
+    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, this.onBack(), throwsDamage(c), shooter)
+    if (shooter) this.r.gun = this.gunEntry(shooter)
     for (const [k, v] of m.files) this.r.adds.set(k, v)
     if (thrown !== undefined) this.note(`baton throw: reaches ${thrown} m (${this.base.label}'s about 8)`)
     if (throwsDamage(c)) this.note(`baton throw: hits for ${c.gameplay.attack_damage_throw}`)
@@ -581,7 +613,33 @@ export class Builder {
 
 // Whether the character gets its own motion set and animation bundles (Builder.motions).
 export function ownMotions(c: Character): boolean {
-  return c.baseMoves.throw_reach !== undefined || c.baseMoves.holster !== undefined || throwsDamage(c) || Object.keys(c.moves).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1
+  return gunOf(c) !== null || c.baseMoves.throw_reach !== undefined || c.baseMoves.holster !== undefined || throwsDamage(c) || Object.keys(c.moves).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1
+}
+
+export const gunSide = (c: Character): holster.Side => (gunOf(c)?.side === 'left' ? 'L' : 'R')
+export const gunSwaps = (c: Character): boolean => gunOf(c)?.swap !== undefined
+
+// The holster prop's middle, the gun's shape, and the middle of what swaps into the gun's holster.
+export function propShape(c: Character, baseModel: ngmtool.Model, body: string, tris: Map<number, Tri[]>, sk: Skeleton): [ngbtool.Vec3 | null, gun.Geometry | null, ngbtool.Vec3 | null] {
+  if (!gunOf(c)) return [c.baseMoves.holster ? holster.center(tris.values()) : null, null, null]
+  const prop = gun.prop(baseModel, body, gunSide(c))
+  const swap = gunSwaps(c) ? holster.center(tris.values(), gun.swapBone(baseModel, body, gunSide(c))) : null
+  return [holster.center(tris.values(), prop.bone), gun.geometry(tris.values(), prop.bone, sk.nodes[prop.hand!].pos), swap]
+}
+
+export function onBackPlan(c: Character, center: ngbtool.Vec3 | null): holster.Plan | null {
+  const h = c.baseMoves.holster
+  return h && center ? { ...h, center } : null
+}
+
+export function gunPlanOf(c: Character, baseModel: ngmtool.Model, body: string, center: ngbtool.Vec3 | null, geometry: gun.Geometry | null,
+  swapCenter: ngbtool.Vec3 | null = null): gun.Plan | null {
+  const g = gunOf(c)
+  if (!g || !center || !geometry || (g.swap && !swapCenter)) return null
+  const { place, position, rotation } = g.holster
+  const prop = gun.prop(baseModel, body, gunSide(c), place)
+  const swap = g.swap && swapCenter ? { ...g.swap, center: swapCenter, bone: gun.swapBone(baseModel, body, gunSide(c)) } : null
+  return { place, holster: { position, rotation, center, prop }, swap, geometry, sound: g.sound ?? null, bullets: g.bullets, automatic: g.automatic }
 }
 
 // A stretched hit that comes back from where it lands needs RETURN_ABILITY and main.dol's mirrored skip.
@@ -606,7 +664,7 @@ export function zCharacters(chars: Character[]): D.ZCharacter[] {
       internal: c.internalName, seconds: z.requires.energy?.seconds ?? 0, regen: z.requires.energy?.regen ?? false,
       undetected: z.stealth?.undetected ?? false, untouchable: z.stealth?.untouchable ?? false, visible: z.stealth?.visible ?? 1,
       costume: z.costume !== null, damage: damage.KEYS.map((k) => st[k] ?? null), taken: st.damage_taken ?? null, lift: st.lift ?? null,
-      size: z.size, slow: z.bullet,
+      size: z.size, slow: z.bullet, gun: z.gun !== null,
     }]
   })
 }

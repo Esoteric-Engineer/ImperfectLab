@@ -1,11 +1,15 @@
+import * as gun from '../../core/build/gun'
+import { soundChoices } from '../../core/build/moves'
 import { formatG } from '../../core/format'
 import { Z_SECONDS, Z_SIZE, Z_SLOW, Z_VISIBLE, type ZAction } from '../../core/game/dol'
+import { label } from '../../core/game/roster'
 import { encodePng } from '../../core/image/png'
-import { GAMEPLAY as RANGES, LIFT, type ZButton, type ZCostume, Z_COSTUMES, type ZStats, zTexture } from '../../core/package/imperfect'
+import { defaultGun, GAMEPLAY as RANGES, GUN_BULLETS, GUN_DAMAGE, GUN_ENERGY, GUN_PLACES, GUN_SIDES, gunBone, gunHolster, type GunPlace, type GunSide, LIFT, mirrorPlace, swapBone, soundRef, type ZButton, type ZCostume, Z_COSTUMES, type ZStats, zTexture } from '../../core/package/imperfect'
 import { decodePicture, pickFile } from '../../io/files'
 import { Note, NumberInput } from '../components/common'
 import { store, useStore } from '../store'
 import { DamageTable } from '../components/DamageTable'
+import { HolsterPlace } from './MovesPage'
 
 const ACTIONS: [ZAction, string][] = [
   ['stealth', 'Stealth Mode'],
@@ -13,6 +17,7 @@ const ACTIONS: [ZAction, string][] = [
   ['stats', 'Stat Change'],
   ['size', 'Change Size'],
   ['bullet', 'Bullet Time'],
+  ['gun', 'Gun'],
 ]
 
 const EFFECTS: ['undetected' | 'untouchable', string][] = [
@@ -28,6 +33,7 @@ const fresh = (action: ZAction): Partial<ZButton> => {
   if (action === 'costume') return { costume: { normal: {}, alt: {} } }
   if (action === 'size') return { size: 2 }
   if (action === 'bullet') return { bullet: 0.5 }
+  if (action === 'gun') return { gun: defaultGun() }
   return { stats: {} }
 }
 
@@ -38,8 +44,9 @@ export function ZButtonPage() {
   const energy = z?.requires.energy
   const edited = () => store.touch('character')
   const setAction = (action: ZAction, on: boolean) => {
-    const next: ZButton = { ...(z ?? { stealth: null, costume: null, stats: null, size: null, bullet: null, requires: {} }), ...(on ? fresh(action) : { [action]: null }) }
-    c.zButton = next.stealth || next.costume || next.stats || next.size !== null || next.bullet !== null ? next : null
+    if (action === 'gun' && !on && z?.gun) unbindGun(z.gun.side)
+    const next: ZButton = { ...(z ?? { stealth: null, costume: null, stats: null, size: null, bullet: null, gun: null, requires: {} }), ...(on ? fresh(action) : { [action]: null }) }
+    c.zButton = next.stealth || next.costume || next.stats || next.size !== null || next.bullet !== null || next.gun ? next : null
     edited()
   }
   return (
@@ -79,6 +86,7 @@ export function ZButtonPage() {
           {action === 'stats' && z?.stats && <Stats />}
           {action === 'size' && z?.size && <Size />}
           {action === 'bullet' && z?.bullet && <BulletTime />}
+          {action === 'gun' && z?.gun && <Gun />}
         </div>
       ))}
     </div>
@@ -243,6 +251,131 @@ function Stats() {
           </tr>
         </tbody>
       </table>
+    </div>
+  )
+}
+
+function unbindGun(side: GunSide, swapOnly = false) {
+  const c = store.character
+  for (const m of c.materials) if ((!swapOnly && m.bind === gunBone(c.base, side)) || m.bind === swapBone(c.base, side)) m.bind = null
+}
+
+const PLACE_LABELS: Record<GunPlace, string> = { hip_right: 'Right hip', hip_left: 'Left hip', back_left: 'Back, over the left shoulder', back_right: 'Back, over the right shoulder' }
+
+function Gun() {
+  const c = store.character
+  const z = c.zButton!, g = z.gun!
+  const edited = () => store.touch('character')
+  const bone = (side: GunSide) => gunBone(c.base, side)
+  const part = c.materials.findIndex((m) => m.include && m.bind === bone(g.side))
+  const swapPart = c.materials.findIndex((m) => m.include && m.bind === swapBone(c.base, g.side))
+  const set = (next: Partial<typeof g>) => {
+    z.gun = { ...g, ...next }
+    if (!z.gun.swap) delete z.gun.swap
+    edited()
+  }
+  const mirror = (p: typeof g.holster.position, r: typeof g.holster.rotation) => ({ position: [-p[0], p[1], p[2]] as typeof p, rotation: [r[0], -r[1], -r[2]] as typeof r })
+  const setSide = (side: GunSide) => {
+    const [was, wasSwap] = [bone(g.side), swapBone(c.base, g.side)]
+    for (const m of c.materials) {
+      if (m.bind === was) m.bind = bone(side)
+      else if (m.bind === wasSwap) m.bind = swapBone(c.base, side)
+    }
+    set({ side, holster: { place: mirrorPlace(g.holster.place), ...mirror(g.holster.position, g.holster.rotation) }, swap: g.swap && mirror(g.swap.position, g.swap.rotation) })
+  }
+  const setPlace = (place: GunPlace) => {
+    const holster = gunHolster(g.side, place)
+    set({ holster, swap: g.swap && { position: holster.position, rotation: holster.rotation } })
+  }
+  const setPart = (i: number) => {
+    unbindGun(g.side)
+    if (i >= 0) c.materials[i] = { ...c.materials[i], bind: bone(g.side), include: true }
+    edited()
+  }
+  const setSwap = (i: number) => {
+    unbindGun(g.side, true)
+    if (i >= 0) c.materials[i] = { ...c.materials[i], bind: swapBone(c.base, g.side), include: true }
+    set({ swap: i < 0 ? undefined : g.swap ?? { position: g.holster.position, rotation: g.holster.rotation } })
+  }
+  const from = g.holster.place.startsWith('back') ? 'the chest' : `the ${g.holster.place === 'hip_left' ? 'left' : 'right'} thigh`
+  const cat = store.moveCatalog()
+  const sounds = cat ? soundChoices(cat, c.base) : []
+  const events = [...new Set(sounds.map(([event]) => event))]
+  const sound = g.sound ? soundRef(g.sound) : 'none'
+  const setSound = (v: string) => set({ sound: v === 'none' ? undefined : v.split(':').map(Number) as [number, number] })
+  const asIn = (moves: string[]) => (moves.length ? ` (as in ${moves.slice(0, 3).join(', ')}${moves.length > 3 ? `, and ${moves.length - 3} more` : ''})` : '')
+  return (
+    <div className="zaction-body">
+      <Note>
+        The gun rides in a holster at a hip or on the back. Holding Z draws the gun, and once it's in hand any attack except a rise attack fires it.<br />
+        What the gun hand holds can swap into the holster as the gun comes out, and back into the hand when it goes back.
+      </Note>
+      <table className="gameplay grid">
+        <thead><tr><th>Value</th><th>Setting</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Hand</td>
+            <td><select value={g.side} onChange={(e) => setSide(e.target.value as GunSide)}>
+              {GUN_SIDES.map((side) => <option key={side} value={side}>{side}</option>)}
+            </select></td>
+          </tr>
+          <tr>
+            <td>Gun part (material)</td>
+            <td><select value={part} onChange={(e) => setPart(Number(e.target.value))}>
+              <option value={-1}>(none)</option>
+              {c.materials.map((m, i) => <option key={i} value={i}>{m.name || `material ${m.gltfMaterial}`}{m.include ? '' : ' (excluded)'}</option>)}
+            </select></td>
+          </tr>
+          <tr>
+            <td>Holster</td>
+            <td><select value={g.holster.place} onChange={(e) => setPlace(e.target.value as GunPlace)}>
+              {GUN_PLACES.map((place) => <option key={place} value={place}>{PLACE_LABELS[place]}</option>)}
+            </select></td>
+          </tr>
+          <tr>
+            <td>Swaps into the holster (material)</td>
+            <td><select value={g.swap ? swapPart : -1} onChange={(e) => setSwap(Number(e.target.value))}>
+              <option value={-1}>(nothing)</option>
+              {c.materials.map((m, i) => (i === part ? null : <option key={i} value={i}>{m.name || `material ${m.gltfMaterial}`}{m.include ? '' : ' (excluded)'}</option>))}
+            </select> <span className="muted">held in the {g.side} hand until the gun is drawn</span></td>
+          </tr>
+          <tr>
+            <td>Damage per bullet</td>
+            <td><NumberInput min={GUN_DAMAGE[0]} max={GUN_DAMAGE[1]} step={1} value={g.damage} onChange={(v) => set({ damage: Math.round(v) })} /> <span className="muted">Elektra's sai: {gun.DEFAULT_DAMAGE}</span></td>
+          </tr>
+          <tr>
+            <td>Energy per shot</td>
+            <td><NumberInput min={GUN_ENERGY[0]} max={GUN_ENERGY[1]} step={0.5} value={g.energy} onChange={(v) => set({ energy: Math.round(v * 10) / 10 })} /> <span className="muted">of a full bar of 100</span></td>
+          </tr>
+          <tr>
+            <td>Bullets per shot</td>
+            <td><NumberInput min={GUN_BULLETS[0]} max={GUN_BULLETS[1]} step={1} value={g.bullets} onChange={(v) => set({ bullets: Math.round(v) })} /> <span className="muted">fired in a quick burst</span></td>
+          </tr>
+          <tr>
+            <td>Sound</td>
+            <td><select value={sound} onChange={(e) => setSound(e.target.value)}>
+              <option value="none">Silent (default)</option>
+              {sound !== 'none' && !sounds.some(([event, variant]) => `${event}:${variant}` === sound) && <option value={sound}>Event {sound.replace(':', ', variant ')}</option>}
+              {events.map((event) => (
+                <optgroup key={event} label={`Event ${event}`}>
+                  {sounds.filter(([e]) => e === event).map(([, variant, moves]) => (
+                    <option key={variant} value={`${event}:${variant}`}>Event {event}, variant {variant}{asIn(moves)}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>{!cat && <span className="muted"> reading {label(c.base)}'s sounds…</span>}<br />
+            <span className="muted">Custom sounds and other characters' sounds can't be used at the moment.<br />Support for this will get added in the future, but isn't on the roadmap any time soon.</span></td>
+          </tr>
+          <tr>
+            <td>Machine gun</td>
+            <td><label className="check"><input type="checkbox" checked={g.automatic} onChange={(e) => set({ automatic: e.target.checked })} /> Keep shooting while attack is held</label></td>
+          </tr>
+        </tbody>
+      </table>
+      <HolsterPlace h={g.holster} from={from} view={g.holster.place.startsWith('back') ? 'back' : 'front'} kind="gun" what="the gun's middle"
+        onChange={(h) => set({ holster: { place: g.holster.place, position: h.position, rotation: h.rotation } })} />
+      {g.swap && <HolsterPlace h={g.swap} from={from} view={g.holster.place.startsWith('back') ? 'back' : 'front'} kind="swap" title="Swap Location"
+        what="the swapped part's middle, while the gun is drawn," onChange={(h) => set({ swap: { position: h.position, rotation: h.rotation } })} />}
     </div>
   )
 }
