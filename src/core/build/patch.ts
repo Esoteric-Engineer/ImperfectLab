@@ -9,6 +9,7 @@ import * as D from '../game/dol'
 import * as R from '../game/roster'
 import type { GameSource } from '../game/source'
 import { hueShift } from '../image/filters'
+import { damageImages } from '../preview'
 import { resizeLanczos } from '../image/resample'
 import { RgbaImage } from '../image/rgba'
 import * as gshtool from '../mnroi/gshtool'
@@ -22,7 +23,7 @@ import * as bundle from '../model/bundle'
 import { Fit, type MaterialSlots, type Tri } from '../model/fit'
 import { Model } from '../model/glb'
 import { Skeleton } from '../model/skeleton'
-import { type Character, gunOf, hasCutscenes, image as readImage, type Material, problems, type Placement, WALL, type WallKey, type ZCostume, zTexture } from '../package/imperfect'
+import { type Character, damageStages, gunOf, hasCutscenes, image as readImage, type Material, problems, type Placement, WALL, type WallKey, type ZCostume, zTexture } from '../package/imperfect'
 import * as cutscenes from './cutscenes'
 import * as damage from './damage'
 import * as effects from './effects'
@@ -135,6 +136,8 @@ export class Builder {
     if (throwsDamage(c)) this.r.dol = D.throwDamage(this.r.dol)
     if (ownSounds(c)) this.r.dol = D.soundBanks(this.r.dol, [c.internalName])
     if (c.zButton) this.r.dol = D.zActions(this.r.dol, zCharacters([c]))
+    const health = healthCharacters([c])
+    if (health.length) this.r.dol = D.health(this.r.dol, health)
     if (this.r.gun) this.r.dol = D.gun(this.r.dol, [this.r.gun])
     return this.r
   }
@@ -200,6 +203,20 @@ export class Builder {
     })
   }
 
+  // Each damage stage's block of parts.
+  stageImages(imgs: [Material, RgbaImage, RgbaImage][], alt: boolean, stages: [number, number][]): [string, RgbaImage | null, string][][] {
+    const c = this.c
+    const costume: ZCostume = alt ? 'alt' : 'normal'
+    const drawn = imgs.map(([m]) => c.internalName + (alt ? '_alt' : '') + m.suffix)
+    const resolved = imgs.map(([m, im, imAlt]) => damageImages(alt ? imAlt : im, m.damage[costume], c.damageStages, c.files))
+    return stages.map(([k]) => imgs.map(([m], i): [string, RgbaImage | null, string] => {
+      const name = c.internalName + (alt ? '_altd' : '_d') + (k + 1) + m.suffix
+      if (m.damage[costume][k] === 'prev') return [name, null, drawn[i]]
+      drawn[i] = name
+      return [name, resolved[i][k], name]
+    }))
+  }
+
   buildModel(): (string | [string, string])[] {
     const c = this.c, base = this.base
     const model = this.model ?? new Model(c.glb!)
@@ -226,6 +243,7 @@ export class Builder {
     const allMaterials: (string | [string, string])[] = []
     const stats = new bundle.Stats()
     const first = (v: string | undefined) => shaders.firstWord(v).toLowerCase()
+    const stages = damageStages(c)
     for (const [costume, alt] of [['', false], ['_alt', true]] as [string, boolean][]) {
       const [ngm, ngt, tpl] = base.bundleFiles(alt)
       const [, models] = ngmtool.read(ngm)
@@ -256,8 +274,10 @@ export class Builder {
       const mats = included.map((m) => c.internalName + costume + m.suffix)
       allMaterials.push(...mats)
       const zs = c.zButton?.costume ? this.zImages(imgs, alt) : []
-      const kept = zs.length ? included.map((m) => c.internalName + (alt ? '_altzo' : '_zo') + m.suffix) : []
-      allMaterials.push(...zs.map(([name, im], i): [string, string] => [name, im ? name : mats[i]]), ...kept.map((name, i): [string, string] => [name, mats[i]]))
+      const kept = zs.length || stages.length ? included.map((m) => c.internalName + (alt ? '_altzo' : '_zo') + m.suffix) : []
+      const staged = stages.length ? this.stageImages(imgs, alt, stages) : []
+      allMaterials.push(...zs.map(([name, im], i): [string, string] => [name, im ? name : mats[i]]), ...kept.map((name, i): [string, string] => [name, mats[i]]),
+        ...staged.flat().map(([name, , drawn]): [string, string] => [name, drawn]))
       const nm = templates.modelNames(c.internalName, costume)
       const plr = alt ? base.alt : base.plr
       const renames = new Map<string, string>()
@@ -266,7 +286,7 @@ export class Builder {
         if (old) renames.set(old.toLowerCase(), nm[key])
       }
       const copy = new Map([...tris].map(([k, v]) => [k, [...v]]))
-      const render = bundle.renderModel(renderBase, copy, normals, nm.MODEL, [...mats, ...zs.map(([name]) => name), ...kept],
+      const render = bundle.renderModel(renderBase, copy, normals, nm.MODEL, [...mats, ...zs.map(([name]) => name), ...kept, ...staged.flat().map(([name]) => name)],
         renderBase.meshes.length ? renderBase.meshes[0][5] : [0, 0, 0], stats)
       if (c.baseMoves.throw_reach !== undefined) basemoves.hitSegment(render)
       if (side && this.gunGeometry) render.attachments.push(gun.muzzleAttachment(gun.bone(models[0], base.body, side)[0], renderBase, this.gunGeometry))
@@ -292,8 +312,20 @@ export class Builder {
       zs.forEach(([name, im], i) => {
         if (im) textures.push([name, im, imgs[i][0].size])
       })
+      let stageBytes = 0
+      for (const block of staged) {
+        block.forEach(([name, im], i) => {
+          if (!im) return
+          const [w, h] = imgs[i][0].size
+          textures.push([name, im, [w, h]])
+          stageBytes += (w * h) / 2
+        })
+      }
       const [tplOut, ngtOut] = bundle.buildTpl(tpl, ngt, textures, keep, extra)
       if (zs.length) this.note(`Z costume${alt ? ' (costume 2)' : ''}: ${zs.filter(([, im]) => im).length} of ${zs.length} materials draw their own texture`)
+      if (staged.length) {
+        this.note(`damage stages${alt ? ' (costume 2)' : ''} at ${stages.map(([, f]) => `${Math.round(f * 100)}%`).join(', ')} health: ${staged.flat().filter(([, im]) => im).length} textures, ${Math.round(stageBytes / 1024)} KB`)
+      }
       const b = c.internalName.toLowerCase() + costume
       this.bundleAdds.set(`Bundles/${b}.ngm`, data)
       this.bundleAdds.set(`Bundles/${b}.ngt`, ngtOut)
@@ -663,10 +695,20 @@ export function zCharacters(chars: Character[]): D.ZCharacter[] {
     return [{
       internal: c.internalName, seconds: z.requires.energy?.seconds ?? 0, regen: z.requires.energy?.regen ?? false,
       undetected: z.stealth?.undetected ?? false, untouchable: z.stealth?.untouchable ?? false, visible: z.stealth?.visible ?? 1,
-      costume: z.costume !== null, damage: damage.KEYS.map((k) => st[k] ?? null), taken: st.damage_taken ?? null, lift: st.lift ?? null,
+      costume: z.costume !== null, staged: z.costume !== null && damageStages(c).length > 0, damage: damage.KEYS.map((k) => st[k] ?? null), taken: st.damage_taken ?? null, lift: st.lift ?? null,
       run: st.run_speed ?? null, sprint: st.sprint_speed ?? null,
       size: z.size, slow: z.bullet, gun: z.gun !== null,
     }]
+  })
+}
+
+// The characters whose costumes change with their health, and where their parts' blocks are (Builder.buildModel lays them out).
+export function healthCharacters(chars: Character[]): D.HealthCharacter[] {
+  return chars.flatMap((c) => {
+    const stages = damageStages(c)
+    if (!stages.length) return []
+    const z = c.zButton?.costume ? 1 : null
+    return [{ internal: c.internalName, stages: stages.map(([, f]) => f), kept: z === null ? 1 : 2, z }]
   })
 }
 
@@ -740,6 +782,7 @@ export function report(characters: Character | Character[], result: Result): str
     const used = names.filter(([k]) => chars.some((c) => c.zButton?.[k])).map(([, label]) => label)
     lines.push(`main.dol: Z is bound for every human player; fn_80137494, fn_80148B50 and fn_80132838 are rewritten to run ${used.join(', ')}, hooked from fn_800FB944, fn_80085F4C, fn_800E07A4, fn_80150200, fn_80461948, fn_8014F8BC, fn_801A479C, fn_801AF790, fn_80094E04, fn_80074814, fn_800748A4, fn_80061A10, fn_800BD2D0 and fn_800BD3A8; fn_800B1884 and fn_80086C80 are rewritten in place`)
   }
+  if (chars.some((c) => damageStages(c).length)) lines.push('main.dol: a new text section changes each fighter\'s costume textures with its health, hooked from fn_801A479C')
   const cache = result.dol ? D.readEffectCache(result.dol) : null
   if (cache && cache !== nfxtool.CACHE_SIZE) lines.push(`main.dol: effect cache ${nfxtool.CACHE_SIZE} -> ${cache} bytes`)
   const sorted = (m: Map<string, Uint8Array>) => [...m].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))

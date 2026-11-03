@@ -12,7 +12,7 @@ import { type Character, gunOf, hasCutscenes, problems as characterProblems, typ
 import * as effects from './effects'
 import * as moves from './moves'
 import { motionSetName, SLOTS } from './moves'
-import { Builder, mirrors, ownMotions, ownSounds, paintsReach, type PatchOutput, type Progress, Result, splitsCharge, throwsDamage, tuningFields, write, zCharacters } from './patch'
+import { Builder, mirrors, ownMotions, ownSounds, paintsReach, type PatchOutput, type Progress, Result, splitsCharge, throwsDamage, tuningFields, write, zCharacters, healthCharacters } from './patch'
 import { templateNames } from './templates'
 import * as tuning from './tuning'
 import * as ui from './ui'
@@ -129,6 +129,8 @@ export function buildBatch(source: GameSource, chars: Batch, progress: Progress 
   if (batch.some(throwsDamage)) r.dol = D.throwDamage(r.dol)
   if (batch.some(ownSounds)) r.dol = D.soundBanks(r.dol, batch.filter(ownSounds).map((c) => c.internalName))
   if (batch.some((c) => c.zButton)) r.dol = D.zActions(r.dol, zCharacters(batch))
+  const health = healthCharacters(batch)
+  if (health.length) r.dol = D.health(r.dol, health)
   const guns = results.flatMap((x) => (x.gun ? [x.gun] : []))
   if (guns.length) r.dol = D.gun(r.dol, guns)
   r.notes = [...notes, ...results.flatMap((x, i) => x.notes.map((n) => `${batch[i].displayName}: ${n}`))]

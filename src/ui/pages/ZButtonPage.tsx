@@ -124,7 +124,7 @@ function Costume() {
   const included = c.materials.filter((m) => m.include)
   return (
     <div className="zaction-body">
-      <Note>While Z is held, costumes are replaced with the textures below. Uses additional in-match memory.</Note>
+      <Note>While Z is held, costumes are replaced with the textures below. Uses additional in-match memory. Holding Z overrides any health-based texture changes, if those are set.</Note>
       {!included.length ? <Note>Import a model in the Model step first.</Note> : (
         <table className="gameplay grid">
           <thead><tr><th>Material</th>{Z_COSTUMES.map((k) => <th key={k}>{COSTUME_LABELS[k]} while Z is held</th>)}</tr></thead>

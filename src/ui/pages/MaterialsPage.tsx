@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { zipSync } from 'fflate'
 import { encodePng } from '../../core/image/png'
 import type { RgbaImage } from '../../core/image/rgba'
-import { copyCharacter, gunBone, gunOf, type Material, swapBone } from '../../core/package/imperfect'
+import { copyCharacter, DAMAGE_HEALTH, damageMember, damageUpload, gunBone, gunOf, type Material, swapBone, type ZCostume, Z_COSTUMES } from '../../core/package/imperfect'
 import { decodePicture, download, pickFile } from '../../io/files'
 import { ImageView, Note, NumberInput } from '../components/common'
 import { engine } from '../engine'
@@ -12,13 +12,16 @@ import { store, useStore } from '../store'
 const SIZES = [8, 16, 32, 64, 128, 256, 512, 1024]
 const PICTURES = '.png,.jpg,.jpeg,.webp,.bmp,.gif'
 const COSTUMES = ['costume1', 'costume2']
+const COSTUME_LABELS: Record<ZCostume, string> = { normal: 'Costume 1', alt: 'Costume 2' }
+type Thumbs = [RgbaImage | null, RgbaImage | null, (RgbaImage | null)[][]]
+const NO_THUMBS: Thumbs = [null, null, [[], []]]
 
 function matName(m: Material): string {
   return fileName(m.name || `mat${m.gltfMaterial}`)
 }
 
 function texturePngs(index: number | null) {
-  return engine.call<[Uint8Array | null, Uint8Array | null][]>('materialPngs', [copyCharacter({ ...store.character, glb: null }), index])
+  return engine.call<[Uint8Array | null, Uint8Array | null, (Uint8Array | null)[][]][]>('materialPngs', [copyCharacter({ ...store.character, glb: null }), index])
 }
 
 async function downloadTexture(index: number, costume: 0 | 1) {
@@ -36,11 +39,18 @@ async function downloadAll() {
   try {
     const c = store.character
     const entries: Record<string, Uint8Array> = {}
-    ;(await texturePngs(null)).forEach((pair, i) => pair.forEach((body, k) => {
+    const add = (m: Material, what: string, body: Uint8Array | null) => {
+      const name = `${matName(m)} - ${what}.png`
+      if (body) entries[name in entries ? `${matName(m)} (mat${m.gltfMaterial}) - ${what}.png` : name] = body
+    }
+    ;(await texturePngs(null)).forEach(([own, alt, stages], i) => {
       const m = c.materials[i]
-      const name = `${matName(m)} - ${COSTUMES[k]}.png`
-      if (body) entries[name in entries ? `${matName(m)} (mat${m.gltfMaterial}) - ${COSTUMES[k]}.png` : name] = body
-    }))
+      add(m, COSTUMES[0], own)
+      add(m, COSTUMES[1], alt)
+      Z_COSTUMES.forEach((co, k) => stages[k]?.forEach((body, j) => {
+        if (m.damage[co][j] !== 'prev') add(m, `${COSTUMES[k]} - damage ${j + 1}`, body)
+      }))
+    })
     if (!Object.keys(entries).length) return store.fail('None of the textures could be read.')
     download(zipSync(entries, { level: 0 }), `${artName(c)} - textures.zip`, 'application/zip')
   } catch (e) {
@@ -52,12 +62,12 @@ export function MaterialsPage() {
   useStore()
   const s = store
   const c = s.character
-  const [thumbs, setThumbs] = useState<[RgbaImage | null, RgbaImage | null][]>([])
+  const [thumbs, setThumbs] = useState<Thumbs[]>([])
 
   useEffect(() => {
     let live = true
     if (!c.materials.length) return
-    engine.call<[RgbaImage | null, RgbaImage | null][]>('materialThumbs', [copyCharacter({ ...store.character, glb: null })])
+    engine.call<Thumbs[]>('materialThumbs', [copyCharacter({ ...store.character, glb: null })])
       .then((t) => live && setThumbs(t), () => live && setThumbs([]))
     return () => {
       live = false
@@ -73,12 +83,106 @@ export function MaterialsPage() {
         <Note>Saves every material as a zip of PNG files.</Note>
       </div>}
       {!c.materials.length && <div className="card"><h4>No model yet</h4><Note>Import a model in the Model step first.</Note></div>}
-      {c.materials.map((_, i) => <MaterialCard key={i} index={i} thumbs={thumbs[i] ?? [null, null]} />)}
+      {c.materials.length > 0 && <DamageStages />}
+      {c.materials.map((_, i) => <MaterialCard key={i} index={i} thumbs={thumbs[i] ?? NO_THUMBS} />)}
     </div>
   )
 }
 
-function MaterialCard({ index, thumbs }: { index: number; thumbs: [RgbaImage | null, RgbaImage | null] }) {
+// A picture in c.files that nothing names any more.
+function dropUnused(member: string) {
+  const c = store.character
+  const named = c.materials.some((m) => m.texture === member || m.alt === member || Z_COSTUMES.some((k) => m.damage[k].includes(member))) ||
+    Z_COSTUMES.some((k) => Object.values(c.zButton?.costume?.[k] ?? {}).includes(member))
+  if (!named) c.files.delete(member)
+}
+
+function DamageStages() {
+  useStore()
+  const c = store.character
+  const edited = () => store.touch('character')
+  const set = (k: number, next: Partial<(typeof c.damageStages)[number]>) => {
+    c.damageStages = c.damageStages.map((st, j) => (j === k ? { ...st, ...next } : st))
+    edited()
+  }
+  const memory = Z_COSTUMES.map((co) => {
+    let count = 0, bytes = 0
+    for (const m of c.materials) {
+      if (!m.include) continue
+      c.damageStages.forEach((st, k) => {
+        if (!st.enabled || m.damage[co][k] === 'prev') return
+        count++
+        bytes += (m.size[0] * m.size[1]) / 2
+      })
+    }
+    return `${COSTUME_LABELS[co]}: ${count} texture${count === 1 ? '' : 's'}, ${Math.round(bytes / 1024)} KB`
+  })
+  return (
+    <div className="card">
+      <h4>Damage stages</h4>
+      <Note>Materials can change texture as health runs down.</Note>
+      <div className="form">
+        {c.damageStages.map((st, k) => (
+          <div key={k} className="row tight" style={{ gridColumn: '1 / -1' }}>
+            <label className="check"><input type="checkbox" checked={st.enabled} onChange={(e) => set(k, { enabled: e.target.checked })} /> Stage {k + 1}</label>
+            at or below
+            <NumberInput className="short" min={DAMAGE_HEALTH[0]} max={DAMAGE_HEALTH[1]} disabled={!st.enabled} value={st.health}
+              onChange={(v) => set(k, { health: Math.round(v) })} />% health
+          </div>
+        ))}
+      </div>
+      {c.damageStages.some((st) => st.enabled) && <Note>New textures take in-match memory. {memory.join('; ')}.</Note>}
+    </div>
+  )
+}
+
+function StageTexture({ index, costume, stage, first, thumb }: { index: number; costume: ZCostume; stage: number; first: boolean; thumb: RgbaImage | null }) {
+  const m = store.character.materials[index]
+  const v = m.damage[costume][stage]
+  const mode = v === 'prev' ? 'prev' : v.startsWith('hue:') ? 'hue' : 'file'
+  const set = (next: string) => {
+    const mat = store.character.materials[index]
+    mat.damage = { ...mat.damage, [costume]: mat.damage[costume].map((x, j) => (j === stage ? next : x)) }
+    if (damageMember(v) && v !== next) dropUnused(v)
+    store.touch('character')
+  }
+  const choose = async () => {
+    const file = await pickFile(PICTURES)
+    if (!file) return false
+    return store.edit(async () => {
+      let im: RgbaImage
+      try {
+        im = await decodePicture(file)
+      } catch (e) {
+        store.fail(`The picture could not be read:\n${(e as Error).message}`)
+        return false
+      }
+      const member = damageUpload(m.gltfMaterial, stage, costume)
+      store.character.files.set(member, encodePng(im))
+      set(member)
+      return true
+    })
+  }
+  return (
+    <div className="row tight">
+      <ImageView image={thumb} side={64} />
+      <select value={mode} onChange={(e) => {
+        const next = e.target.value
+        if (next === 'file') return void choose()
+        set(next === 'hue' ? 'hue:0' : 'prev')
+      }}>
+        <option value="prev">{first ? 'Undamaged texture' : 'Same as the stage before'}</option>
+        <option value="hue">Hue shift of the undamaged texture</option>
+        <option value="file">Another picture</option>
+      </select>
+      {mode === 'hue' && <><NumberInput className="short" min={-180} max={180} value={Math.trunc(parseFloat(v.slice(4)))}
+        onChange={(n) => set(`hue:${Math.trunc(n)}`)} />°</>}
+      {mode === 'file' && <button className="small" onClick={() => choose()}>Choose...</button>}
+    </div>
+  )
+}
+
+function MaterialCard({ index, thumbs }: { index: number; thumbs: Thumbs }) {
   useStore()
   const s = store
   const c = s.character
@@ -188,6 +292,21 @@ function MaterialCard({ index, thumbs }: { index: number; thumbs: [RgbaImage | n
           </div>
         </div>
       </div>
+      {m.include && c.damageStages.some((st) => st.enabled) && (
+        <table className="gameplay grid">
+          <thead><tr><th>Damage stage</th>{Z_COSTUMES.map((k) => <th key={k}>{COSTUME_LABELS[k]}</th>)}</tr></thead>
+          <tbody>
+            {c.damageStages.map((st, k) => st.enabled && (
+              <tr key={k}>
+                <td>Stage {k + 1} (at or below {st.health}%)</td>
+                {Z_COSTUMES.map((co, j) => <td key={co}>
+                  <StageTexture index={index} costume={co} stage={k} first={!c.damageStages.slice(0, k).some((x) => x.enabled)} thumb={thumbs[2][j]?.[k] ?? null} />
+                </td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   )
 }

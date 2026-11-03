@@ -289,6 +289,7 @@ export interface ZCharacter {
   untouchable: boolean
   visible: number
   costume: boolean
+  staged?: boolean
   damage: (number | null)[]
   taken: number | null
   lift: string | null
@@ -331,7 +332,7 @@ function zTable(chars: ZCharacter[]): Uint8Array {
     const at = (stats ? 40 : 12) + (speeds ? 8 : 0) + (c.size !== null ? 4 : 0) + (c.slow !== null ? 4 : 0)
     const entry = new Uint8Array(at + ((names.length + 3) & ~3))
     putF32be(entry, 0, c.seconds)
-    putU32be(entry, 4, (c.regen ? 1 : 0) | (c.undetected ? 2 : 0) | (c.untouchable ? 4 : 0) | (c.costume ? 8 : 0) | (stats ? 16 : 0) | (c.size !== null ? 32 : 0) | (c.slow !== null ? 64 : 0) | (c.gun ? 128 : 0) | (speeds ? 256 : 0))
+    putU32be(entry, 4, (c.regen ? 1 : 0) | (c.undetected ? 2 : 0) | (c.untouchable ? 4 : 0) | (c.costume ? (c.staged ? 512 : 8) : 0) | (stats ? 16 : 0) | (c.size !== null ? 32 : 0) | (c.slow !== null ? 64 : 0) | (c.gun ? 128 : 0) | (speeds ? 256 : 0))
     putF32be(entry, 8, c.visible)
     if (stats) {
       c.damage.forEach((v, i) => putF32be(entry, 12 + 4 * i, v ?? -1))
@@ -502,13 +503,12 @@ function gunTable(guns: GunCharacter[]): Uint8Array {
 }
 
 // Needs zActions first: the gun is drawn while the character's Z slot is live (gun.s calls its stealth_test).
-export function gun(dol: Uint8Array, guns: GunCharacter[]): Uint8Array {
-  if (guns.length > GUN_PLAYERS) throw new LabError(`main.dol has room for ${GUN_PLAYERS} characters' guns, not ${guns.length}`)
+// body in a new text section where the arena started, which then starts after it.
+function textSection(dol: Uint8Array, body: Uint8Array): [Uint8Array, number] {
   const slot = (() => {
     for (let i = 2; i < 7; i++) if (!u32be(dol, 0x90 + 4 * i)) return i
     throw new LabError('main.dol has no free text section')
   })()
-  const body = concat([fromHex(GUN_CODE), gunTable(guns)])
   const size = (body.length + 0x1f) & ~0x1f
   const lo = arenaLo(dol)
   const at = (dol.length + 0x1f) & ~0x1f
@@ -519,6 +519,12 @@ export function gun(dol: Uint8Array, guns: GunCharacter[]): Uint8Array {
   putU32be(out, 0x48 + 4 * slot, lo)
   putU32be(out, 0x90 + 4 * slot, size)
   for (const [lis, addi] of ARENA_REFS) retarget(out, lis, addi, address(out, lis, addi), lo + size)
+  return [out, lo]
+}
+
+export function gun(dol: Uint8Array, guns: GunCharacter[]): Uint8Array {
+  if (guns.length > GUN_PLAYERS) throw new LabError(`main.dol has room for ${GUN_PLAYERS} characters' guns, not ${guns.length}`)
+  const [out, lo] = textSection(dol, concat([fromHex(GUN_CODE), gunTable(guns)]))
   const [pose, poseOld] = GUN_POSE_SITE
   put(out, fileOffset(out, pose), fromHex(poseOld), word(branch(pose, lo + GUN_POSE, true)))
   for (const [[site, old], to] of [[GUN_PLAY_SITE, GUN_PLAY], [GUN_PRESSED_SITE, GUN_PRESSED], [GUN_MOTION_SITE, GUN_MOTION], [GUN_EVENT_SITE, GUN_EVENT],
@@ -528,6 +534,62 @@ export function gun(dol: Uint8Array, guns: GunCharacter[]): Uint8Array {
   const [pick, pickOld] = GUN_PICK_SITE
   const next = concat([fromHex('7e639b78809f0010'), word(branch(pick + 8, lo + GUN_PICK, true)), fromHex('7c601b784800001c'), fromHex('60000000'.repeat(6))])
   put(out, fileOffset(out, pick), fromHex(pickOld), next)
+  return out
+}
+
+// health.s, in a text section of its own like the gun's, then its table: each player's costume shows its damage stage.
+const HEALTH_CODE =
+  '9421ffc07c0802a690010044bee1001c480003297d7f5b783d20805980093c2c813f00007c00480041820164901f00003bc000002c1e00044080015457dc20367f9cfa143b9c00043b2000003b4000003b6000003c608055386321103d808043398c49007d8903a64e800421' +
+  '7c1e1800408000a03c608055386321107fc4f3783d808043398c17bc7d8903a64e8004217c7d1b783d808043398cff2c7d8903a64e8004217c791b7941820068837901bc831f00443b5f00482c18000040810050387d0004389a00103d808017398c26547d8903a64e800421' +
+  '2c03000041820034387d0004389a00303d808017398c26547d8903a64e8004212c030000418200143b5a00503b18ffff4bffffb03b400000801c00007c00c8004082001c801c00047c00d80040820010801c00087c00d00041820018933c0000937c0004935c00083800ffff' +
+  '901c000c2c1a0000418200382c1b0000418200307f23cb787f44d37848000045801c000c7c00180041820018907c000c7c641b787f63db7888ba000e480000d93bde00014bfffeacbae1001c800100447c0803a6382100407fc3f3784e8000209421ffe07c0802a690010024' +
+  '93e1001c93c100187c7f1b787c9e2378881e000d2c0000ff4182002c7fe4fb7838a002003d808013398c77cc7d8903a64e8004212c0000004182000c887e000d48000050887e000cc03f031cc05f0320ec021028fc02000040810038ec211024392000007fcaf378c06a0000' +
+  'fc01180041810010887e000c7c634a143863000139290001394a00042c0900034180ffdc83c1001883e1001c800100247c0803a6382100204e8000209421ffd07c0802a690010034bec100087c9623788123000083a300ac8b8900048b690008834900882c050000418200a0' +
+  '7c162800408000987c1b2b967d4029d67c0ad800408200887c1b0379418200807ed6d9d62c1c000041820074833d00002c1900004182005c3b0000007c18d800408000505700103a7efa002e7c17c8004182002c38790028389700283d808017398c26547d8903a64e800421' +
+  '2c0300004182000c3b1800014bffffc47c18b2145400103a7d3a002e80090014901900143bbd00043b9cffff4bffff8cbac10008800100347c0803a6382100304e8000207c0802a6429f00057d6802a67c0803a6396b00104e800020'
+export const HEALTH_POSE = 0, HEALTH_DATA = 0x350
+const HEALTH_PLAYERS = 4
+// The clock, then {actor, model instance, entry, block shown} per player, then the count and the entries.
+export const HEALTH_COUNT = 4 + 16 * HEALTH_PLAYERS, HEALTH_ENTRIES = HEALTH_COUNT + 4
+export const HEALTH_ENTRY_SIZE = 0x50
+export const HEALTH_STAGES = 3
+// fn_801A479C's mr r3, r30, after the model's frame stamp and before the bones are posed.
+const HEALTH_SITE: [number, string] = [0x801a4814, '7fc3f378']
+
+export interface HealthCharacter {
+  internal: string
+  stages: number[] // falling fractions of max health
+  kept: number // the untouched copies' block
+  z: number | null
+}
+
+function healthTable(chars: HealthCharacter[]): Uint8Array {
+  const out = new Uint8Array(HEALTH_ENTRIES + HEALTH_ENTRY_SIZE * chars.length)
+  putU32be(out, HEALTH_COUNT, chars.length)
+  chars.forEach((c, i) => {
+    const o = HEALTH_ENTRIES + HEALTH_ENTRY_SIZE * i
+    if (!c.stages.length || c.stages.length > HEALTH_STAGES) throw new LabError(`a costume has 1 to ${HEALTH_STAGES} damage stages, not ${c.stages.length}`)
+    c.stages.forEach((v, j) => {
+      if (!(v > 0 && v < 1) || (j && !(v < c.stages[j - 1]))) throw new LabError('damage stages start below full health and fall')
+    })
+    if (c.kept < 1 || (c.z !== null && (c.z < 1 || c.z >= c.kept))) throw new LabError("a costume's Z twins come after its own materials and before the untouched copies")
+    for (let j = 0; j < HEALTH_STAGES; j++) putF32be(out, o + 4 * j, c.stages[j] ?? -1)
+    out.set([c.kept, c.z ?? 0xff, c.kept + 1 + c.stages.length], o + 0xc)
+    entityNames(c.internal).forEach((name, j) => out.set(field(name), o + 0x10 + 0x20 * j))
+  })
+  return out
+}
+
+// A character with Z twins needs zActions first: its stage gives way to them while Z holds them.
+export function health(dol: Uint8Array, chars: HealthCharacter[]): Uint8Array {
+  if (!chars.length || chars.length > MAX_NEW) throw new LabError(`main.dol has room for 1 to ${MAX_NEW} characters' damage stages, not ${chars.length}`)
+  const zCode = fromHex(Z_ACTIONS_CODE), zAt = fileOffset(dol, Z_CODE[0])
+  if (chars.some((c) => c.z !== null) && !equal(dol.subarray(zAt, zAt + zCode.length), zCode)) {
+    throw new LabError('a damaged Z costume needs the Z-button actions in main.dol first')
+  }
+  const [out, lo] = textSection(dol, concat([fromHex(HEALTH_CODE), healthTable(chars)]))
+  const [site, old] = HEALTH_SITE
+  put(out, fileOffset(out, site), fromHex(old), word(branch(site, lo + HEALTH_POSE, true)))
   return out
 }
 

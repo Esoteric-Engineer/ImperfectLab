@@ -13,7 +13,8 @@ import * as holster from './build/holster'
 import { conv, type Tri, unit } from './model/fit'
 import type { Model } from './model/glb'
 import type { Skeleton } from './model/skeleton'
-import { type Character, type Holster, image as readImage } from './package/imperfect'
+import { type Character, type DamageStage, type Holster, image as readImage } from './package/imperfect'
+import { LabError } from './errors'
 
 export interface MeshData {
   positions: Float32Array
@@ -86,6 +87,22 @@ export function costumeImage(im: RgbaImage, alt: string, files: Map<string, Uint
   if (alt.startsWith('hue:')) return hueShift(im, parseFloat(alt.slice(4)))
   if (alt !== 'same' && files.has(alt)) return readImage(files.get(alt)!)
   return im
+}
+
+// A costume's texture at each damage stage from its undamaged one, null where the stage is off.
+export function damageImages(own: RgbaImage, choices: string[], stages: DamageStage[], files: Map<string, Uint8Array>): (RgbaImage | null)[] {
+  let prev = own
+  return stages.map((st, k) => {
+    if (!st.enabled) return null
+    const v = choices[k]
+    if (v.startsWith('hue:')) prev = hueShift(own, parseFloat(v.slice(4)))
+    else if (v !== 'prev') {
+      const body = files.get(v)
+      if (!body) throw new LabError(`the damage stage ${k + 1} texture ${v} is missing`)
+      prev = readImage(body)
+    }
+    return prev
+  })
 }
 
 export function sourceMeshes(model: Model, c: Character, flip = false): MeshData[] {

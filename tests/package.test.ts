@@ -73,6 +73,58 @@ describe('round trip', () => {
     expect(bad('big')).toThrow(/must be a number/)
   })
 
+  it('saves and loads damage stages, and leaves them out at their defaults', () => {
+    const c = character()
+    const m0 = imperfect.manifest(c) as Json
+    expect(m0.model.damage_stages).toBeUndefined()
+    expect(m0.model.materials[0].damage).toBeUndefined()
+    expect(imperfect.load(imperfect.save(c)).damageStages).toEqual(imperfect.defaultDamageStages())
+    c.damageStages = [{ enabled: true, health: 80 }, { enabled: false, health: 50 }, { enabled: true, health: 20 }]
+    c.materials[0].damage = { normal: ['textures/mat0_d1.png', 'prev', 'hue:-40'], alt: ['prev', 'prev', 'textures/mat0_d3_alt.png'] }
+    c.files.set('textures/mat0_d1.png', pngBytes())
+    c.files.set('textures/mat0_d3_alt.png', pngBytes())
+    expect(imperfect.problems(c).filter(([level]) => level === 'error')).toEqual([])
+    expect(imperfect.damageStages(c)).toEqual([[0, 0.8], [2, 0.2]])
+    const d = imperfect.load(imperfect.save(c))
+    expect(d.damageStages).toEqual(c.damageStages)
+    expect(d.materials[0].damage).toEqual(c.materials[0].damage)
+    expect(imperfect.save(d)).toEqual(imperfect.save(c))
+
+    const m = imperfect.manifest(c) as Json
+    const files = new Map(c.files)
+    const withStages = (stages: unknown) => () => imperfect.fromManifest({ ...m, model: { ...m.model, damage_stages: stages } }, files)
+    expect(withStages([{ enabled: true, health: 0 }, { health: 50 }, { health: 25 }])).toThrow(/from 1 to 99/)
+    expect(withStages([{ enabled: true, health: 100 }, { health: 50 }, { health: 25 }])).toThrow(/from 1 to 99/)
+    expect(withStages([{ enabled: true, health: 50.5 }, { health: 50 }, { health: 25 }])).toThrow(/must be a number/)
+    expect(withStages([{ health: 50 }])).toThrow(/3 stages/)
+    expect(withStages([{ health: 50, colour: 'red' }, { health: 50 }, { health: 25 }])).toThrow(/unknown key/)
+    expect(withStages([{ health: 25 }, { health: 50 }, { health: 75 }])).not.toThrow()
+    const withDamage = (damage: unknown) => () => imperfect.fromManifest({ ...m, model: { ...m.model, materials: [{ ...m.model.materials[0], damage }] } }, files)
+    expect(withDamage({ normal: ['hue:999', 'prev', 'prev'] })).toThrow(/from -360 to 360/)
+    expect(withDamage({ normal: ['ui/hud.png', 'prev', 'prev'] })).toThrow(/not valid/)
+    expect(withDamage({ normal: ['textures/gone.png', 'prev', 'prev'] })).toThrow(/lacks/)
+    expect(withDamage({ normal: ['prev'] })).toThrow(/3 stages/)
+    expect(withDamage({ both: ['prev', 'prev', 'prev'] })).toThrow(/unknown key/)
+    expect(withDamage({ alt: ['hue:10', 'prev', 'prev'] })().materials[0].damage).toEqual({ normal: ['prev', 'prev', 'prev'], alt: ['hue:10', 'prev', 'prev'] })
+
+    c.damageStages = [{ enabled: true, health: 20 }, { enabled: false, health: 50 }, { enabled: true, health: 40 }]
+    expect(imperfect.problems(c).map(([, msg]) => msg)).toContain('each damage stage must be at a lower health than the one before it: change the levels on the Materials page')
+    c.damageStages = [{ enabled: true, health: 80 }, { enabled: false, health: 50 }, { enabled: true, health: 20 }]
+    c.files.delete('textures/mat0_d3_alt.png')
+    expect(imperfect.problems(c)).toContainEqual(['error', 'the damage stage 3 texture of skin (costume 2) is missing'])
+    c.materials[0].damage = { normal: ['prev', 'textures/mat0_d1.png', 'prev'], alt: imperfect.noDamage().alt }
+    expect(imperfect.damageStages(c)).toEqual([])
+    expect(imperfect.problems(c)).toContainEqual(['warning', 'damage stages are ticked but no material changes texture at them: pick textures on the Materials page'])
+  })
+
+  it('loads a file with more than 64 members', () => {
+    const c = character()
+    for (let i = 0; i < 100; i++) c.files.set(`textures/extra${i}.png`, pngBytes())
+    expect(imperfect.load(imperfect.save(c)).files.size).toBe(c.files.size)
+    for (let i = 100; i < 260; i++) c.files.set(`textures/extra${i}.png`, pngBytes())
+    expect(imperfect.problems(c).some(([level, msg]) => level === 'error' && msg.includes('at most 254'))).toBe(true)
+  })
+
   it('finds problems', () => {
     const c = character()
     expect(imperfect.problems(c).filter((p) => p[0] === 'error')).toEqual([])

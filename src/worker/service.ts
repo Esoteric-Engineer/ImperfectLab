@@ -25,7 +25,7 @@ import { Model } from '../core/model/glb'
 import * as mapping from '../core/model/mapping'
 import { Skeleton } from '../core/model/skeleton'
 import * as imperfect from '../core/package/imperfect'
-import { baseMeshes, type BoneLine, costumeImage, fittedMeshes, gameBones, holsteredTris, materialImages, type MeshData, sourceBones, sourceMeshes } from '../core/preview'
+import { baseMeshes, type BoneLine, costumeImage, damageImages, fittedMeshes, gameBones, holsteredTris, materialImages, type MeshData, sourceBones, sourceMeshes } from '../core/preview'
 import type { BaseDetails, BaseInfo, CheckResult, ComposeArgs, DiscInfo, ImportedModel, BatchCheckResult, LayoutInfo, ModelInfo, MovePreview, PreviewResult } from './protocol'
 
 const DEFAULT_SIZES: Record<string, [number, number]> = {
@@ -464,7 +464,8 @@ export class Service {
     return null
   }
 
-  materialThumbs(c: imperfect.Character): [RgbaImage | null, RgbaImage | null][] {
+  // Per material: costume 1, costume 2, and each costume's damage stages (null where a stage is off).
+  materialThumbs(c: imperfect.Character): [RgbaImage | null, RgbaImage | null, (RgbaImage | null)[][]][] {
     return c.materials.map((x) => {
       const small = shrink(this.materialSource(c, x), 128)
       let alt = small
@@ -473,23 +474,33 @@ export class Service {
       } catch (e) {
         if (!(e instanceof LabError)) throw e
       }
-      return [small, alt]
+      return [small, alt, [small, alt].map((own, k) => this.stageImages(c, x, own, k).map((im) => shrink(im, 128)))]
     })
   }
 
-  materialPngs(c: imperfect.Character, index: number | null): [Uint8Array | null, Uint8Array | null][] {
+  materialPngs(c: imperfect.Character, index: number | null): [Uint8Array | null, Uint8Array | null, (Uint8Array | null)[][]][] {
     return c.materials.map((x, i) => {
-      if (index !== null && i !== index) return [null, null]
+      if (index !== null && i !== index) return [null, null, []]
       const im = this.materialSource(c, x)
-      if (!im) return [null, null]
-      let alt: Uint8Array | null = null
+      if (!im) return [null, null, []]
+      let alt: Uint8Array | null = null, altIm = im
       try {
-        if (x.alt !== 'same') alt = encodePng(costumeImage(im, x.alt, c.files))
+        altIm = costumeImage(im, x.alt, c.files)
+        if (x.alt !== 'same') alt = encodePng(altIm)
       } catch (e) {
         if (!(e instanceof LabError)) throw e
       }
-      return [encodePng(im), alt]
+      return [encodePng(im), alt, [im, altIm].map((own, k) => this.stageImages(c, x, own, k).map((s) => (s ? encodePng(s) : null)))]
     })
+  }
+
+  private stageImages(c: imperfect.Character, x: imperfect.Material, own: RgbaImage | null, k: number): (RgbaImage | null)[] {
+    try {
+      if (own) return damageImages(own, x.damage[imperfect.Z_COSTUMES[k]], c.damageStages, c.files)
+    } catch (e) {
+      if (!(e instanceof LabError)) throw e
+    }
+    return c.damageStages.map(() => null)
   }
 
   private layout(): portraits.SelectLayout {

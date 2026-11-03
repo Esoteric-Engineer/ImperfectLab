@@ -21,7 +21,7 @@ A ZIP archive (deflate). Only these members may appear, and nothing else is read
 
 Readers must reject:
 - any other member name, an absolute path, `..`, a backslash, a directory entry, or a duplicate member;
-- more than 64 members, or more than 64 MB unpacked;
+- more than 256 members, or more than 64 MB unpacked;
 - a member over 1 MB that compresses more than 200:1;
 - a member whose SHA-256 differs from the manifest's `files` list, or a list that names a member the archive
   lacks or misses one it has;
@@ -62,8 +62,10 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
       "two_sided": false,
       "texture": "textures/body.png",
       "alt": "textures/body_alt.png",
-      "bind": null
-    }]
+      "bind": null,
+      "damage": { "normal": ["textures/mat0_d1.png", "prev", "hue:-30"], "alt": ["textures/mat0_d1_alt.png", "prev", "prev"] }
+    }],
+    "damage_stages": [{ "enabled": true, "health": 75 }, { "enabled": false, "health": 50 }, { "enabled": true, "health": 25 }]
   },
   "aura": {"mode": "swap", "tint": "all", "color": "#40A0FF", "alt_color": "#50FF50"},
   "flames": {"parts": ["head"], "body": false, "color": null, "alt_color": "#40A0FF", "size": 1.2, "base_effect": true},
@@ -107,6 +109,11 @@ Game bone numbers in `model` belong to the base's body class (male, female or br
   - `texture`: a `textures/` member, or `null` for the GLB's own base color image.
   - `alt`: the alternate costume's texture: `"same"`, a `textures/` member, or `"hue:<degrees>"`.
   - `bind`: `null`, or a game bone number every vertex of the material is fixed to (a prop).
+  - `damage`: optional, `normal` and `alt`, each three entries (one per damage stage): `"prev"` (the previous enabled
+    stage's texture, or the costume's own before the first), `"hue:<degrees>"` (the costume's own texture, hue-shifted) or a
+    `textures/` member. A costume left out is all `"prev"`.
+- `damage_stages`: optional, three `{enabled, health}`. An enabled stage shows from `health` (an integer 1-99, % of max
+  health) down; the enabled stages' `health` must fall. Absent means all off at 75, 50 and 25.
 
 ### `aura`
 `mode`:

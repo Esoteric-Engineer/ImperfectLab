@@ -226,6 +226,14 @@ The action picked on the **Z-Button Actions** page (`z_button`, [`FORMAT.md`](FO
 - **A few of the character's own timeouts may run long**: those measured on the game clock outside the state timers.
 - **The world speed has a floor of 25%.** Below it, the game takes physics steps only every few frames and movement stutters.
 
+## Damage stages
+
+The textures each costume changes to as health runs down (`model.damage_stages`, [`FORMAT.md`](FORMAT.md)):
+
+- **Every texture is loaded with the match.** Each picture a stage adds is a CMPR texture in that costume's bundle: 32 KB at 256x256, 128 KB at 512x512, on top of the memory above.
+- **Each stage adds parts.** Each stage that changes something adds one more part to the costume, and each part is a block in `shaders.nsa`.
+- **After Z's Costume Change is released, the costume returns to its damage stage a frame later.**
+
 ## More characters
 
 The roster tables in `main.dol` hold 20 records, and the 19th character takes the last one (a filler copy of the Thing). For a 20th and more, up to a 27th, the patch copies the three tables, grown to one record per character, into a new data section, and points their only four readers (`fn_80431CCC` and `fn_8044F070`) at the copies. `fn_8044F070` searches the order table up to a fixed index, which is raised with the count.
