@@ -11,7 +11,7 @@ import { Skeleton } from '../model/skeleton'
 import type { Effects } from './effects'
 import { OWN_EFFECTS } from './effectslots'
 import * as holster from './holster'
-import { PICK, FIRE } from './projectiles'
+import { PICK, FIRE, SPAWN, SPAWN_KIND } from './projectiles'
 import { HIT_ON } from './reach'
 import * as templates from './templates'
 
@@ -32,9 +32,8 @@ export const DEFAULT_BULLETS = 2
 export const THROW_SOUND = 21
 export const SOUND = 0x17
 export type Sound = [number, number]
-export const MUZZLE_KIND = 21
+export const MUZZLE_KIND = SPAWN_KIND
 export const MUZZLE_INDEX = 3
-const SPAWN = 0x4f
 const P_MODEL = 0x0a, P_EFFECT1 = 0x28, P_OBJECT_SOUNDID = 0x70, P_DAMAGE = 0x4b
 const RECOIL = 14
 const AIM_OUT = 5

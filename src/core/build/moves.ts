@@ -597,7 +597,8 @@ export interface MotionFiles {
 
 export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: string, moves: Record<string, string>, throwReach?: number,
   choice: Record<string, MoveEffect> = {}, plan: EffectPlan | null = null, stretches: Record<string, MoveReach> = {}, fx: Effects | null = null,
-  size = 1, idle: string[] = [], onBack: holster.Plan | null = null, throwDamage = false, shooter: gun.Plan | null = null): MotionFiles {
+  size = 1, idle: string[] = [], onBack: holster.Plan | null = null, throwDamage = false, shooter: gun.Plan | null = null,
+  spawn: number | null = null): MotionFiles {
   const set = motionSetOf(base), stem = stemOf(set), name = internal.toLowerCase()
   const own = nmstool.parse(src.entry(`Motions/${set}`))
   const bundles = loadBundles(src, stem)
@@ -791,6 +792,33 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       const how = p.kind === 'wire' ? "out to the wire's end" : p.kind === 'jump' ? `${formatG(r.distance)} m longer` : `${formatG(r.distance)} m ${p.kind === 'line' ? to : 'ahead'}`
       notes.push(`reach: ${move.label} stretches the ${r.limbs.map((l) => reach.LIMB_LABELS[l]).join(' and ')} ${how}${r.returns ? ', coming back from where it hits' : ''}${r.hold ? ', held while airborne' : ''}`)
     }
+  }
+  // Every shot launches from marker spawn; the gun's own shots, added below, keep the muzzle.
+  if (spawn !== null) {
+    const byAnim = new Map<string, nmstool.Motion[]>()
+    for (const m of resolved(src, own, holds(bundles)).values()) {
+      const category = MOVE_IDS.get(MOVE_OF.get(m.state.toLowerCase()) ?? '')?.category
+      if (category === 'Carrying and weapons' || category === 'Throws') continue
+      byAnim.set(m.anim.toLowerCase(), [...(byAnim.get(m.anim.toLowerCase()) ?? []), m])
+    }
+    let moved = 0
+    for (const [anim, states] of byAnim) {
+      const found = SLOTS.flatMap((slot): [string, ngbtool.Record][] => {
+        const rec = bundles.get(slot)?.find((r) => r.name.toLowerCase() === anim)
+        return rec ? [[slot, rec]] : []
+      })
+      const out = found.map(([, rec]) => projectiles.respawn(rec, spawn))
+      if (!out.some((r, i) => r !== found[i][1])) continue
+      const named = ownName(out[0])
+      found.forEach(([slot], i) => {
+        const into = bundles.get(slot)!
+        if (!into.some((r) => r.name.toLowerCase() === named.toLowerCase())) into.push({ ...out[i], name: named })
+      })
+      for (const m of states) own.set({ ...m, anim: named })
+      displaced.add(anim)
+      moved++
+    }
+    notes.push(`projectile: ${moved} animation${moved === 1 ? '' : 's'} launch from the new point`)
   }
   if (shooter) notes.push(gunMoves(src, base, own, bundles, models[0], shooter, size))
   const carried = onBack ?? shooter?.holster ?? null

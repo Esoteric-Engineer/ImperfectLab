@@ -31,6 +31,8 @@ import * as basemoves from './basemoves'
 import * as eyes from './eyes'
 import * as flames from './flames'
 import * as gun from './gun'
+import * as projectiles from './projectiles'
+import * as projectileswap from './projectileswap'
 import * as holster from './holster'
 import * as moves from './moves'
 import * as portraits from './portraits'
@@ -89,6 +91,8 @@ export class Builder {
   propCenter: [number, number, number] | null = null
   gunGeometry: gun.Geometry | null = null
   swapCenter: [number, number, number] | null = null
+  shot: projectileswap.Shot | null = null
+  private namer: ((old: string) => string) | null = null
 
   constructor(source: GameSource, character: Character, progress?: Progress, model?: Model) {
     this.src = source
@@ -273,6 +277,11 @@ export class Builder {
       if (((alt ? c.flames.alt_color : c.flames.color) !== null && flames.hasAny(c.flames)) || this.greyTint[alt ? 1 : 0]) {
         extra.push(this.borrowTexture(flames.GREY_BUNDLE, "Human Torch's costume 2", flames.GREY_SPRITE))
       }
+      for (const [bundleName, texture] of this.shot?.borrow[alt ? 1 : 0] ?? []) {
+        if (!names.some((n) => n.toLowerCase() === texture.toLowerCase()) && !extra.some(([n]) => n.toLowerCase() === texture.toLowerCase())) {
+          extra.push(this.borrowTexture(bundleName, `${this.shot!.donor.label}'s`, texture))
+        }
+      }
       const mats = included.map((m) => c.internalName + costume + m.suffix)
       allMaterials.push(...mats)
       const zs = c.zButton?.costume ? this.zImages(imgs, alt) : []
@@ -300,6 +309,7 @@ export class Builder {
         if (!alt && empty.length) this.note(`flames: no part of the model follows the ${empty.join(', ')} bone, so its flame sits on the bone itself`)
       }
       if (eyes.hasAny(c.eyes)) eyes.markers(render, sk, c.eyes)
+      if (boneShots(c)) projectileswap.marker(render, sk, c.projectile)
       if (trails.hasAny(c.trails) && !effects.hidden(c.trails.color, c.trails.alt_color)[alt ? 1 : 0]) {
         const empty = trails.markers(render, sk, copy, c.trails.parts)
         if (empty.length) this.note(`motion trails: no part of the model follows the ${empty.join(', ')} bone, so its trail ends at the bone itself`)
@@ -346,6 +356,11 @@ export class Builder {
     return allMaterials
   }
 
+  // One namer for every template copy of the build, so the tint's and the projectile's don't collide.
+  templateName(): (old: string) => string {
+    return (this.namer ??= templates.namer(this.base.t, this.c.internalName))
+  }
+
   borrowTexture(bundleName: string, label: string, texture: string): [string, gxtex.TplImage] {
     const names = latin1(this.src.entry(`Bundles/${bundleName}.ngt`)).split(/\s+/).filter(Boolean).map((n) => n.toLowerCase())
     const [ims] = gxtex.readTpl(this.src.entry(`Bundles/${bundleName}.tpl`))
@@ -358,7 +373,8 @@ export class Builder {
   effects(): [[string, string] | null, Map<number, string[]> | null, nottool.Template[], [string | null, string | null] | null] {
     const c = this.c
     const tinted = c.aura.mode === 'tint', fire = flames.hasAny(c.flames), trailed = trails.hasAny(c.trails), theirs = Object.values(c.moveEffects).includes('theirs'), lined = paintsReach(c), eyed = eyes.hasAny(c.eyes)
-    if (!tinted && !fire && !trailed && !theirs && !lined && !eyed && !gunOf(c)) return [null, null, [], null]
+    const shoots = c.projectile.on
+    if (!tinted && !fire && !trailed && !theirs && !lined && !eyed && !gunOf(c) && !shoots) return [null, null, [], null]
     const fx = new effects.Effects(this.src.entry('Misc/game.nfx'))
     const before = fx.used()
     const prefixes: [string, string] = [effects.copyPrefix(c.internalName, false), effects.copyPrefix(c.internalName, true)]
@@ -382,6 +398,15 @@ export class Builder {
       extra.push(bullet)
       power = new Map([...(power ?? []), [gun.FIELD, Array(tuning.SLOTS).fill(bullet.name)]])
       this.note(`gun: each bullet launches ${bullet.name} (Elektra's sai without its model) from tuning field ${gun.FIELD}, hitting for ${g.damage}`)
+    }
+    if (shoots) {
+      const shot = projectileswap.build(this.src, this.base, fx, c.projectile, c.internalName, this.templateName())
+      this.shot = shot
+      extra.push(...shot.templates)
+      power = new Map([...(power ?? []), ...shot.fields.map((fid): [number, string[]] => [fid, shot.values])])
+      const colors = c.projectile.color.toUpperCase() === c.projectile.alt_color.toUpperCase() ? c.projectile.color : `${c.projectile.color} and ${c.projectile.alt_color}`
+      const borrowed = [...new Set(shot.borrow.flat().map(([, t]) => t))]
+      this.note(`projectile: ${shot.label} tinted ${colors} in place of ${this.base.label}'s, in tuning field${shot.fields.length === 1 ? '' : 's'} ${shot.fields.join(', ')}, from ${boneShots(c) ? `the ${c.projectile.bone} bone at (${c.projectile.position.map((v) => formatG(v)).join(', ')})` : `${this.base.label}'s own launch points`}${borrowed.length ? `; ${borrowed.join(', ')} borrowed from ${shot.donor.label}'s textures` : ''}`)
     }
     const effect2 = trails.alwaysOn(fx, c.flames, c.trails, c.internalName, c.eyes)
     if (eyed) {
@@ -409,7 +434,7 @@ export class Builder {
     const c = this.c, base = this.base
     const tun = new tuning.Tuning(this.src, base)
     const hide = effects.hidden(c.aura.color, c.aura.alt_color)
-    const level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, base), 'all', trails.cost(c.flames, c.trails, c.eyes), hide) : c.aura.tint)
+    const level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, base), 'all', trails.cost(c.flames, c.trails, c.eyes) + projectileswap.bytes(c.projectile), hide) : c.aura.tint)
     if (this.tint === null && level !== c.aura.tint) this.note(`aura tint: ${base.label}'s full tint needs more memory than a match can spare; its idle and power-up effects are tinted`)
     const [rootsN, rootsA] = effects.roots(fx, tun, base, level)
     if (!rootsN.length && !rootsA.length) throw new LabError(`${base.label} has no effects to tint; use the Base or Swap aura`)
@@ -431,15 +456,7 @@ export class Builder {
     // A projectile's effects are named by its templates: those are copied too.
     const extra: nottool.Template[] = []
     const copies = [new Map<string, string>(), new Map<string, string>()]
-    const taken = new Set<string>()
-    let k = 0
-    const newName = (old: string) => {
-      let n: string
-      do n = `${old.split('_')[0]}_${c.internalName}${k++}`
-      while (base.t.has(n) || taken.has(n.toLowerCase()))
-      taken.add(n.toLowerCase())
-      return n
-    }
+    const newName = this.templateName()
     for (const fid of tun.fieldsOf(nvbtool.T_TEMPLATE)) {
       const vals = slotsOf(fid)
       const next = vals.map((v, s) => {
@@ -510,7 +527,7 @@ export class Builder {
     const thrown = c.baseMoves.throw_reach
     const fx = Object.keys(c.moveReach).length ? new effects.Effects(this.src.entry('Misc/game.nfx')) : null
     const shooter = this.gunPlan()
-    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, this.onBack(), throwsDamage(c), shooter)
+    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, this.onBack(), throwsDamage(c), shooter, boneShots(c) ? projectiles.LAUNCH_INDEX : null)
     if (shooter) this.r.gun = this.gunEntry(shooter)
     for (const [k, v] of m.files) this.r.adds.set(k, v)
     if (thrown !== undefined) this.note(`baton throw: reaches ${thrown} m (${this.base.label}'s about 8)`)
@@ -655,8 +672,10 @@ export class Builder {
 
 // Whether the character gets its own motion set and animation bundles (Builder.motions).
 export function ownMotions(c: Character): boolean {
-  return gunOf(c) !== null || c.baseMoves.throw_reach !== undefined || c.baseMoves.holster !== undefined || throwsDamage(c) || Object.keys(c.moves).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1
+  return gunOf(c) !== null || c.baseMoves.throw_reach !== undefined || c.baseMoves.holster !== undefined || throwsDamage(c) || Object.keys(c.moves).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1 || boneShots(c)
 }
+
+export const boneShots = (c: Character): boolean => c.projectile.on && c.projectile.from === 'bone'
 
 export const gunSide = (c: Character): holster.Side => (gunOf(c)?.side === 'left' ? 'L' : 'R')
 export const gunSwaps = (c: Character): boolean => gunOf(c)?.swap !== undefined

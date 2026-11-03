@@ -645,6 +645,28 @@ describe('round trip', () => {
     expect(imperfect.manifest(c).eyes).toBeUndefined()
   })
 
+  it('saves and loads a projectile swap, and leaves it out when off', () => {
+    const c = character()
+    expect(imperfect.manifest(c).projectile).toBeUndefined()
+    expect(imperfect.load(imperfect.save(c)).projectile).toEqual(imperfect.defaultProjectile())
+    c.projectile = { on: true, base: 'ironman', color: '#FF2000', alt_color: '#0040FF80', from: 'bone', bone: 'L.forearm', position: [0.05, -0.2, 1] }
+    expect(imperfect.manifest(c).projectile).toEqual({ base: 'ironman', color: '#FF2000', alt_color: '#0040FF80', from: 'bone', bone: 'L.forearm', position: [0.05, -0.2, 1] })
+    expect(imperfect.load(imperfect.save(c)).projectile).toEqual(c.projectile)
+    // the base's own launch points need no spot
+    c.projectile.from = 'own'
+    expect(imperfect.manifest(c).projectile).toEqual({ base: 'ironman', color: '#FF2000', alt_color: '#0040FF80', from: 'own' })
+    expect(imperfect.load(imperfect.save(c)).projectile).toEqual({ ...c.projectile, bone: 'head', position: imperfect.projectileDefault('head', 'ironman') })
+    c.projectile.on = false
+    expect(imperfect.manifest(c).projectile).toBeUndefined()
+  })
+
+  it('refuses a projectile swap on a base that launches nothing', () => {
+    const c = character()
+    c.base = 'wolverine'
+    c.projectile = { ...imperfect.defaultProjectile(), on: true }
+    expect(imperfect.problems(c).some(([kind, text]) => kind === 'error' && text.includes('launches no projectiles'))).toBe(true)
+  })
+
   it('keeps flames to the body or to parts', () => {
     const c = character()
     c.flames = { ...imperfect.defaultFlames(), parts: ['head'], body: true }
@@ -751,6 +773,15 @@ describe('hostile files', () => {
       (m) => (m.eyes = { color: 'red' }),
       (m) => (m.eyes = { on: true }),
       (m) => (m.eyes = true),
+      (m) => (m.projectile = { base: 'storm' }),
+      (m) => (m.projectile = { from: 'head' }),
+      (m) => (m.projectile = { bone: 'tail' }),
+      (m) => (m.projectile = { position: [0, 0, 5] }),
+      (m) => (m.projectile = { position: [0, 0] }),
+      (m) => (m.projectile = { position: [0, 'up', 0] }),
+      (m) => (m.projectile = { color: 'red' }),
+      (m) => (m.projectile = { on: true }),
+      (m) => (m.projectile = true),
     ]
     for (const edit of cases) rejected(withManifest(files(), edit))
   })

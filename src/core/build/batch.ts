@@ -8,11 +8,13 @@ import * as nfxtool from '../mnroi/nfxtool'
 import { Model } from '../model/glb'
 import * as mapping from '../model/mapping'
 import { Skeleton } from '../model/skeleton'
-import { type Character, gunOf, hasCutscenes, problems as characterProblems, type Problem } from '../package/imperfect'
+import { type Character, gunOf, hasCutscenes, NO_SHOTS, problems as characterProblems, type Problem } from '../package/imperfect'
 import * as effects from './effects'
 import * as moves from './moves'
+import * as projectileswap from './projectileswap'
 import { motionSetName, SLOTS } from './moves'
 import { Builder, mirrors, ownMotions, ownSounds, paintsReach, type PatchOutput, type Progress, Result, splitsCharge, throwsDamage, tuningFields, write, zCharacters, healthCharacters } from './patch'
+import * as templates from './templates'
 import { templateNames } from './templates'
 import * as tuning from './tuning'
 import * as ui from './ui'
@@ -37,6 +39,7 @@ export function batchTints(source: GameSource, chars: Batch): [(string | null)[]
   const cut = (which: number[]) => asked.map((t, i) => (which.includes(i) ? lower(t) : t))
   const tries = [asked, ...full.map((i) => cut([i])), ...full.slice(1).map((_, k) => cut(full.slice(0, k + 2)))]
   const lines = (fx: effects.Effects) => chars.forEach((c, i) => {
+    if (c.projectile.on && !NO_SHOTS.includes(c.base)) projectileswap.build(source, bases[i], fx, c.projectile, `x${i}`, templates.namer(bases[i].t, `x${i}`))
     if (c.moveLines.color === null && c.moveLines.alt_color === null) return
     const prefixes: [string, string] = [`x${i}f`, `x${i}a`]
     if (Object.values(c.moveEffects).includes('theirs')) moves.planEffects(source, bases[i], c.moveEffects, fx, c.moveLines, prefixes, [], moves.movedEffects(source, bases[i], c.moves))
@@ -164,7 +167,7 @@ function claims(c: Character): Set<string> {
 }
 
 // Whether the character gets its own tuning file, and so a line in Misc/nvblist.txt (Builder.tuning).
-const tuned = (c: Character) => gunOf(c) !== null || c.aura.mode === 'tint' || Object.keys(tuningFields(c)).length > 0 || hasCutscenes(c.cutscenes) || Object.values(c.moveEffects).includes('theirs') || paintsReach(c)
+const tuned = (c: Character) => gunOf(c) !== null || c.projectile.on || c.aura.mode === 'tint' || Object.keys(tuningFields(c)).length > 0 || hasCutscenes(c.cutscenes) || Object.values(c.moveEffects).includes('theirs') || paintsReach(c)
 
 const gameBundle = (source: GameSource, name: string) => ['ngm', 'tpl'].reduce((n, ext) => n + (source.index.byName.get(`bundles/${name}.${ext}`)?.size ?? 0), 0)
 const builtBundle = (adds: Map<string, Uint8Array>, name: string) => ['ngm', 'tpl'].reduce((n, ext) => n + (adds.get(`Bundles/${name}.${ext}`)?.length ?? 0), 0)

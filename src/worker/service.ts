@@ -7,6 +7,7 @@ import * as eyes from '../core/build/eyes'
 import * as gun from '../core/build/gun'
 import * as moves from '../core/build/moves'
 import * as portraits from '../core/build/portraits'
+import * as projectileswap from '../core/build/projectileswap'
 import * as sounds from '../core/build/sounds'
 import * as tuning from '../core/build/tuning'
 import * as ui from '../core/build/ui'
@@ -416,6 +417,27 @@ export class Service {
       const head = sk.nodes[sk.node('head')!].pos.map((v) => v * c.size)
       const middle = [0, 1, 2].map((i) => (at[0][i] + at[1][i] + head[i]) / 3) as [number, number, number]
       return { meshes: [...previewTextures(fittedMeshes(tris, bySlot, c.size)), dots], bones: gameBones(sk, c.size), focus: [middle, 0.25 * c.size] }
+    } catch (e) {
+      if (!(e instanceof LabError)) throw e
+      return e.message
+    }
+  }
+
+  projectilePreview(c: imperfect.Character): { meshes: MeshData[]; bones: BoneLine[]; focus: [[number, number, number], number] } | string {
+    const p = c.projectile
+    if (!p.on) return 'the projectile swap is off'
+    if (p.from !== 'bone') return "the projectile launches from the base's own points"
+    try {
+      const { m, sk, included, tris } = this.fitted(c)
+      const images = materialImages(m, c)
+      const bySlot = new Map(included.map((x, i) => [i, images.get(x.gltfMaterial) ?? null]))
+      const color = effects.hexAlpha(p.color) ? p.color : p.alt_color
+      const [bone, at] = projectileswap.launchPoint(sk, p).map((q) => q.map((v) => v * c.size) as [number, number, number])
+      const dot = pointMeshes([at], 0.02 * c.size, [...effects.hexRgb(color), 255])
+      const root = pointMeshes([bone], 0.008 * c.size, [255, 255, 255, 255])
+      const middle = [0, 1, 2].map((i) => (bone[i] + at[i]) / 2) as [number, number, number]
+      const half = Math.hypot(...[0, 1, 2].map((i) => at[i] - bone[i])) / 2
+      return { meshes: [...previewTextures(fittedMeshes(tris, bySlot, c.size)), dot, root], bones: gameBones(sk, c.size), focus: [middle, Math.max(0.3 * c.size, half + 0.15 * c.size)] }
     } catch (e) {
       if (!(e instanceof LabError)) throw e
       return e.message

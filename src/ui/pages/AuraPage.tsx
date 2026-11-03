@@ -1,4 +1,5 @@
 import * as effects from '../../core/build/effects'
+import * as projectileswap from '../../core/build/projectileswap'
 import * as trails from '../../core/build/trails'
 import { EYE_POSITION, EYE_SIZE, EYE_X, EYE_YZ, FLAME_SIZE, TRAIL_LENGTH } from '../../core/package/imperfect'
 import { ColorButton, Note, NumberInput, Warning } from '../components/common'
@@ -61,26 +62,27 @@ export function AuraPage() {
   const trailBytes = trails.cost(f, t) - fireBytes
   const eyeBytes = extraBytes - fireBytes - trailBytes
   const extras = trails.label(f, t, e)
+  const shareBytes = extraBytes + projectileswap.bytes(c.projectile)
   const plans = details?.tint ?? {}
   const hide = effects.hidden(c.aura.color, c.aura.alt_color)
-  const tooBig = (level: string) => effects.tintLevel(plans, level, extraBytes, hide) !== level
+  const tooBig = (level: string) => effects.tintLevel(plans, level, shareBytes, hide) !== level
   const memory = (level: string) => {
     const p = plans[effects.planKey(level, hide)]
     if (!p) return ''
-    const extra = effects.planExtra(p, extraBytes)
+    const extra = effects.planExtra(p, shareBytes)
     if (tooBig(level)) return ` (needs ${kb(extra)} KB of game memory, more than a match can spare)`
     return extra ? ` (adds ${kb(extra)} KB of game memory)` : ' (fits the game\'s memory)'
   }
   let about = 'Choose your game disc to see what the base character\'s aura is.'
   let tintable = true
   let cost = ''
-  const level = effects.tintLevel(plans, c.aura.tint, extraBytes, hide)
+  const level = effects.tintLevel(plans, c.aura.tint, shareBytes, hide)
   const plan = plans[effects.planKey(level, hide)]
   if (base && details && plans.all) {
     tintable = plans.all.roots.length > 0 || plans.all.alt.length > 0
     about = `${base.label}'s effects: ${plans.power.roots.join(', ') || 'none'}. ${tintable ? '' : 'There is nothing to tint; Base and Swap still apply.'}`
     if (tintable && plan) {
-      const extra = effects.planExtra(plan, extraBytes)
+      const extra = effects.planExtra(plan, shareBytes)
       const copied = (hide[0] ? 0 : plan.roots.length) + (hide[1] ? 0 : plan.alt.length)
       const costumes = (on: (i: number) => unknown) => ['1', '2'].filter((_, i) => on(i)).join(' and ')
       const hiddenIn = costumes((i) => hide[i]), greyIn = costumes((i) => plan.grey[i])

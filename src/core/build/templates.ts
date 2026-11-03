@@ -40,6 +40,18 @@ export function chain(T: R.Templates, name: string | null): nottool.Template[] {
   return out
 }
 
+export function namer(T: R.Templates, internal: string): (old: string) => string {
+  const taken = new Set<string>()
+  let k = 0
+  return (old: string) => {
+    let n: string
+    do n = `${old.split('_')[0]}_${internal}${k++}`
+    while (T.has(n) || taken.has(n.toLowerCase()))
+    taken.add(n.toLowerCase())
+    return n
+  }
+}
+
 export function retarget(T: R.Templates, name: string, effects: Map<string, string>, newName: (old: string) => string): [string, nottool.Template[]] | null {
   const ts = chain(T, name)
   const names = (t: nottool.Template) => t.props.map(([, v]) => (R.text(v) ?? '').toLowerCase())

@@ -53,6 +53,15 @@ The ribbons on the **Aura** page (`trails`, [`FORMAT.md`](FORMAT.md)):
 - **Replaces the base's eye markers.** Base effects drawn on the eyes (Storm's power-up arcs) follow the new eyes, and an Iron Man base's own glow is left out.
 - **Effect memory.** A color takes 93 bytes of the effect cache (white at size 1 is Iron Man's own and takes none).
 
+## Projectile swap
+The `projectile` swap (manifest [`projectile`](FORMAT.md#projectile)):
+
+- **Every shot, not per move.** All tuning fields the base's moves launch from (90-93) get the copy. A carried object is still thrown from the hands.
+- **The base's sound.** The shot plays the sound of the shot it replaces, as the character loads only its base's sound bank.
+- **Damage and flight are the donor's.**
+- **Memory.** About 780 bytes of effect memory per tinted copy (one when both costumes match), plus 2 KB per costume for the explosion texture only Iron Man's bundles have.
+- **Launch bone.** The offset is fixed to the bone, so on a limb it turns with the limb during a move.
+
 ## Tuning
 
 Every character with changed stats, a tint or changed cutscenes gets its own tuning file. Each one listed in `Misc/nvblist.txt` takes 12,354 bytes when the game boots, and the list itself has room for about 53 more bytes (a line costs its two names plus 2, so `PLAYER <internal name>` costs the name's length plus 8).

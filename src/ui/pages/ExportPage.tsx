@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import * as effects from '../../core/build/effects'
+import * as projectileswap from '../../core/build/projectileswap'
 import * as trails from '../../core/build/trails'
 import * as mapping from '../../core/model/mapping'
 import { copyCharacter, problems as characterProblems } from '../../core/package/imperfect'
@@ -41,7 +42,7 @@ export function ExportPage() {
       if (fitProblem && !mapped.some(([level]) => level === 'error')) p.push(['error', fitProblem])
     }
     const hide = effects.hidden(c.aura.color, c.aura.alt_color)
-    const level = details ? effects.tintLevel(details.tint, c.aura.tint, trails.cost(c.flames, c.trails, c.eyes), hide) : c.aura.tint
+    const level = details ? effects.tintLevel(details.tint, c.aura.tint, trails.cost(c.flames, c.trails, c.eyes) + projectileswap.bytes(c.projectile), hide) : c.aura.tint
     const plan = details?.tint[effects.planKey(level, hide)]
     if (g && c.aura.mode === 'tint' && plan && !plan.roots.length && !plan.alt.length) {
       p.push(['error', `${s.base()?.label} has no effects to tint: choose another aura in the Aura step`])

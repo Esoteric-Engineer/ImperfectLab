@@ -4,6 +4,10 @@ import * as tuning from './tuning'
 
 export const PICK = 0x4e
 export const FIRE = 0x04
+// Event 0x4f k: the next launch leaves from the kind-21 marker with index k (the hands' are 1 and 2, the gun's muzzle 3).
+export const SPAWN = 0x4f
+export const SPAWN_KIND = 21
+export const LAUNCH_INDEX = 4
 export const FIELDS = [90, 91, 92, 93]
 
 const index = (k: number) => Math.min(Math.max(k - 1, 0), FIELDS.length - 1)
@@ -33,4 +37,14 @@ export function target(theirs: ngbtool.Record, own: ngbtool.Record | undefined, 
   const mine = own ? pickAt(own) : null
   if (mine !== null && has[mine]) return mine
   return has[at] ? at : has.indexOf(true)
+}
+
+// A shot's every launch leaves from marker index, with a spawn event before the first launch when it has none.
+export function respawn(rec: ngbtool.Record, index: number): ngbtool.Record {
+  const fire = rec.events.find(([, t]) => t === FIRE)
+  if (!fire) return rec
+  const events = rec.events.map((e): ngbtool.Event => (e[1] === SPAWN ? [e[0], SPAWN, index, e[3]] : e))
+  if (!rec.events.some(([f, t]) => t === SPAWN && f <= fire[0])) events.unshift([0, SPAWN, index, 0])
+  const same = events.length === rec.events.length && events.every((e, i) => e[2] === rec.events[i][2])
+  return same ? rec : { ...rec, events }
 }

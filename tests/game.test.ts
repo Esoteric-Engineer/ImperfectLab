@@ -9,6 +9,8 @@ import * as gun from '../src/core/build/gun'
 import * as holster from '../src/core/build/holster'
 import * as basemoves from '../src/core/build/basemoves'
 import * as moves from '../src/core/build/moves'
+import * as projectiles from '../src/core/build/projectiles'
+import * as projectileswap from '../src/core/build/projectileswap'
 import * as reach from '../src/core/build/reach'
 import * as shaders from '../src/core/build/shaders'
 import { buildBatch, checkBatch, ordinal } from '../src/core/build/batch'
@@ -2084,5 +2086,118 @@ describe.skipIf(!ISO)('gun', () => {
     const table = u32be(r.dol!, 4 * slot) + D.GUN_DATA
     expect(u32be(r.dol!, table + D.GUN_COUNT)).toBe(2)
     expect(latin1(r.dol!, table + D.GUN_ENTRIES + D.GUN_ENTRY_SIZE + 0xa0, table + D.GUN_ENTRIES + D.GUN_ENTRY_SIZE + 0xa9)).toBe('plr_other')
+  })
+})
+
+describe.skipIf(!ISO)('projectile swap', () => {
+  const src = () => gameSource()
+  const tunedValues = (nvb: Uint8Array, fid: number) => {
+    const t = Object.create(tuning.Tuning.prototype) as tuning.Tuning
+    t.fields = nvbtool.parseNdb(src().entry('Misc/defaults.ndb')).fields('PLAYER')
+    t.nvb = nvbtool.parseNvb(nvb)
+    return Array.from({ length: tuning.SLOTS }, (_, s) => t.value(fid, s))
+  }
+  const beams = (base: string, from: imperfect.ProjectileFrom = 'bone', bone = 'head', position = imperfect.projectileDefault(bone, 'ironman')) => {
+    const c = tinted(base)
+    c.aura = { ...c.aura, mode: 'base' }
+    c.projectile = { on: true, base: 'ironman', color: '#FF2000', alt_color: '#0040FF', from, bone, position }
+    return c
+  }
+  const launchMarkers = (ngm: Uint8Array) => ngmtool.read(ngm)[1][0].attachments
+    .filter(([, k, i]) => k === projectiles.SPAWN_KIND && i === projectiles.LAUNCH_INDEX).map(([b, , , mat]) => [b, ...mat.slice(12, 15)])
+
+  it("fires a tinted copy of Iron Man's repulsor from Magneto's head, with Magneto's sound", () => {
+    const r = new Builder(src(), beams('magneto')).build()
+    const T = new R.Templates(r.sets.get('Misc/Global.not')!)
+    const [n, a] = [tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, 90), tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, 91)]
+    expect(n).toEqual(a)
+    expect(new Set(n.slice(0, 5)).size).toBe(1)
+    expect(n[0]).not.toBe(n[5])
+    expect(tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, 92)).toEqual(new Array(tuning.SLOTS).fill(''))
+    const by = new Map(nfxtool.blocks(nfxtool.readNfx(r.sets.get('Misc/game.nfx')!)).map((b) => [b.name.toLowerCase(), b]))
+    for (const [name, hue] of [[n[0] as string, 'red'], [n[5] as string, 'blue']]) {
+      const shot = T.get(name)
+      expect(shot.get(0x70)![0]).toBe(244)
+      expect(R.u32(shot.get(0x4b))).toBe(20)
+      const fly = by.get(R.text(shot.get(R.P_EFFECT1))!.toLowerCase())!
+      expect(fly.lines[0]).toMatch(/^partcylinder /)
+      expect(fly.lines.some((l) => /^material GE_PAR_lensFlare_01_BW$/i.test(l))).toBe(true)
+      // the tint takes the color's hue and keeps the repulsor's lightness
+      const [, r, g, bl] = nfxtool.scanFloats(nfxtool.tokens(fly.lines.find((l) => /^startcol /.test(l))!)[1], 4)
+      expect(hue === 'red' ? r > g && g >= bl : bl > g && g > r, `${name} ${r},${g},${bl}`).toBe(true)
+      const exp = T.get(R.text(shot.get(0x23))!)
+      expect(R.text(exp.get(R.P_EFFECT1))).not.toMatch(/IrnMnRepExp|IronManRepExp/i)
+    }
+    // the explosion's sprite is only in Iron Man's bundles, so both costumes borrow it
+    for (const costume of ['', '_alt']) expect(latin1(r.adds.get(`Bundles/synth${costume}.ngt`)!).toLowerCase().split(/\s+/)).toContain('ge_vol_explosion01')
+    const sk = Skeleton.ofBase(new R.BaseCharacter(src(), 'magneto'))
+    // by default between Iron Man's eyes and the repulsor's lead ahead of them, as checked in Dolphin
+    for (const costume of ['', '_alt']) {
+      expect(launchMarkers(r.adds.get(`Bundles/synth${costume}.ngm`)!))
+        .toEqual([[sk.node('head'), 0, Math.fround(imperfect.EYE_POSITION[1] + imperfect.PROJECTILE_LEAD.ironman), Math.fround(imperfect.EYE_POSITION[2])]])
+    }
+    const set = nmstool.parse(r.adds.get('Motions/Synth.nms')!).motions()
+    const recs = new Map(ngbtool.parse(r.adds.get('Bundles/synth.ngb')!).map((x) => [x.name.toLowerCase(), x]))
+    const magneto = new R.BaseCharacter(src(), 'magneto')
+    const own = nmstool.parse(src().entry(`Motions/${moves.motionSetOf(magneto)}`)).motions()
+    const theirs = new Map(ngbtool.parse(src().entry(`Bundles/${moves.stemOf(moves.motionSetOf(magneto))}.ngb`)).map((x) => [x.name.toLowerCase(), x]))
+    for (const state of ['superattack1', 'superattack2', 'superattackfar', 'superairrangedattack', 'superjumpattack']) {
+      const rec = recs.get(set.get(state)!.anim.toLowerCase())!, before = theirs.get(own.get(state)!.anim.toLowerCase())!
+      expect(rec.events.filter(([, t]) => t === projectiles.SPAWN).map(([, , p]) => p), state).toEqual([projectiles.LAUNCH_INDEX])
+      expect(rec.events.filter(([, t]) => t === projectiles.PICK), state).toEqual(before.events.filter(([, t]) => t === projectiles.PICK))
+    }
+    // a carried object is thrown from the hands as before
+    expect(set.get('carrytosslarge')!.anim.toLowerCase()).toBe(own.get('carrytosslarge')!.anim.toLowerCase())
+    expect(r.notes.some((x) => x.startsWith("projectile: Iron Man's repulsor tinted #FF2000 and #0040FF"))).toBe(true)
+  })
+
+  it('launches from a chosen spot on any bone', () => {
+    const r = new Builder(src(), beams('magneto', 'bone', 'R.hand', [0.05, 0.1, -0.02])).build()
+    const sk = Skeleton.ofBase(new R.BaseCharacter(src(), 'magneto'))
+    for (const costume of ['', '_alt']) {
+      expect(launchMarkers(r.adds.get(`Bundles/synth${costume}.ngm`)!)).toEqual([[sk.node('R.hand'), Math.fround(0.05), Math.fround(0.1), Math.fround(-0.02)]])
+    }
+    const set = nmstool.parse(r.adds.get('Motions/Synth.nms')!).motions()
+    const recs = new Map(ngbtool.parse(r.adds.get('Bundles/synth.ngb')!).map((x) => [x.name.toLowerCase(), x]))
+    const rec = recs.get(set.get('superattackfar')!.anim.toLowerCase())!
+    expect(rec.events.filter(([, t]) => t === projectiles.SPAWN).map(([, , p]) => p)).toEqual([projectiles.LAUNCH_INDEX])
+    expect(r.notes.some((x) => x.includes('from the R.hand bone at (0.05, 0.1, -0.02)'))).toBe(true)
+  })
+
+  it('finds every launch bone on every base', () => {
+    for (const key of R.keys()) {
+      const sk = Skeleton.ofBase(new R.BaseCharacter(src(), key))
+      for (const bone of imperfect.PROJECTILE_BONES) expect(sk.node(bone), `${key} ${bone}`).toBeDefined()
+    }
+  })
+
+  it('keeps the launch points from the hands and shares one copy when both costumes are one color', () => {
+    const c = beams('magneto', 'own')
+    c.projectile.alt_color = c.projectile.color
+    const r = new Builder(src(), c).build()
+    const n = tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, 90)
+    expect(new Set(n).size).toBe(1)
+    expect(r.adds.has('Motions/Synth.nms')).toBe(false)
+    expect(launchMarkers(r.adds.get('Bundles/synth.ngm')!)).toEqual([])
+  })
+
+  it('knows the effect memory each copy takes', () => {
+    for (const donor of imperfect.PROJECTILE_BASES) {
+      for (const alt_color of ['#FF2000', '#00FF00', '#0A0B0C80']) {
+        const p = { ...imperfect.defaultProjectile(), on: true, base: donor, alt_color }
+        const fx = new effects.Effects(src().entry('Misc/game.nfx')), before = fx.used()
+        const base = new R.BaseCharacter(src(), 'magneto')
+        projectileswap.build(src(), base, fx, p, 'Abcdefghij', templates.namer(base.t, 'Abcdefghij'))
+        const used = fx.used() - before
+        expect(used, `${donor} ${alt_color}`).toBeLessThanOrEqual(projectileswap.bytes(p))
+        expect(used, `${donor} ${alt_color}`).toBeGreaterThan(projectileswap.bytes(p) - 40)
+      }
+    }
+  })
+
+  it('refuses a base that launches nothing', () => {
+    expect(imperfect.problems(beams('wolverine')).some(([kind, text]) => kind === 'error' && text.includes('launches no projectiles'))).toBe(true)
+    expect(() => new Builder(src(), beams('wolverine')).build()).toThrow(LabError)
+    for (const key of R.keys()) expect(imperfect.NO_SHOTS.includes(key), key).toBe(!projectiles.filled(new tuning.Tuning(src(), new R.BaseCharacter(src(), key))).some(Boolean))
   })
 })

@@ -71,6 +71,7 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
   "flames": {"parts": ["head"], "body": false, "color": null, "alt_color": "#40A0FF", "size": 1.2, "base_effect": true},
   "trails": {"parts": ["arms", "legs"], "color": "#FFFFFF60", "alt_color": "#40A0FF80", "length": 0.2},
   "eyes": {"color": "#FF2000", "alt_color": "#40A0FF", "size": 1.2, "position": [0.033, 0.129, 0.046]},
+  "projectile": {"base": "ironman", "color": "#FF2000", "alt_color": "#FF2000", "from": "bone", "bone": "head", "position": [0, 0.629, 0.046]},
   "stats": {"display": {"normal": [7, 4, 3, 6, 5, 4], "alt": [7, 4, 3, 6, 5, 4]}, "gameplay": {"damage_taken": 0.7, "lift": "medium", "wire_swing": false}},
   "ui": {"select": {"ready": {"scale": 0.8, "anchor": [210, 75], "glow": "#3CFF5A6E"}}, "fade": 36, "strip_scale": null, "ready_voice": null, "banner": true},
   "base_moves": {},
@@ -147,7 +148,15 @@ Optional; left out when `parts` is empty. See-through ribbons that trail behind 
 Optional; left out when off. Iron Man's eye glow on two eye markers on the head bone:
 - `color`, `alt_color` (defaults `#FFFFFF`, `#00FF00`): `#RRGGBB` or `#RRGGBBAA`; fully transparent means no glow.
 - `size` (default `1`): 0.25-3, times Iron Man's.
-- `position` (default `[0.033, 0.129, 0.046]`): metres from the head bone. X (0-0.3) is each eye's distance from the middle; Y (forward) and Z (up) are -0.3-0.3.
+- `position` (default `[0.033, 0.129, 0.046]`): meters from the head bone. X (0-0.3) is each eye's distance from the middle; Y (forward) and Z (up) are -0.3-0.3.
+
+### `projectile`
+Optional; left out when off. Another base's shot, recolored, in place of the shots the character's moves launch ([`LIMITATIONS.md`](LIMITATIONS.md#projectile-swap)). Refused on a base none of whose moves shoot (`wolverine paradox daredevil aftershock`).
+- `base` (default `ironman`): whose shot. Only `ironman` so far.
+- `color`, `alt_color` (default `#FF2000`): `#RRGGBB` or `#RRGGBBAA`; fully transparent hides the shot, which still hits.
+- `from` (default `bone`): `own` (the base's own launch point) or `bone`.
+- `bone` (default `head`; left out when `from` is `own`): `pelvis spine chest neck head`, or `R.` or `L.` followed by `clavicle upper_arm upper_twist forearm forearm_twist hand thigh calf foot toe`.
+- `position` (left out when `from` is `own`): meters from the bone, X, Y (forward) and Z (up), each -1 to 1. Defaults to `[0, 0.629, 0.046]` on `head`, `[0, 0, 0]` on any other bone.
 
 ### `stats`
 - `display`: six integers 1-7 per costume: intel, strength, speed, durability, energy, skill. Shown on the

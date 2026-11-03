@@ -216,6 +216,29 @@ export interface Eyes {
   position: [number, number, number]
 }
 
+// Another base's shot in place of every shot the character's moves launch (build/projectiles.ts).
+// Only donors checked in the game are listed.
+export const PROJECTILE_BASES = ['ironman'] as const
+export const PROJECTILE_FROM = ['own', 'bone'] as const
+export type ProjectileFrom = (typeof PROJECTILE_FROM)[number]
+export const PROJECTILE_BONES = [
+  'pelvis', 'spine', 'chest', 'neck', 'head',
+  ...['R', 'L'].flatMap((side) => ['clavicle', 'upper_arm', 'upper_twist', 'forearm', 'forearm_twist', 'hand', 'thigh', 'calf', 'foot', 'toe'].map((b) => `${side}.${b}`)),
+]
+export const PROJECTILE_POSITION: [number, number] = [-1, 1]
+export const PROJECTILE_LEAD: Record<string, number> = { ironman: 0.5 }
+export interface Projectile {
+  on: boolean
+  base: string
+  color: string
+  alt_color: string
+  from: ProjectileFrom
+  bone: string
+  position: [number, number, number]
+}
+
+export const NO_SHOTS = ['wolverine', 'paradox', 'daredevil', 'aftershock']
+
 export const MOVE_EFFECTS = ['theirs', 'none'] as const
 export type MoveEffect = (typeof MOVE_EFFECTS)[number]
 export interface MoveLines {
@@ -273,6 +296,7 @@ export interface Character {
   flames: Flames
   trails: Trails
   eyes: Eyes
+  projectile: Projectile
   stats: { normal: number[]; alt: number[] }
   gameplay: Gameplay
   baseMoves: BaseMoves
@@ -306,6 +330,15 @@ export function defaultEyes(): Eyes {
   return { on: false, color: '#FFFFFF', alt_color: '#00FF00', size: 1, position: [...EYE_POSITION] }
 }
 
+// A bone's starting launch spot.
+export function projectileDefault(bone: string, donor: string): [number, number, number] {
+  return bone === 'head' ? [0, Math.round((EYE_POSITION[1] + (PROJECTILE_LEAD[donor] ?? 0)) * 1000) / 1000, EYE_POSITION[2]] : [0, 0, 0]
+}
+
+export function defaultProjectile(): Projectile {
+  return { on: false, base: 'ironman', color: '#FF2000', alt_color: '#FF2000', from: 'bone', bone: 'head', position: projectileDefault('head', 'ironman') }
+}
+
 export function hasCutscenes(c: Cutscenes): boolean {
   return CUTSCENE_KINDS.some((k) => c[k] !== undefined) || Object.keys(c.audio).length > 0 || Object.keys(c.animation).length > 0
 }
@@ -336,6 +369,7 @@ export function newCharacter(): Character {
     flames: defaultFlames(),
     trails: defaultTrails(),
     eyes: defaultEyes(),
+    projectile: defaultProjectile(),
     stats: defaultStats(),
     gameplay: {},
     baseMoves: {},
@@ -403,6 +437,10 @@ export function manifest(c: Character): Json {
     flames: hasFlames(c.flames) ? c.flames : undefined,
     trails: c.trails.parts.length ? c.trails : undefined,
     eyes: c.eyes.on ? { color: c.eyes.color, alt_color: c.eyes.alt_color, size: c.eyes.size, position: c.eyes.position } : undefined,
+    projectile: c.projectile.on ? {
+      base: c.projectile.base, color: c.projectile.color, alt_color: c.projectile.alt_color, from: c.projectile.from,
+      ...(c.projectile.from === 'bone' ? { bone: c.projectile.bone, position: c.projectile.position } : {}),
+    } : undefined,
     stats: { display: c.stats, gameplay: c.gameplay },
     ui: c.ui,
     base_moves: c.baseMoves,
@@ -482,6 +520,7 @@ export function problems(c: Character): Problem[] {
       out.push(['warning', 'wall jump animations are picked but neither wall climbing nor wall running is on, so they never play'])
     }
   }
+  if (c.projectile.on && NO_SHOTS.includes(c.base)) out.push(['error', `${BASES[c.base][0]} launches no projectiles to replace: untick the projectile on the Projectiles page`])
   if (c.baseMoves.range_grab) {
     if (!c.moves.WirePull) out.push(['error', 'the range grab needs the ranged pickup: pick it on the Moves page'])
   } else if ((BASE_MOVES[c.base] ?? []).includes('range_grab') && RANGE_GRAB.some((id) => c.moves[id])) out.push(['warning', 'ranged pickup animations are picked but the range grab is off, so they never play'])
@@ -654,7 +693,7 @@ function upgrade(m: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Character {
-  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'trails', 'eyes', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'cutscenes', 'sounds', 'z_button', 'gun', 'files'], 'the manifest')
+  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'trails', 'eyes', 'projectile', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'cutscenes', 'sounds', 'z_button', 'gun', 'files'], 'the manifest')
   if (m.format !== FORMAT) throw new LabError('not a .imperfect file')
   upgrade(m)
   if (m.game !== GAME) throw new LabError(`this file is for ${m.game}, not ${GAME}`)
@@ -765,6 +804,28 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
       alt_color: color(ey.alt_color ?? de.alt_color, 'eyes.alt_color'),
       size: num(ey.size ?? de.size, 'eyes.size', ...EYE_SIZE, false)!,
       position: at.map((v, i) => num(v, 'eyes.position', ...(i ? EYE_YZ : EYE_X), false)!) as [number, number, number],
+    }
+  }
+  const dp = defaultProjectile()
+  if (m.projectile === undefined) c.projectile = dp
+  else {
+    const pr = keys(m.projectile, ['base', 'color', 'alt_color', 'from', 'bone', 'position'], 'projectile')
+    const donor = typed<string>(pr.base ?? dp.base, 'string', 'projectile.base')
+    if (!(PROJECTILE_BASES as readonly string[]).includes(donor)) throw new LabError(`manifest: projectile.base is one of ${PROJECTILE_BASES.join(', ')}`)
+    const from = typed<string>(pr.from ?? dp.from, 'string', 'projectile.from')
+    if (!(PROJECTILE_FROM as readonly string[]).includes(from)) throw new LabError(`manifest: projectile.from is one of ${PROJECTILE_FROM.join(', ')}`)
+    const bone = typed<string>(pr.bone ?? dp.bone, 'string', 'projectile.bone')
+    if (!PROJECTILE_BONES.includes(bone)) throw new LabError(`manifest: projectile.bone is one of ${PROJECTILE_BONES.join(', ')}`)
+    const at = typed<unknown[]>(pr.position ?? projectileDefault(bone, donor), 'array', 'projectile.position')
+    if (at.length !== 3) throw new LabError('manifest: projectile.position is three numbers')
+    c.projectile = {
+      on: true,
+      base: donor,
+      color: color(pr.color ?? dp.color, 'projectile.color'),
+      alt_color: color(pr.alt_color ?? dp.alt_color, 'projectile.alt_color'),
+      from: from as ProjectileFrom,
+      bone,
+      position: at.map((v) => num(v, 'projectile.position', ...PROJECTILE_POSITION, false)!) as [number, number, number],
     }
   }
   const st = keys(m.stats ?? {}, ['display', 'gameplay'], 'stats')

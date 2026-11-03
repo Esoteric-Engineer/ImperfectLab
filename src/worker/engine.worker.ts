@@ -11,7 +11,7 @@ import { Service } from './service'
 declare const self: DedicatedWorkerGlobalScope
 
 const service = new Service()
-const FRESH = new Set(['preview', 'holsterPreview', 'eyesPreview', 'movePreview', 'materialThumbs', 'materialPngs', 'compose', 'layout', 'bases', 'stripOutlines', 'cutscenePcm', 'cutsceneAnimation', 'encodeCutsceneAudio', 'decodeCutsceneAudio', 'soundPcm', 'encodeSound'])
+const FRESH = new Set(['preview', 'holsterPreview', 'eyesPreview', 'projectilePreview', 'movePreview', 'materialThumbs', 'materialPngs', 'compose', 'layout', 'bases', 'stripOutlines', 'cutscenePcm', 'cutsceneAnimation', 'encodeCutsceneAudio', 'decodeCutsceneAudio', 'soundPcm', 'encodeSound'])
 
 function fileReader(file: Blob): ReadAt {
   const reader = new FileReaderSync()
@@ -96,6 +96,7 @@ const handlers: Record<string, (progress: (stage: string, done?: number, total?:
   fitCheck: (_p, c) => service.fitCheck(c),
   holsterPreview: (_p, c, kind) => service.holsterPreview(c, kind),
   eyesPreview: (_p, c) => service.eyesPreview(c),
+  projectilePreview: (_p, c) => service.projectilePreview(c),
   movePreview: (_p, c, moveId: string, from: string | null) => service.movePreview(c, moveId, from),
   materialThumbs: (_p, c) => service.materialThumbs(c),
   materialPngs: (_p, c, index: number | null) => service.materialPngs(c, index),
