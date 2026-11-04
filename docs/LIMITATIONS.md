@@ -239,6 +239,13 @@ The action picked on the **Z-Button Actions** page (`z_button`, [`FORMAT.md`](FO
 - **Pushing while in Bullet Time is stronger.** The character's body moves faster within each physics step, so it shoves the opponent and props harder than usual.
 - **A few of the character's own timeouts may run long**: those measured on the game clock outside the state timers.
 - **The world speed has a floor of 25%.** Below it, the game takes physics steps only every few frames and movement stutters.
+- **The Laser Beam is level.** `z_button.laser` fires along the character's facing and can't aim up or down. It never locks on to the opponent.
+- **The character is rooted while firing.** It stands and turns with the stick but can't walk, run, jump or attack. Jumping, being hit or knocked down, or running out of energy ends the beam.
+- **Damage comes in ticks**, five a second, as a plain punch's: a block stops a tick as it stops a punch, objects take the damage and can break. The beam stops at the first wall, fighter or object it hits.
+- **The CPU reacts only after the first tick.** Before it, a CPU doesn't see the beam coming.
+- **Width.** The beam hits a fighter its middle misses if the fighter's body touches the beam's width (0.25 m, times the character's size).
+- **One tint for the whole beam.** Every piece is painted the chosen color and keeps only its own transparency, so the beam can't be two-toned. Iron Man's own costume 2 beam is dim, so a very dark color shows little.
+- **Memory.** Each beam color takes about 2.4 KB of the effect cache (two colors when the costumes differ), counted with the aura tint's, and each costume's bundle gets about 10 KB of textures.
 
 ## Damage stages
 

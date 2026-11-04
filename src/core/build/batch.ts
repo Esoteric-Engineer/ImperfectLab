@@ -11,6 +11,7 @@ import { Skeleton } from '../model/skeleton'
 import { type Character, gunOf, hasCutscenes, NO_SHOTS, problems as characterProblems, type Problem } from '../package/imperfect'
 import * as effects from './effects'
 import * as moves from './moves'
+import * as laser from './laser'
 import * as projectileswap from './projectileswap'
 import { motionSetName, SLOTS } from './moves'
 import { Builder, mirrors, ownMotions, ownSounds, paintsReach, type PatchOutput, type Progress, Result, splitsCharge, throwsDamage, tuningFields, write, zCharacters, healthCharacters } from './patch'
@@ -40,6 +41,7 @@ export function batchTints(source: GameSource, chars: Batch): [(string | null)[]
   const tries = [asked, ...full.map((i) => cut([i])), ...full.slice(1).map((_, k) => cut(full.slice(0, k + 2)))]
   const lines = (fx: effects.Effects) => chars.forEach((c, i) => {
     if (c.projectile.on && !NO_SHOTS.includes(c.base)) projectileswap.build(source, bases[i], fx, c.projectile, `x${i}`, templates.namer(bases[i].t, `x${i}`))
+    if (c.zButton?.laser) laser.build(fx, c.zButton.laser, `x${i}`)
     if (c.moveLines.color === null && c.moveLines.alt_color === null) return
     const prefixes: [string, string] = [`x${i}f`, `x${i}a`]
     if (Object.values(c.moveEffects).includes('theirs')) moves.planEffects(source, bases[i], c.moveEffects, fx, c.moveLines, prefixes, [], moves.movedEffects(source, bases[i], c.moves))
@@ -136,6 +138,8 @@ export function buildBatch(source: GameSource, chars: Batch, progress: Progress 
   if (health.length) r.dol = D.health(r.dol, health)
   const guns = results.flatMap((x) => (x.gun ? [x.gun] : []))
   if (guns.length) r.dol = D.gun(r.dol, guns)
+  const lasers = results.flatMap((x) => (x.laser ? [x.laser] : []))
+  if (lasers.length) r.dol = D.laser(r.dol, lasers)
   r.notes = [...notes, ...results.flatMap((x, i) => x.notes.map((n) => `${batch[i].displayName}: ${n}`))]
   return r
 }

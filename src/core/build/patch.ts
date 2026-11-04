@@ -34,6 +34,7 @@ import * as gun from './gun'
 import * as projectiles from './projectiles'
 import * as projectileswap from './projectileswap'
 import * as holster from './holster'
+import * as laser from './laser'
 import * as moves from './moves'
 import * as portraits from './portraits'
 import * as reach from './reach'
@@ -61,6 +62,7 @@ export class Result {
   adds = new Map<string, Uint8Array>()
   notes: string[] = []
   gun: D.GunCharacter | null = null
+  laser: D.LaserCharacter | null = null
 }
 
 export function colorInt(color: string): number {
@@ -145,6 +147,7 @@ export class Builder {
     const health = healthCharacters([c])
     if (health.length) this.r.dol = D.health(this.r.dol, health)
     if (this.r.gun) this.r.dol = D.gun(this.r.dol, [this.r.gun])
+    if (this.r.laser) this.r.dol = D.laser(this.r.dol, [this.r.laser])
     return this.r
   }
 
@@ -159,7 +162,7 @@ export class Builder {
     const motionSet = this.motions()
     this.templates(effect1, description, projectiles, motionSet, effect2)
     this.sounds()
-    this.r.sets.set('Materials/Shaders/shaders.nsa', shaders.build(this.src.entry('Materials/Shaders/shaders.nsa'), materials, this.texture2))
+    this.r.sets.set('Materials/Shaders/shaders.nsa', shaders.build(this.src.entry('Materials/Shaders/shaders.nsa'), materials, this.texture2, laserOf(this.c) ? laser.TEXTURES.map(([, n]) => n) : []))
     this.progress('Select screen, portraits and HUD')
     this.ui()
     this.r.adds = new Map([...this.uiAdds, ...this.bundleAdds, ...this.r.adds])
@@ -277,6 +280,11 @@ export class Builder {
       if (((alt ? c.flames.alt_color : c.flames.color) !== null && flames.hasAny(c.flames)) || this.greyTint[alt ? 1 : 0]) {
         extra.push(this.borrowTexture(flames.GREY_BUNDLE, "Human Torch's costume 2", flames.GREY_SPRITE))
       }
+      if (laserOf(c)) {
+        for (const [from, to] of laser.TEXTURES) {
+          if (!extra.some(([n]) => n.toLowerCase() === to.toLowerCase())) extra.push([to, laser.grey(this.borrowTexture(laser.TEXTURE_BUNDLE, "Iron Man's costume 2", from)[1])])
+        }
+      }
       for (const [bundleName, texture] of this.shot?.borrow[alt ? 1 : 0] ?? []) {
         if (!names.some((n) => n.toLowerCase() === texture.toLowerCase()) && !extra.some(([n]) => n.toLowerCase() === texture.toLowerCase())) {
           extra.push(this.borrowTexture(bundleName, `${this.shot!.donor.label}'s`, texture))
@@ -310,6 +318,8 @@ export class Builder {
       }
       if (eyes.hasAny(c.eyes)) eyes.markers(render, sk, c.eyes)
       if (boneShots(c)) projectileswap.marker(render, sk, c.projectile)
+      const beam = laserOf(c)
+      if (beam) laser.marker(render, sk, beam)
       if (trails.hasAny(c.trails) && !effects.hidden(c.trails.color, c.trails.alt_color)[alt ? 1 : 0]) {
         const empty = trails.markers(render, sk, copy, c.trails.parts)
         if (empty.length) this.note(`motion trails: no part of the model follows the ${empty.join(', ')} bone, so its trail ends at the bone itself`)
@@ -361,6 +371,12 @@ export class Builder {
     return (this.namer ??= templates.namer(this.base.t, this.c.internalName))
   }
 
+  // The effect cache the laser beam takes, for the tint's budget.
+  laserBytes(): number {
+    const beam = laserOf(this.c)
+    return beam ? laser.bytes(() => new effects.Effects(this.src.entry('Misc/game.nfx')), beam) : 0
+  }
+
   borrowTexture(bundleName: string, label: string, texture: string): [string, gxtex.TplImage] {
     const names = latin1(this.src.entry(`Bundles/${bundleName}.ngt`)).split(/\s+/).filter(Boolean).map((n) => n.toLowerCase())
     const [ims] = gxtex.readTpl(this.src.entry(`Bundles/${bundleName}.tpl`))
@@ -373,8 +389,8 @@ export class Builder {
   effects(): [[string, string] | null, Map<number, string[]> | null, nottool.Template[], [string | null, string | null] | null] {
     const c = this.c
     const tinted = c.aura.mode === 'tint', fire = flames.hasAny(c.flames), trailed = trails.hasAny(c.trails), theirs = Object.values(c.moveEffects).includes('theirs'), lined = paintsReach(c), eyed = eyes.hasAny(c.eyes)
-    const shoots = c.projectile.on
-    if (!tinted && !fire && !trailed && !theirs && !lined && !eyed && !gunOf(c) && !shoots) return [null, null, [], null]
+    const shoots = c.projectile.on, beam = laserOf(c)
+    if (!tinted && !fire && !trailed && !theirs && !lined && !eyed && !gunOf(c) && !shoots && !beam) return [null, null, [], null]
     const fx = new effects.Effects(this.src.entry('Misc/game.nfx'))
     const before = fx.used()
     const prefixes: [string, string] = [effects.copyPrefix(c.internalName, false), effects.copyPrefix(c.internalName, true)]
@@ -408,6 +424,12 @@ export class Builder {
       const borrowed = [...new Set(shot.borrow.flat().map(([, t]) => t))]
       this.note(`projectile: ${shot.label} tinted ${colors} in place of ${this.base.label}'s, in tuning field${shot.fields.length === 1 ? '' : 's'} ${shot.fields.join(', ')}, from ${boneShots(c) ? `the ${c.projectile.bone} bone at (${c.projectile.position.map((v) => formatG(v)).join(', ')})` : `${this.base.label}'s own launch points`}${borrowed.length ? `; ${borrowed.join(', ')} borrowed from ${shot.donor.label}'s textures` : ''}`)
     }
+    if (beam) {
+      const names = laser.build(fx, beam, c.internalName)
+      this.r.laser = { internal: c.internalName, range: beam.range, damage: beam.damage, size: c.size, effects: names }
+      const colors = beam.color.toUpperCase() === beam.alt_color.toUpperCase() ? beam.color : `${beam.color} and ${beam.alt_color}`
+      this.note(`laser beam: Iron Man's finisher beam tinted ${colors} (${[...new Set(names)].join(', ')}), from the ${beam.bone} bone at (${beam.position.map((v) => formatG(v)).join(', ')}), up to ${beam.range} m, ${beam.damage} damage a second in ticks of ${formatG(beam.damage * D.LASER_TICK_SECONDS)}; ${laser.TEXTURES.map(([, n]) => n).join(' and ')} are grey copies of Iron Man's ${laser.TEXTURES.map(([t]) => t).join(' and ')}`)
+    }
     const effect2 = trails.alwaysOn(fx, c.flames, c.trails, c.internalName, c.eyes)
     if (eyed) {
       const p = c.eyes.position.map((v) => formatG(v)).join(', ')
@@ -434,7 +456,7 @@ export class Builder {
     const c = this.c, base = this.base
     const tun = new tuning.Tuning(this.src, base)
     const hide = effects.hidden(c.aura.color, c.aura.alt_color)
-    const level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, base), 'all', trails.cost(c.flames, c.trails, c.eyes) + projectileswap.bytes(c.projectile), hide) : c.aura.tint)
+    const level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, base), 'all', trails.cost(c.flames, c.trails, c.eyes) + projectileswap.bytes(c.projectile) + this.laserBytes(), hide) : c.aura.tint)
     if (this.tint === null && level !== c.aura.tint) this.note(`aura tint: ${base.label}'s full tint needs more memory than a match can spare; its idle and power-up effects are tinted`)
     const [rootsN, rootsA] = effects.roots(fx, tun, base, level)
     if (!rootsN.length && !rootsA.length) throw new LabError(`${base.label} has no effects to tint; use the Base or Swap aura`)
@@ -676,6 +698,7 @@ export function ownMotions(c: Character): boolean {
 }
 
 export const boneShots = (c: Character): boolean => c.projectile.on && c.projectile.from === 'bone'
+export const laserOf = (c: Character) => c.zButton?.laser ?? null
 
 export const gunSide = (c: Character): holster.Side => (gunOf(c)?.side === 'left' ? 'L' : 'R')
 export const gunSwaps = (c: Character): boolean => gunOf(c)?.swap !== undefined
@@ -726,7 +749,7 @@ export function zCharacters(chars: Character[]): D.ZCharacter[] {
       undetected: z.stealth?.undetected ?? false, untouchable: z.stealth?.untouchable ?? false, visible: z.stealth?.visible ?? 1,
       costume: z.costume !== null, staged: z.costume !== null && damageStages(c).length > 0, damage: damage.KEYS.map((k) => st[k] ?? null), taken: st.damage_taken ?? null, lift: st.lift ?? null,
       run: st.run_speed ?? null, sprint: st.sprint_speed ?? null,
-      size: z.size, slow: z.bullet, gun: z.gun !== null,
+      size: z.size, slow: z.bullet, gun: z.gun !== null, laser: Boolean(z.laser),
     }]
   })
 }
@@ -807,10 +830,11 @@ export function report(characters: Character | Character[], result: Result): str
   if (chars.some(throwsDamage)) lines.push('main.dol: fn_800E1788 reads tuning field 217 for an animation\'s damage event with param 5 (the baton throw)')
   if (chars.some(ownSounds)) lines.push('main.dol: fn_80114420 loads a new character\'s own sound bank, and one bank per type ID')
   if (chars.some((c) => c.zButton)) {
-    const names: [keyof NonNullable<Character['zButton']>, string][] = [['stealth', 'Stealth Mode'], ['costume', 'Costume Change'], ['stats', 'Stat Change'], ['size', 'Change Size'], ['bullet', 'Bullet Time']]
+    const names: [keyof NonNullable<Character['zButton']>, string][] = [['stealth', 'Stealth Mode'], ['costume', 'Costume Change'], ['stats', 'Stat Change'], ['size', 'Change Size'], ['bullet', 'Bullet Time'], ['laser', 'Laser Beam']]
     const used = names.filter(([k]) => chars.some((c) => c.zButton?.[k])).map(([, label]) => label)
     lines.push(`main.dol: Z is bound for every human player; fn_80137494, fn_80148B50 and fn_80132838 are rewritten to run ${used.join(', ')}, hooked from fn_800FB944, fn_80085F4C, fn_800E07A4, fn_80150200, fn_80461948, fn_8014F8BC, fn_801A479C, fn_801AF790, fn_80094E04, fn_80074814, fn_800748A4, fn_80061A10, fn_800BD2D0 and fn_800BD3A8; fn_800B1884 and fn_80086C80 are rewritten in place`)
   }
+  if (chars.some((c) => c.zButton?.laser)) lines.push('main.dol: a new text section fires the Z laser beam, hooked from fn_80074954 and fn_800CC1D4, and the dyngeom effects\' length getter (fn_803F85C8 in the vtable at 0x8050F168)')
   if (chars.some((c) => damageStages(c).length)) lines.push('main.dol: a new text section changes each fighter\'s costume textures with its health, hooked from fn_801A479C')
   const cache = result.dol ? D.readEffectCache(result.dol) : null
   if (cache && cache !== nfxtool.CACHE_SIZE) lines.push(`main.dol: effect cache ${nfxtool.CACHE_SIZE} -> ${cache} bytes`)

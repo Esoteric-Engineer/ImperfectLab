@@ -1,15 +1,16 @@
 import * as gun from '../../core/build/gun'
 import { soundChoices } from '../../core/build/moves'
 import { formatG } from '../../core/format'
-import { Z_SECONDS, Z_SIZE, Z_SLOW, Z_VISIBLE, type ZAction } from '../../core/game/dol'
+import { LASER_TICK_SECONDS, Z_SECONDS, Z_SIZE, Z_SLOW, Z_VISIBLE, type ZAction } from '../../core/game/dol'
 import { label } from '../../core/game/roster'
 import { encodePng } from '../../core/image/png'
-import { defaultGun, GAMEPLAY as RANGES, GUN_BULLETS, GUN_DAMAGE, GUN_ENERGY, GUN_PLACES, GUN_SIDES, gunBone, gunHolster, type GunPlace, type GunSide, LIFT, mirrorPlace, swapBone, soundRef, type ZButton, type ZCostume, Z_COSTUMES, type ZStats, zTexture } from '../../core/package/imperfect'
+import { defaultGun, defaultLaser, GAMEPLAY as RANGES, LASER_DAMAGE, LASER_POSITION, LASER_RANGE, laserDefault, GUN_BULLETS, GUN_DAMAGE, GUN_ENERGY, GUN_PLACES, GUN_SIDES, gunBone, gunHolster, type GunPlace, type GunSide, LIFT, mirrorPlace, swapBone, soundRef, type ZButton, type ZCostume, Z_COSTUMES, type ZStats, zTexture } from '../../core/package/imperfect'
 import { decodePicture, pickFile } from '../../io/files'
-import { Note, NumberInput } from '../components/common'
+import { BoneSelect, PositionTable } from '../components/bones'
+import { ColorButton, Note, NumberInput } from '../components/common'
 import { store, useStore } from '../store'
 import { DamageTable } from '../components/DamageTable'
-import { HolsterPlace } from './MovesPage'
+import { HolsterPlace, PlacementView } from './MovesPage'
 
 const ACTIONS: [ZAction, string][] = [
   ['stealth', 'Stealth Mode'],
@@ -18,6 +19,7 @@ const ACTIONS: [ZAction, string][] = [
   ['size', 'Change Size'],
   ['bullet', 'Bullet Time'],
   ['gun', 'Gun'],
+  ['laser', 'Laser Beam'],
 ]
 
 const EFFECTS: ['undetected' | 'untouchable', string][] = [
@@ -34,6 +36,7 @@ const fresh = (action: ZAction): Partial<ZButton> => {
   if (action === 'size') return { size: 2 }
   if (action === 'bullet') return { bullet: 0.5 }
   if (action === 'gun') return { gun: defaultGun() }
+  if (action === 'laser') return { laser: defaultLaser() }
   return { stats: {} }
 }
 
@@ -45,8 +48,8 @@ export function ZButtonPage() {
   const edited = () => store.touch('character')
   const setAction = (action: ZAction, on: boolean) => {
     if (action === 'gun' && !on && z?.gun) unbindGun(z.gun.side)
-    const next: ZButton = { ...(z ?? { stealth: null, costume: null, stats: null, size: null, bullet: null, gun: null, requires: {} }), ...(on ? fresh(action) : { [action]: null }) }
-    c.zButton = next.stealth || next.costume || next.stats || next.size !== null || next.bullet !== null || next.gun ? next : null
+    const next: ZButton = { ...(z ?? { stealth: null, costume: null, stats: null, size: null, bullet: null, gun: null, laser: null, requires: {} }), ...(on ? fresh(action) : { [action]: null }) }
+    c.zButton = next.stealth || next.costume || next.stats || next.size !== null || next.bullet !== null || next.gun || next.laser ? next : null
     edited()
   }
   return (
@@ -87,6 +90,7 @@ export function ZButtonPage() {
           {action === 'size' && z?.size && <Size />}
           {action === 'bullet' && z?.bullet && <BulletTime />}
           {action === 'gun' && z?.gun && <Gun />}
+          {action === 'laser' && z?.laser && <LaserBeam />}
         </div>
       ))}
     </div>
@@ -196,6 +200,45 @@ function Size() {
         }} />x
       </div>
       <Note>Times the character's size while Z is held, on top of the Model page's size.</Note>
+    </div>
+  )
+}
+
+function LaserBeam() {
+  const c = store.character
+  const l = c.zButton!.laser!
+  const edited = () => store.touch('character')
+  const setAxis = (k: number, v: number) => {
+    l.position = l.position.map((x, i) => (i === k ? Math.round(v * 1000) / 1000 : x)) as typeof l.position
+    edited()
+  }
+  return (
+    <div className="zaction-body">
+      <Note>While Z is held, the character stands and fires Iron Man's finisher beam straight ahead. The beam stops at the first thing it hits, and whatever it hits takes damage {Math.round(1 / LASER_TICK_SECONDS)} times a second.</Note>
+      {c.zButton!.gun && <Note>✖ The Gun also fires with Z: untick one of them.</Note>}
+      <div className="form">
+        <label>Costume 1 color</label>
+        <ColorButton color={l.color} onChange={(v) => { l.color = v; edited() }} />
+        <label>Costume 2 color</label>
+        <ColorButton color={l.alt_color} onChange={(v) => { l.alt_color = v; edited() }} />
+        <label>Damage</label>
+        <span><NumberInput className="short" min={LASER_DAMAGE[0]} max={LASER_DAMAGE[1]} step={1} value={l.damage} onChange={(v) => { l.damage = Math.round(v); edited() }} /> a second <span className="muted">(Iron Man's repulsor hits for 20)</span></span>
+        <label>Range</label>
+        <span><NumberInput className="short" min={LASER_RANGE[0]} max={LASER_RANGE[1]} step={1} value={l.range} onChange={(v) => { l.range = Math.round(v); edited() }} /> m</span>
+        <label>Bone</label>
+        <BoneSelect value={l.bone} onChange={(bone) => { l.bone = bone; l.position = laserDefault(bone); edited() }} />
+      </div>
+      <Note>Every part of the beam draws in its costume's color. The beam leaves from this spot, in meters from the bone; the dot in the view is the exact point. It always fires level, whichever way the bone turns during a move.</Note>
+      <div className="row">
+        <div>
+          <PositionTable value={l.position} range={LASER_POSITION} onChange={setAxis} />
+          <div className="row">
+            <button onClick={() => { l.position = laserDefault(l.bone); edited() }}>Reset</button>
+          </div>
+        </div>
+        {/* remounted per bone, so the view frames the new spot */}
+        <PlacementView key={l.bone} first="front" method="laserPreview" what="the beam's origin" />
+      </div>
     </div>
   )
 }

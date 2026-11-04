@@ -263,7 +263,7 @@ Optional, and left out when no sound changes. The index of a sound in the base's
 A `sounds/` member is a standard Nintendo `.dsp` file. ImperfectLab writes mono, unlooped files at the replaced sound's rate or lower.
 
 ### `z_button`
-Optional, left out when Z does nothing (default). Holding Z runs every action given, at least one of `stealth`, `costume`, `stats`, `size`, `bullet` and `gun`.
+Optional, left out when Z does nothing (default). Holding Z runs every action given, at least one of `stealth`, `costume`, `stats`, `size`, `bullet`, `gun` and `laser`.
 - `action`: only in older files, where `stealth` is Stealth Mode. A reader takes it as `stealth`; a writer leaves it out.
 - `stealth`: optional, Stealth Mode's effects, at least one of them:
   - `undetected`: `true` when the CPU loses track of the character. Optional, `false` by default.
@@ -284,6 +284,12 @@ Optional, left out when Z does nothing (default). Holding Z runs every action gi
     - `position`: the gun's middle from the place's bone at bind, in the character's axes (X right, Y forward, Z up): three numbers from -0.6 to 0.6, in meters. `rotation`: three numbers from -180 to 180, degrees about X, Y and Z, X first.
   - `swap`: optional, left out when nothing swaps. What the gun hand holds while the gun is holstered.
   - `sound`: optional, what each shot plays from the character's sound bank: a sound event and its variant as `"<event>:<variant>"` (event 0-65535, variant 0-4294967295), as an animation event 0x17 has them. Left out, the gun is silent.
+- `laser`: optional, Laser Beam. Holding Z fires a tinted copy of Iron Man's finisher beam from a bone, level along the character's facing. Not with `gun`. Any base.
+  - `color`, `alt_color`: `#RRGGBB` (default `#FF2010`), costume 1's and 2's beam.
+  - `bone`: one of `projectile.bone`'s (default `chest`), the bone the beam leaves from.
+  - `position`: three numbers from -1 to 1, the beam's origin in meters from the bone at bind, in the character's axes (X right, Y forward, Z up). Default (0, 0.123, 0.073) on the chest and (0, 0, 0) on any other bone.
+  - `damage`: integer 1-200 (default 20), damage a second.
+  - `range`: integer 5-60 (default 30), the beam's longest reach in meters.
 - `requires`: optional, left out when empty. What the action needs.
   - `energy`: the action drains energy and can't start with none. `seconds` (1 to 60) is how long a full bar lasts. `regen` (optional, `false` by default) keeps the game's energy regeneration running while active, so the bar lasts longer.
 

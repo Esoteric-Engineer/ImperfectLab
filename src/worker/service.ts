@@ -7,6 +7,7 @@ import * as eyes from '../core/build/eyes'
 import * as gun from '../core/build/gun'
 import * as moves from '../core/build/moves'
 import * as portraits from '../core/build/portraits'
+import * as laser from '../core/build/laser'
 import * as projectileswap from '../core/build/projectileswap'
 import * as sounds from '../core/build/sounds'
 import * as tuning from '../core/build/tuning'
@@ -438,6 +439,29 @@ export class Service {
       const middle = [0, 1, 2].map((i) => (bone[i] + at[i]) / 2) as [number, number, number]
       const half = Math.hypot(...[0, 1, 2].map((i) => at[i] - bone[i])) / 2
       return { meshes: [...previewTextures(fittedMeshes(tris, bySlot, c.size)), dot, root], bones: gameBones(sk, c.size), focus: [middle, Math.max(0.3 * c.size, half + 0.15 * c.size)] }
+    } catch (e) {
+      if (!(e instanceof LabError)) throw e
+      return e.message
+    }
+  }
+
+  // The model with a dot at the laser's origin and a short dotted line where it fires (forward, level), in costume 1's color.
+  laserPreview(c: imperfect.Character): { meshes: MeshData[]; bones: BoneLine[]; focus: [[number, number, number], number] } | string {
+    const l = c.zButton?.laser
+    if (!l) return 'the laser beam is off'
+    try {
+      const { m, sk, included, tris } = this.fitted(c)
+      const images = materialImages(m, c)
+      const bySlot = new Map(included.map((x, i) => [i, images.get(x.gltfMaterial) ?? null]))
+      const [bone, at] = laser.origin(sk, l).map((q) => q.map((v) => v * c.size) as [number, number, number])
+      const rgba: [number, number, number, number] = [...effects.hexRgb(l.color), 255]
+      const ray = [1, 2, 3, 4, 5, 6].map((k): [number, number, number] => [at[0], at[1] + 0.06 * k * c.size, at[2]])
+      const dot = pointMeshes([at], 0.02 * c.size, rgba)
+      const line = pointMeshes(ray, 0.008 * c.size, rgba)
+      const root = pointMeshes([bone], 0.008 * c.size, [255, 255, 255, 255])
+      const middle = [0, 1, 2].map((i) => (bone[i] + at[i]) / 2) as [number, number, number]
+      const half = Math.hypot(...[0, 1, 2].map((i) => at[i] - bone[i])) / 2
+      return { meshes: [...previewTextures(fittedMeshes(tris, bySlot, c.size)), dot, line, root], bones: gameBones(sk, c.size), focus: [middle, Math.max(0.4 * c.size, half + 0.2 * c.size)] }
     } catch (e) {
       if (!(e instanceof LabError)) throw e
       return e.message
