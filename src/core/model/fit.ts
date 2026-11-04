@@ -5,7 +5,7 @@
 // - the torso is squashed to the base's shoulder height
 // - the weights are renamed to the base's nodes (three per vertex)
 import { LabError } from '../errors'
-import type { Model, Skin, Vec3 } from './glb'
+import type { JointModel, Prim, Skin, Vec3 } from './glb'
 import { effective, type Mapping, type Overrides } from './mapping'
 import { SIDES, type Skeleton } from './skeleton'
 
@@ -120,10 +120,13 @@ export function top3(weights: Weights): Weights {
   return best.map(([b, w]) => [b, w / tot])
 }
 
+// A rig the fit can work on: the joints, and the mesh for its triangles and floor (none for an animation's rig).
+export type FitModel = JointModel & { prims: Prim[] }
+
 export type MaterialSlots = Map<number, [number | null, boolean, (number | null)?]>
 
 export class Fit {
-  model: Model
+  model: FitModel
   sk: Skeleton
   mapping: Mapping
   overrides: Overrides
@@ -139,7 +142,7 @@ export class Fit {
   private geoCache = new Map<string, VertexMap>()
   private wfn = new Map<string, (v: Vec3) => Weights>()
 
-  constructor(model: Model, skeleton: Skeleton, mapping: Mapping, overrides: Overrides = new Map(), scale: number | null = null,
+  constructor(model: FitModel, skeleton: Skeleton, mapping: Mapping, overrides: Overrides = new Map(), scale: number | null = null,
     torsoSquash = true, flip: boolean | null = null, floorFromMesh = false) {
     this.model = model
     this.sk = skeleton

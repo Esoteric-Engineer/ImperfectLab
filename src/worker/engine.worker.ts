@@ -90,6 +90,7 @@ const handlers: Record<string, (progress: (stage: string, done?: number, total?:
   soundPcm: (_p, base: string, index: number) => service.soundPcm(base, index),
   encodeSound: (_p, pcm: Int16Array, rate: number) => service.encodeSound(pcm, rate),
   importModel: (_p, raw: Uint8Array) => service.importModel(raw),
+  importAnimations: (_p, raw: Uint8Array, base: string | null, map: Map<number, string> | null) => service.importAnimations(raw, base, map),
   setModel: (_p, glb: Uint8Array | null) => service.setModel(glb),
   autoMap: (_p, key: string) => service.autoMap(key),
   preview: (_p, c, needBase: boolean) => service.preview(c, needBase),

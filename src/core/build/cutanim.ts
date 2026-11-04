@@ -48,9 +48,9 @@ export function rig(base: BaseCharacter): Rig {
   return { nodes: model.nodes, names }
 }
 
-const M: Mat3 = [[-1, 0, 0], [0, 0, 1], [0, 1, 0]]
-const mul = (a: Mat3, b: Mat3): Mat3 => [0, 1, 2].map((i) => [0, 1, 2].map((j) => a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j])) as Mat3
-const tr = (a: Mat3): Mat3 => [0, 1, 2].map((i) => [0, 1, 2].map((j) => a[j][i])) as Mat3
+export const M: Mat3 = [[-1, 0, 0], [0, 0, 1], [0, 1, 0]]
+export const mul = (a: Mat3, b: Mat3): Mat3 => [0, 1, 2].map((i) => [0, 1, 2].map((j) => a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j])) as Mat3
+export const tr = (a: Mat3): Mat3 => [0, 1, 2].map((i) => [0, 1, 2].map((j) => a[j][i])) as Mat3
 const apply = (a: Mat3, v: Vec3): Vec3 => [0, 1, 2].map((i) => a[i][0] * v[0] + a[i][1] * v[1] + a[i][2] * v[2]) as Vec3
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
@@ -241,19 +241,21 @@ function sample(s: Sampler, t: number, rotation: boolean): number[] {
 const PATHS = ['translation', 'rotation', 'scale'] as const
 type Path = (typeof PATHS)[number]
 
-class Scene {
+// The glTF's nodes posed at a time: by every animation in it, or by the one animation `only`.
+export class Scene {
   g: GLB
   nodes: Json[]
   parent: Map<number, number>
   channels = new Map<number, Partial<Record<Path, Sampler>>>()
   private rest: Map<number, Mat4>
 
-  constructor(data: Uint8Array) {
-    this.g = new GLB(data)
+  constructor(data: Uint8Array | GLB, only: number | null = null) {
+    this.g = data instanceof GLB ? data : new GLB(data)
     this.nodes = this.g.j.nodes ?? []
     this.rest = this.g.world()
     this.parent = this.g.parent
-    for (const anim of this.g.j.animations ?? []) {
+    for (const [i, anim] of (this.g.j.animations ?? []).entries()) {
+      if (only !== null && i !== only) continue
       for (const ch of anim.channels ?? []) {
         const node = ch.target?.node, path = ch.target?.path
         if (node === undefined || !PATHS.includes(path)) continue
@@ -318,7 +320,7 @@ class Scene {
 }
 
 // The rotation of a world matrix, scale removed, and its translation.
-function split(m: Mat4): [Mat3, Vec3] {
+export function split(m: Mat4): [Mat3, Vec3] {
   const cols = [0, 1, 2].map((c) => {
     const n = Math.hypot(m[0][c], m[1][c], m[2][c]) || 1
     return [m[0][c] / n, m[1][c] / n, m[2][c] / n]

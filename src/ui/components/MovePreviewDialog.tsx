@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { addOptions, animations, type Move, options } from '../../core/build/moves'
+import { animChoice } from '../../core/build/moveanim'
+import { addOptions, animatable, animations, type Move, options } from '../../core/build/moves'
 import { label } from '../../core/game/roster'
 import * as ngbtool from '../../core/mnroi/ngbtool'
-import { copyCharacter } from '../../core/package/imperfect'
+import { animFiles, copyCharacter } from '../../core/package/imperfect'
 import { posedBones, skin } from '../../core/preview'
 import type { MovePreview } from '../../worker/protocol'
 import { Modal, Note } from './common'
@@ -31,9 +32,20 @@ function choices(move: Move): { list: Choice[]; current: string | null } {
     const approx = o.body !== cat[c.base].body ? ` (${o.body}, approximate)` : ''
     list.push({ value: o.from[0], from: o.from, text: `${o.from.map(label).join(', ')}: ${stem(o.anims.find((a) => a !== null) ?? null)}${approx}` })
   }
+  if (own && animatable(move)) {
+    for (const [member, name, clips] of animFiles(c)) {
+      for (const x of clips) list.push({ value: animChoice({ file: member, clip: x.name }), from: [], text: `${name}: ${x.name} (imported)` })
+    }
+  }
   if (c.moveIdle.includes(move.id)) {
     list.unshift({ value: IDLE, from: [], text: 'Idle' })
     return { list, current: IDLE }
+  }
+  const clip = c.moveAnims[move.id]
+  if (clip) {
+    const value = animChoice(clip)
+    if (!list.some((ch) => ch.value === value)) list.push({ value, from: [], text: `${clip.clip} (missing)` })
+    return { list, current: value }
   }
   const picked = c.moves[move.id] ?? (own ? c.base : null)
   return { list, current: list.find((ch) => picked !== null && ch.from.includes(picked))?.value ?? null }

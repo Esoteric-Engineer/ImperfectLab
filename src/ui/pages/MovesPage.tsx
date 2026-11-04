@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
-import { addOptions, animations, CATEGORIES, type Catalog, LOW_ENERGY_STUN, type Move, MOVE_IDS, MOVES, options, RANGE_GRAB, WALL_JUMPS } from '../../core/build/moves'
+import { animChoice, parseChoice, TURNS } from '../../core/build/moveanim'
+import { addOptions, animatable, animations, CATEGORIES, type Catalog, LOW_ENERGY_STUN, type Move, MOVE_IDS, MOVES, options, RANGE_GRAB, WALL_JUMPS } from '../../core/build/moves'
 import * as holster from '../../core/build/holster'
 import * as reach from '../../core/build/reach'
 import { formatG } from '../../core/format'
 import { keys, label } from '../../core/game/roster'
-import { BASE_MOVES, copyCharacter, defaultHolster, GAMEPLAY, type Holster as HolsterPlan, HOLSTER_POSITION, HOLSTER_ROTATION, type MoveEffect, STUN_BASES, THROW_REACH, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
+import { animFiles, BASE_MOVES, copyCharacter, defaultHolster, GAMEPLAY, type Holster as HolsterPlan, HOLSTER_POSITION, HOLSTER_ROTATION, type MoveEffect, STUN_BASES, THROW_REACH, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
 import type { BoneLine, MeshData } from '../../core/preview'
 import { ColorButton, Note, NumberInput, Warning } from '../components/common'
 import { MovePreviewDialog } from '../components/MovePreviewDialog'
 import { Viewport } from '../components/viewport'
 import { engine, errorText } from '../engine'
+import { pickFile } from '../../io/files'
+import type { ImportedAnimations } from '../../worker/protocol'
 import { store, useStore } from '../store'
 
 // Categories shown open; the rest start folded.
@@ -47,7 +50,7 @@ export function MovesPage() {
   const mine = cat?.[c.base]
   const cross = mine ? Object.entries(c.moves).filter(([, from]) => cat![from] && cat![from].body !== mine.body).map(([id]) => id) : []
   const added = new Set(cat && mine ? [...wallRows(cat).map((r) => r.id), ...(c.baseMoves.range_grab ? RANGE_GRAB : []), ...(c.gameplay.low_energy_stun ? LOW_ENERGY_STUN : [])] : [])
-  const swapped = Object.keys(c.moves).filter((id) => !added.has(id)).length + c.moveIdle.length
+  const swapped = Object.keys(c.moves).filter((id) => !added.has(id)).length + c.moveIdle.length + Object.keys(c.moveAnims).length
   const held = c.baseMoves.holster !== undefined
 
   return (
@@ -58,6 +61,7 @@ export function MovesPage() {
         What the move does stays {label(c.base)}'s: its cost and reach, its sounds, and whether the AI uses it. Its damage is one of the character's damage values (Stats page), though the swapped animation may pick a different one of them. Its effects play from {label(c.base)}'s own unless you pick the other character's under Effects.<br />
         A match loads both fighters' animations, so every swapped move uses a little more of the memory a match has.
       </Note>
+      <AnimationFiles />
       {cross.length > 0 && (
         <Warning title="Moves from another body class are approximate">
           <p>
@@ -69,13 +73,14 @@ export function MovesPage() {
       {swapped > 0 && <div className="row"><span>{swapped} move{swapped === 1 ? '' : 's'} swapped</span><button onClick={() => {
         for (const id of Object.keys(c.moves)) if (!added.has(id)) delete c.moves[id]
         c.moveIdle = []
+        c.moveAnims = {}
         edited()
       }}>Set all back to {label(c.base)}'s</button></div>}
       {!cat ? <p className="muted">Reading every character's moves...</p> : !mine ? <p className="muted">{label(c.base)}'s moves could not be read from this disc.</p> : (
         CATEGORIES.map((category) => {
           const rows = MOVES.filter((m) => m.category === category && animations(cat, c.base, m))
           if (!rows.length) return null
-          const changed = rows.filter((m) => c.moves[m.id] || c.moveIdle.includes(m.id)).length
+          const changed = rows.filter((m) => c.moves[m.id] || c.moveIdle.includes(m.id) || c.moveAnims[m.id]).length
           return (
             <details key={category} open={OPEN.has(category) || changed > 0}>
               <summary><b>{category}</b> <span className="muted">({rows.length}{changed ? `, ${changed} swapped` : ''})</span></summary>
@@ -102,15 +107,23 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
   const own = animations(cat, c.base, move)!
   const opts = options(cat, c.base, move)
   const picked = c.moves[move.id]
+  const clip = c.moveAnims[move.id]
+  const files = animatable(move) ? animFiles(c) : []
   const at = picked ? opts.findIndex((o) => o.from.includes(picked)) : -1
   const locked = move.id === 'SuperAttackFar' && c.baseMoves.throw_reach !== undefined
   const idle = c.moveIdle.includes(move.id), offer = move.id !== 'Stand'
   const first = own.find((a) => a !== null) ?? null
   const more = own.filter((a) => a !== null).length - 1
   const choose = (v: string) => {
-    if (move.id === 'SuperThrow') pickSuperThrow(cat, v && v !== IDLE ? v : undefined)
+    const anim = parseChoice(v)
+    if (move.id === 'SuperThrow') pickSuperThrow(cat, v && v !== IDLE && !anim ? v : undefined)
     c.moveIdle = c.moveIdle.filter((id) => id !== move.id)
-    if (v && v !== IDLE) c.moves[move.id] = v
+    delete c.moveAnims[move.id]
+    if (anim) {
+      delete c.moves[move.id]
+      delete c.moveEffects[move.id]
+      c.moveAnims[move.id] = anim
+    } else if (v && v !== IDLE) c.moves[move.id] = v
     else {
       delete c.moves[move.id]
       delete c.moveEffects[move.id]
@@ -127,7 +140,7 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
       <td className="anim">{stem(first)}{more > 0 ? ` (+${more})` : ''}</td>
       <td>
         <div className="move-pick">
-          <select value={idle ? IDLE : at >= 0 ? opts[at].from[0] : (picked ?? '')} disabled={locked || (!opts.length && !offer && !picked)}
+          <select value={clip ? animChoice(clip) : idle ? IDLE : at >= 0 ? opts[at].from[0] : (picked ?? '')} disabled={locked || (!opts.length && !offer && !picked && !files.length)}
             title={locked ? 'The baton throw reach changes this move: untick it below to swap the move' : undefined}
             onChange={(e) => choose(e.target.value)}>
             <option value="">{label(c.base)} (base)</option>
@@ -138,14 +151,109 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
               </option>
             ))}
             {picked && at < 0 && <option value={picked}>{label(picked)} (not available for {label(c.base)})</option>}
+            {files.map(([member, name, clips]) => (
+              <optgroup key={member} label={`Imported: ${name}`}>
+                {clips.map((x) => <option key={x.name} value={animChoice({ file: member, clip: x.name })}>{x.name} ({formatG(Math.round(x.seconds * 100) / 100)} s)</option>)}
+              </optgroup>
+            ))}
+            {clip && !files.some(([m, , clips]) => m === clip.file && clips.some((x) => x.name === clip.clip)) && <option value={animChoice(clip)}>{clip.clip} (missing)</option>}
           </select>
           <PreviewButton move={move} onSave={locked ? undefined : (from) => choose(from === c.base ? '' : from)} />
         </div>
-        {!opts.length && !offer && !picked && <span className="muted"> no other version</span>}
+        {!opts.length && !offer && !picked && !files.length && <span className="muted"> no other version</span>}
       </td>
       <td className="fx">{picked && <MoveEffects id={move.id} from={picked} />}</td>
       {c.baseMoves.holster && <td><InHand move={move} /></td>}
     </tr>
+  )
+}
+
+// A file name as an animations/ member, kept apart from the ones already in the project.
+function animMember(fileName: string, taken: (m: string) => boolean): string {
+  const stemName = fileName.replace(/\.[^.]*$/, '').replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 40) || 'animations'
+  let member = `animations/${stemName}.glb`
+  for (let k = 2; taken(member); k++) member = `animations/${stemName}_${k}.glb`
+  return member
+}
+
+const TURN_LABELS: Record<number, string> = { 0: 'as in the file', [-90]: 'turned 90° right', 90: 'turned 90° left', 180: 'turned around' }
+// which way the clips faced, for a turn that brings them to the front
+const TURN_TEXT: Record<number, string> = { [-90]: '90° to the left', 90: '90° to the right', 180: 'the back' }
+
+function AnimationFiles() {
+  const c = store.character
+  const files = animFiles(c)
+  const users = (member: string) => Object.entries(c.moveAnims).filter(([, p]) => p.file === member).map(([id]) => MOVE_IDS.get(id)?.label ?? id)
+
+  const importGlb = async () => {
+    const file = await pickFile('.glb')
+    if (!file) return
+    await store.edit(async () => {
+      let imported: ImportedAnimations
+      try {
+        imported = await engine.call<ImportedAnimations>('importAnimations', [new Uint8Array(await file.arrayBuffer()), c.base, c.mapping])
+      } catch (e) {
+        store.fail(`The animations could not be imported:\n${errorText(e)}`)
+        return
+      }
+      const member = animMember(file.name, (m) => c.files.has(m))
+      c.files.set(member, imported.slim)
+      if (imported.turn) c.moveAnimFiles[member] = { turn: imported.turn }
+      else delete c.moveAnimFiles[member]
+      const name = member.slice('animations/'.length, -'.glb'.length)
+      if (!c.credits.assets.some((a) => a.what === 'animations' && a.url === (imported.credit.url || name))) {
+        c.credits.assets.push({ what: 'animations', by: imported.credit.by, license: imported.credit.license, url: imported.credit.url || name })
+      }
+      const facing = imported.turn ? `; its clips face ${TURN_TEXT[imported.turn] ?? `${imported.turn}°`} of the model's front, so they are turned to face it (Facing, below)` : ''
+      store.message(`Imported ${imported.clips.length} animation${imported.clips.length === 1 ? '' : 's'} from ${file.name} (${Math.round(imported.slim.length / 1024)} KB kept)${facing}: pick them for a move below`)
+      store.touch('character')
+    })
+  }
+
+  const remove = (member: string) => {
+    c.files.delete(member)
+    delete c.moveAnimFiles[member]
+    store.touch('character')
+  }
+  const turn = (member: string, deg: number) => {
+    if (deg) c.moveAnimFiles[member] = { turn: deg }
+    else delete c.moveAnimFiles[member]
+    store.touch('character')
+  }
+
+  return (
+    <section>
+      <h4>Imported animations</h4>
+      <Note>
+        Play a clip from a glTF file (.glb) as a move: import the file, then pick its clip in the move's list, under Imported.
+        The clips have to be on your model's rig (the joint names the Model page maps). Some rigs face one way at rest and another in their clips: Facing turns the clips (it is guessed on import from which way the attacks reach). They are fitted onto {label(c.base)}'s skeleton the way the model is, and keep {label(c.base)}'s timing cues (hits, effects, sounds), stretched to the clip's length.<br />
+        Moves with a victim (throws) can't take a clip.
+      </Note>
+      {files.length > 0 && (
+        <table className="gameplay grid">
+          <thead><tr><th>File</th><th>Clips</th><th title="Which way the clips play: some rigs face one way at rest and another in their clips">Facing</th><th>Played by</th><th></th></tr></thead>
+          <tbody>
+            {files.map(([member, name, clips]) => {
+              const by = users(member)
+              return (
+                <tr key={member}>
+                  <td>{name}</td>
+                  <td>{clips.length}</td>
+                  <td>
+                    <select value={c.moveAnimFiles[member]?.turn ?? 0} onChange={(e) => turn(member, Number(e.target.value))}>
+                      {[...new Set([...TURNS, c.moveAnimFiles[member]?.turn ?? 0])].map((t) => <option key={t} value={t}>{TURN_LABELS[t] ?? `turned ${t}°`}</option>)}
+                    </select>
+                  </td>
+                  <td>{by.length ? by.join(', ') : <span className="muted">no move</span>}</td>
+                  <td><button className="small" disabled={by.length > 0} title={by.length ? 'Set the moves that play it to something else first' : undefined} onClick={() => remove(member)}>Remove</button></td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
+      <div className="row"><button onClick={importGlb}>Import animations (.glb)...</button></div>
+    </section>
   )
 }
 

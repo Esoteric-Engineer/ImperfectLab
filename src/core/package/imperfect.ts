@@ -11,7 +11,8 @@ import { CLUB_MOVES, defaultDrawn } from '../build/holster'
 import { type DamageKey, KEYS as DAMAGE_KEYS } from '../build/damage'
 import { COSTS, type EnergyKey, FALLBACK, RECHARGE, type RechargeKey } from '../build/energy'
 import { BULLETS as GUN_BULLETS, DAMAGE as GUN_DAMAGE, DEFAULT_BULLETS, DEFAULT_DAMAGE, DEFAULT_ENERGY, ENERGY as GUN_ENERGY, PLACES as GUN_PLACES, type Place as GunPlace, type Sound as GunSound } from '../build/gun'
-import { LOW_ENERGY_STUN, MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
+import { animatable, LOW_ENERGY_STUN, MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
+import { type ClipInfo, clipList } from '../build/moveanim'
 import { DISTANCE, JUMP_DISTANCE, JUMPS, type Limb, LIMBS } from '../build/reach'
 import { Z_SECONDS, Z_SIZE, Z_SLOW, Z_VISIBLE } from '../game/dol'
 import { BASES } from '../game/roster'
@@ -31,7 +32,7 @@ const STAT_RANGE = [1, 7]
 
 export const UI_SLOTS = ['select_rest', 'select_ready', 'select_readyalt', 'load_wide', 'load_narrow', 'load_wide_alt',
   'load_narrow_alt', 'tile', 'tile_selected', 'hud', 'hud_rage', 'hud_alt', 'hud_alt_rage', 'banner']
-export const MEMBER = new RegExp(`^(manifest\\.json|model/model\\.glb|textures/[A-Za-z0-9_-]{1,48}\\.png|ui/(${UI_SLOTS.join('|')})\\.png|cutscenes/[A-Za-z0-9_-]{1,48}\\.(asf|glb)|sounds/[A-Za-z0-9_-]{1,48}\\.dsp)$`)
+export const MEMBER = new RegExp(`^(manifest\\.json|model/model\\.glb|textures/[A-Za-z0-9_-]{1,48}\\.png|ui/(${UI_SLOTS.join('|')})\\.png|cutscenes/[A-Za-z0-9_-]{1,48}\\.(asf|glb)|sounds/[A-Za-z0-9_-]{1,48}\\.dsp|animations/[A-Za-z0-9_-]{1,48}\\.glb)$`)
 const SOUND_FILE = /^sounds\/[A-Za-z0-9_-]{1,48}\.dsp$/
 const GAME_SOUND = /^[a-z]+:\d{1,3}$/
 export const MAX_SOUND_SECONDS = 30
@@ -245,6 +246,22 @@ export interface MoveLines {
   color: string | null
   alt_color: string | null
 }
+// A move played from a clip of an animation file in the project (manifest `move_anims`).
+export interface MoveAnim {
+  file: string
+  clip: string
+}
+export const ANIM_FILE = /^animations\/[A-Za-z0-9_-]{1,48}\.glb$/
+// How an animation file's clips are turned to face the model's front (manifest `move_anim_files`).
+export interface MoveAnimFile {
+  turn: number
+}
+
+// The project's animation files: member, name and clips.
+export function animFiles(c: Pick<Character, 'files'>): [string, string, ClipInfo[]][] {
+  return [...c.files].filter(([m]) => ANIM_FILE.test(m)).sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([m, data]) => [m, m.slice('animations/'.length, -'.glb'.length), clipList(data)])
+}
 export interface MoveReach {
   distance?: number
   limbs?: Limb[]
@@ -326,6 +343,8 @@ export interface Character {
   moveLines: MoveLines
   moveReach: Record<string, MoveReach>
   moveIdle: string[]
+  moveAnims: Record<string, MoveAnim>
+  moveAnimFiles: Record<string, MoveAnimFile>
   cutscenes: Cutscenes
   sounds: Record<string, SoundSource>
   zButton: ZButton | null
@@ -399,6 +418,8 @@ export function newCharacter(): Character {
     moveLines: { color: null, alt_color: null },
     moveReach: {},
     moveIdle: [],
+    moveAnims: {},
+    moveAnimFiles: {},
     cutscenes: { audio: {}, effects: {}, animation: {} },
     sounds: {},
     zButton: null,
@@ -470,6 +491,8 @@ export function manifest(c: Character): Json {
     move_lines: c.moveLines.color !== null || c.moveLines.alt_color !== null ? c.moveLines : undefined,
     move_reach: Object.keys(c.moveReach).length ? c.moveReach : undefined,
     move_idle: c.moveIdle.length ? c.moveIdle : undefined,
+    move_anims: Object.keys(c.moveAnims).length ? c.moveAnims : undefined,
+    move_anim_files: Object.keys(c.moveAnimFiles).length ? c.moveAnimFiles : undefined,
     cutscenes: hasCutscenes(c.cutscenes) ? { ...c.cutscenes, effects: Object.keys(c.cutscenes.effects).length ? c.cutscenes.effects : undefined, animation: Object.keys(c.cutscenes.animation).length ? c.cutscenes.animation : undefined } : undefined,
     sounds: Object.keys(c.sounds).length ? c.sounds : undefined,
     z_button: z && (z.stealth || z.costume || zStats || z.size !== null || z.bullet !== null || z.gun || z.laser) ? {
@@ -581,6 +604,18 @@ export function problems(c: Character): Problem[] {
   for (const [slot, member] of Object.entries(c.cutscenes.animation)) {
     if (!CUTSCENE_SLOT.test(slot)) out.push(['error', `there is no cutscene ${slot}`])
     else if (!c.files.has(member)) out.push(['error', `the new animation for cutscene ${slot.replace('_', ' ')} is missing`])
+  }
+  for (const [id, pick] of Object.entries(c.moveAnims)) {
+    const label = MOVE_IDS.get(id)?.label ?? id
+    const data = c.files.get(pick.file)
+    if (!data) out.push(['error', `the animation file of ${label} (${pick.file}) is missing`])
+    else if (!clipList(data).some((x) => x.name === pick.clip)) out.push(['error', `${label} plays ${pick.clip}, which ${pick.file} doesn't have`])
+    if (c.moves[id] || c.moveIdle.includes(id)) out.push(['error', `${label} plays an imported animation and another one: pick one on the Moves page`])
+  }
+  for (const member of Object.keys(c.moveAnimFiles)) if (!c.files.has(member)) out.push(['error', `the animation file ${member} is missing`])
+  const usedAnims = new Set(Object.values(c.moveAnims).map((p) => p.file))
+  for (const member of c.files.keys()) {
+    if (ANIM_FILE.test(member) && !usedAnims.has(member)) out.push(['warning', `the animation file ${member.slice('animations/'.length)} is in the project, but no move plays it: remove it on the Moves page to keep the file small`])
   }
   for (const [slot, from] of Object.entries(c.sounds)) {
     if ('file' in from && !c.files.has(from.file)) out.push(['error', `the new sound for sound ${Number(slot) + 1} is missing`])
@@ -734,7 +769,7 @@ function upgrade(m: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Character {
-  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'trails', 'eyes', 'projectile', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'cutscenes', 'sounds', 'z_button', 'gun', 'files'], 'the manifest')
+  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'trails', 'eyes', 'projectile', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'move_anims', 'move_anim_files', 'cutscenes', 'sounds', 'z_button', 'gun', 'files'], 'the manifest')
   if (m.format !== FORMAT) throw new LabError('not a .imperfect file')
   upgrade(m)
   if (m.game !== GAME) throw new LabError(`this file is for ${m.game}, not ${GAME}`)
@@ -976,6 +1011,24 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     if (c.moveIdle.includes(id)) throw new LabError(`manifest: move_idle names ${id} twice`)
     if (c.moves[id]) throw new LabError(`manifest: move_idle names ${id}, which is taken from another base`)
     c.moveIdle.push(id)
+  }
+  c.moveAnims = {}
+  for (const [id, v] of Object.entries(typed<Record<string, unknown>>(m.move_anims ?? {}, 'object', 'move_anims'))) {
+    const move = MOVE_IDS.get(id)
+    if (!move) throw new LabError(`manifest: unknown move ${JSON.stringify(id.slice(0, 40))} in move_anims`)
+    if (!animatable(move)) throw new LabError(`manifest: move_anims.${id} plays on the opponent too, so it can't take an imported animation`)
+    if (c.moves[id]) throw new LabError(`manifest: move_anims names ${id}, which is taken from another base`)
+    if (c.moveIdle.includes(id)) throw new LabError(`manifest: move_anims names ${id}, which plays the idle`)
+    const a = keys(v, ['file', 'clip'], `move_anims.${id}`)
+    const file = str(a.file, `move_anims.${id}.file`, 80, ANIM_FILE)!
+    if (!files.has(file)) throw new LabError(`manifest: move_anims.${id} names ${file}, which the file lacks`)
+    c.moveAnims[id] = { file, clip: str(a.clip, `move_anims.${id}.clip`, 200)! }
+  }
+  c.moveAnimFiles = {}
+  for (const [member, v] of Object.entries(typed<Record<string, unknown>>(m.move_anim_files ?? {}, 'object', 'move_anim_files'))) {
+    if (!ANIM_FILE.test(member) || !files.has(member)) throw new LabError(`manifest: move_anim_files names ${JSON.stringify(member.slice(0, 80))}, which the file lacks`)
+    const a = keys(v, ['turn'], `move_anim_files.${member}`)
+    c.moveAnimFiles[member] = { turn: num(a.turn, `move_anim_files.${member}.turn`, -180, 180, false)! }
   }
   const cs = keys(m.cutscenes ?? {}, [...CUTSCENE_KINDS, 'audio', 'effects', 'animation'], 'cutscenes')
   c.cutscenes = { audio: {}, effects: {}, animation: {} }

@@ -1,4 +1,4 @@
-// Moves taken from other bases (manifest `moves`).
+// Moves taken from other bases (manifest `moves`), or from a glTF clip (manifest `move_anims`).
 // The character's own copies of the base's motion set and bundles take the other base's lines and records, into the same bundles.
 // The thrower's records are remapped onto the base's skeleton by bone name; the victim's are already on the opponent's. The game keeps the first of two records with one name (fn_8019E7D4), so a changed record gets a new one.
 import { sha256 } from '@noble/hashes/sha2.js'
@@ -19,6 +19,7 @@ import * as damage from './damage'
 import * as energy from './energy'
 import * as gun from './gun'
 import * as holster from './holster'
+import { Retarget, type MoveAnims } from './moveanim'
 import type { Effects } from './effects'
 import { EFFECT_FIELDS, effectNames, OWN_EFFECTS, Slots } from './effectslots'
 import * as projectiles from './projectiles'
@@ -284,6 +285,9 @@ export const WALL_JUMPS = ['WallJumpOff', 'WallJumpToWall', 'WallRunJumpOff']
 export const WALL_STATES = [...WALL_CLIMB, ...WALL_RUN, ...WALL_JUMPS]
 export const RANGE_GRAB = ['WirePull']
 export const LOW_ENERGY_STUN = ['LowEnergyStun']
+
+// Whether a move can take an imported clip: one that plays only on the character, since a clip has no victim half.
+export const animatable = (move: Move) => !move.states.some((s) => VICTIM.test(s))
 
 export function addOptions(cat: Catalog, base: string, move: Move): MoveOption[] {
   return grouped(cat, base, move, move.states.map(() => null))
@@ -598,13 +602,15 @@ export interface MotionFiles {
 export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: string, moves: Record<string, string>, throwReach?: number,
   choice: Record<string, MoveEffect> = {}, plan: EffectPlan | null = null, stretches: Record<string, MoveReach> = {}, fx: Effects | null = null,
   size = 1, idle: string[] = [], onBack: holster.Plan | null = null, throwDamage = false, shooter: gun.Plan | null = null,
-  spawn: number | null = null): MotionFiles {
+  spawn: number | null = null, anims: MoveAnims | null = null): MotionFiles {
   const set = motionSetOf(base), stem = stemOf(set), name = internal.toLowerCase()
   const own = nmstool.parse(src.entry(`Motions/${set}`))
   const bundles = loadBundles(src, stem)
   const before = [...bundles.values()].reduce((n, rs) => n + rs.reduce((k, r) => k + ngbtool.writeRecord(r).length, 0), 0)
   const [, models] = ngmtool.read(base.bundleFiles()[0])
   if (shooter) models[0] = gun.rig(models[0], base.body, shooter.holster.prop!.side, shooter.swap !== null)
+  // the base's skeleton and records before any resize, for the imported clips (resized like the copied moves)
+  const plainModel = models[0], plainBundles = new Map([...bundles].map(([slot, recs]) => [slot, [...recs]]))
   const mine = resolved(src, own, holds(bundles))
   const notes: string[] = []
   const sized = new Set<string>()
@@ -695,6 +701,48 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     else if (how === 'theirs' && fit?.total) fx = `; ${fit.fit} of ${other.label}'s effects${fit.total > fit.fit ? `, ${fit.total - fit.fit} more left as ${base.label}'s (no free effect slot)` : ''}`
     if (blank) shot = `; ${other.label}'s projectile has nothing to launch on ${base.label}`
     notes.push(`moves: ${move.label} from ${other.label} (${copied} animation${copied === 1 ? '' : 's'} copied${cross}${fx}${shot})`)
+  }
+  const picks = Object.entries(anims?.picks ?? {})
+  if (picks.length) {
+    const sk = new Skeleton(plainModel, base.body)
+    const now = resolved(src, own, holds(bundles))
+    const targets = new Map<string, Retarget>()
+    for (const [id, pick] of picks) {
+      const move = MOVE_IDS.get(id)
+      if (!move) throw new LabError(`there is no move ${id}`)
+      if (moves[id]) throw new LabError(`${move.label} takes both ${moves[id]}'s animation and an imported one`)
+      if (!animatable(move)) throw new LabError(`${move.label} plays on the opponent too, so it can't take an imported animation`)
+      const file = anims!.files.get(pick.file)
+      if (!file) throw new LabError(`${move.label}: the project has no animation file ${pick.file}`)
+      let rt = targets.get(pick.file)
+      if (!rt) {
+        rt = new Retarget(anims!.rig, sk, file, anims!.turns[pick.file] ?? 0)
+        targets.set(pick.file, rt)
+        for (const n of rt.notes) notes.push(`moves: ${pick.file}: ${n}`)
+      }
+      let length = 0, stretch = 1
+      for (const state of move.states) {
+        const m = now.get(state.toLowerCase())
+        if (!m) continue
+        const found = SLOTS.flatMap((slot): [string, ngbtool.Record][] => {
+          const rec = plainBundles.get(slot)?.find((r) => r.name.toLowerCase() === m.anim.toLowerCase())
+          return rec ? [[slot, rec]] : []
+        })
+        if (!found.length) throw new LabError(`${base.label}'s ${state} has no animation to replace`)
+        const out = found.map(([slot, rec]): [string, ngbtool.Record] => [slot, sizedRec(rt.record(rec, pick.clip, plainModel.nodes, motionFps(m.opts)))])
+        length = out[0][1].length
+        stretch = found[0][1].length > 0 ? length / found[0][1].length : 1
+        const anim = ownName(out[0][1])
+        for (const [slot, rec] of out) {
+          const into = bundles.get(slot)!
+          if (!into.some((r) => r.name.toLowerCase() === anim.toLowerCase())) into.push({ ...rec, name: anim })
+        }
+        displaced.add(m.anim.toLowerCase())
+        own.set({ state: m.state, anim, opts: m.opts })
+      }
+      if (!length) throw new LabError(`${base.label} has no ${move.label.toLowerCase()} to replace`)
+      notes.push(`moves: ${move.label} plays ${pick.clip} (${length} frames; ${base.label}'s timing cues ${stretch === 1 ? 'kept' : `stretched ×${formatG(Math.round(stretch * 100) / 100)}`})`)
+    }
   }
   if (idle.length) {
     const now = resolved(src, own, holds(bundles))
@@ -887,7 +935,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     after += data.length
     files.set(`Bundles/${name}${slot}.ngb`, data)
   }
-  if (Object.keys(moves).length || idle.length || size !== 1 || carried) notes.push(`${size !== 1 ? 'size' : 'moves'}: animations ${Math.round(after / 1024)} KB (${base.label}'s ${Math.round(before / 1024)} KB)`)
+  if (Object.keys(moves).length || picks.length || idle.length || size !== 1 || carried) notes.push(`${size !== 1 ? 'size' : 'moves'}: animations ${Math.round(after / 1024)} KB (${base.label}'s ${Math.round(before / 1024)} KB)`)
   return { motionSet: motionSetName(internal), files, notes, model: models[0] }
 }
 
