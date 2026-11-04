@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { animChoice, parseChoice, TURNS } from '../../core/build/moveanim'
-import { addOptions, animatable, animations, CATEGORIES, type Catalog, LOW_ENERGY_STUN, type Move, MOVE_IDS, MOVES, options, RANGE_GRAB, WALL_JUMPS } from '../../core/build/moves'
+import { animChoice, parseChoice, type Timing, type Travel, TURNS } from '../../core/build/moveanim'
+import { addOptions, animatable, animations, CATEGORIES, hasHits, type Catalog, LOW_ENERGY_STUN, type Move, MOVE_IDS, MOVES, options, RANGE_GRAB, WALL_JUMPS } from '../../core/build/moves'
 import * as holster from '../../core/build/holster'
 import * as reach from '../../core/build/reach'
 import { formatG } from '../../core/format'
@@ -114,15 +114,22 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
   const idle = c.moveIdle.includes(move.id), offer = move.id !== 'Stand'
   const first = own.find((a) => a !== null) ?? null
   const more = own.filter((a) => a !== null).length - 1
-  const choose = (v: string) => {
+  const hits = hasHits(cat, c.base, move)
+  const travels = store.moveTravels()?.has(move.id) ?? false
+  // timing, travel: undefined keeps the move's choice, null resets it
+  const choose = (v: string, timing?: Timing | null, travel?: Travel | null) => {
     const anim = parseChoice(v)
     if (move.id === 'SuperThrow') pickSuperThrow(cat, v && v !== IDLE && !anim ? v : undefined)
     c.moveIdle = c.moveIdle.filter((id) => id !== move.id)
+    const was = c.moveAnims[move.id]
     delete c.moveAnims[move.id]
     if (anim) {
       delete c.moves[move.id]
       delete c.moveEffects[move.id]
-      c.moveAnims[move.id] = anim
+      const t = timing === undefined ? was?.timing : timing
+      // so chained attacks close in on the opponent
+      const g = travel === undefined ? (was ? was.travel : travels ? 'base' : undefined) : travel
+      c.moveAnims[move.id] = { ...anim, ...(t && { timing: t }), ...(g && { travel: g }) }
     } else if (v && v !== IDLE) c.moves[move.id] = v
     else {
       delete c.moves[move.id]
@@ -158,11 +165,35 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
             ))}
             {clip && !files.some(([m, , clips]) => m === clip.file && clips.some((x) => x.name === clip.clip)) && <option value={animChoice(clip)}>{clip.clip} (missing)</option>}
           </select>
-          <PreviewButton move={move} onSave={locked ? undefined : (from) => choose(from === c.base ? '' : from)} />
+          <PreviewButton move={move} onSave={locked ? undefined : (from, timing, travel) => choose(from === c.base ? '' : from, timing, travel)} />
         </div>
         {!opts.length && !offer && !picked && !files.length && <span className="muted"> no other version</span>}
       </td>
-      <td className="fx">{picked && <MoveEffects id={move.id} from={picked} />}</td>
+      <td className="fx">
+        {picked && <MoveEffects id={move.id} from={picked} />}
+        {clip && hits && (
+          <select value={clip.timing ?? ''} title="When the move's hits are live, and on which limb"
+            onChange={(e) => {
+              if (e.target.value === 'clip') clip.timing = 'clip'
+              else delete clip.timing
+              store.touch('character')
+            }}>
+            <option value="">Hits: {label(c.base)}'s timing</option>
+            <option value="clip">Hits: from the clip</option>
+          </select>
+        )}
+        {clip && travels && (
+          <select value={clip.travel ?? ''} title={`Whether the move carries the character forward as ${label(c.base)}'s does (so chained attacks keep up with the opponent), or stays where the clip puts it`}
+            onChange={(e) => {
+              if (e.target.value === 'base') clip.travel = 'base'
+              else delete clip.travel
+              store.touch('character')
+            }}>
+            <option value="base">Travel: {label(c.base)}'s</option>
+            <option value="">Travel: the clip's</option>
+          </select>
+        )}
+      </td>
       {c.baseMoves.holster && <td><InHand move={move} /></td>}
     </tr>
   )
@@ -257,7 +288,7 @@ function AnimationFiles() {
   )
 }
 
-function PreviewButton({ move, disabled = false, onSave }: { move: Move; disabled?: boolean; onSave?: (from: string) => void }) {
+function PreviewButton({ move, disabled = false, onSave }: { move: Move; disabled?: boolean; onSave?: (from: string, timing?: Timing | null, travel?: Travel | null) => void }) {
   const [open, setOpen] = useState(false)
   return (
     <>

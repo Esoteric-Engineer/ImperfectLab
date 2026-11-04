@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { animChoice } from '../../core/build/moveanim'
-import { addOptions, animatable, animations, type Move, options } from '../../core/build/moves'
+import { animChoice, parseChoice, type Timing, type Travel } from '../../core/build/moveanim'
+import { addOptions, animatable, animations, hasHits, type Move, options } from '../../core/build/moves'
+import * as reach from '../../core/build/reach'
 import { label } from '../../core/game/roster'
 import * as ngbtool from '../../core/mnroi/ngbtool'
 import { animFiles, copyCharacter } from '../../core/package/imperfect'
@@ -21,6 +22,11 @@ interface Choice {
   value: string
   from: string[]
   text: string
+}
+
+function hitWindows(rec: ngbtool.Record | null): reach.Window[] {
+  const p = rec ? reach.plan(rec.events, rec.length) : null
+  return p?.kind === 'hit' ? p.windows : []
 }
 
 function choices(move: Move): { list: Choice[]; current: string | null } {
@@ -51,7 +57,7 @@ function choices(move: Move): { list: Choice[]; current: string | null } {
   return { list, current: list.find((ch) => picked !== null && ch.from.includes(picked))?.value ?? null }
 }
 
-export function MovePreviewDialog({ move, onSave, onClose }: { move: Move; onSave?: (from: string) => void; onClose: () => void }) {
+export function MovePreviewDialog({ move, onSave, onClose }: { move: Move; onSave?: (from: string, timing?: Timing | null, travel?: Travel | null) => void; onClose: () => void }) {
   const s = useStore()
   const c = store.character
   const canvas = useRef<HTMLCanvasElement>(null)
@@ -72,17 +78,28 @@ export function MovePreviewDialog({ move, onSave, onClose }: { move: Move; onSav
   const [bones, setBones] = useState(true)
   const [inPlace, setInPlace] = useState(true)
   const [frame, setFrame] = useState(0)
+  const savedTiming = c.moveAnims[move.id]?.timing ?? null
+  const [timing, setTiming] = useState<Timing | null>(savedTiming)
+  const cat = store.moveCatalog()
+  const clipPick = parseChoice(pick) !== null
+  const timeable = clipPick && !!cat && hasHits(cat, c.base, move)
+  const travelling = store.moveTravels()?.has(move.id) ?? false
+  // a clip tried on a move that travels starts with the base's travel, as a new pick does
+  const savedTravel = c.moveAnims[move.id] ? (c.moveAnims[move.id].travel ?? null) : null
+  const [travel, setTravel] = useState<Travel | null>(() => (c.moveAnims[move.id] ? savedTravel : travelling ? 'base' : null))
 
   useEffect(() => {
     view.current = new Viewport(canvas.current!)
     return () => view.current?.dispose()
   }, [])
 
-  const from = !pick || pick === current ? null : pick
+  const from = !pick || (pick === current && !clipPick) ? null : pick
+  const sentTiming = clipPick ? timing : null
+  const sentTravel = clipPick ? travel : null
   useEffect(() => {
     let live = true
     const timer = window.setTimeout(() => {
-      engine.call<MovePreview | string>('movePreview', [copyCharacter({ ...store.character, glb: null }), move.id, from]).then((r) => {
+      engine.call<MovePreview | string>('movePreview', [copyCharacter({ ...store.character, glb: null }), move.id, from, sentTiming, sentTravel]).then((r) => {
         if (!live) return
         setLoading(false)
         if (typeof r === 'string') {
@@ -103,10 +120,12 @@ export function MovePreviewDialog({ move, onSave, onClose }: { move: Move; onSav
       live = false
       clearTimeout(timer)
     }
-  }, [s.versions.character, s.versions.model, s.versions.mapping, s.model, move.id, from])
+  }, [s.versions.character, s.versions.model, s.versions.mapping, s.model, move.id, from, sentTiming, sentTravel])
 
   const meshes = data ? (shown === 'custom' && data.custom ? data.custom : data.base) : null
   const played = data?.variants[part] ?? null
+  const windows = hitWindows(played?.rec ?? null)
+  const liveAt = (t: number) => windows.filter((w) => w.from <= t && t <= w.to)
 
   useEffect(() => {
     const vp = view.current
@@ -137,6 +156,8 @@ export function MovePreviewDialog({ move, onSave, onClose }: { move: Move; onSav
       }
       meshes.forEach((m, i) => skin(m, posed, rest, pos[i], nrm[i]))
       vp.setPose(pos, nrm, posedBones(data.nodes, posed))
+      const live = hitWindows(played.rec).find((w) => w.from <= t && t <= w.to)
+      vp.setHighlight(live ? (data.hitBones[live.limb] ?? null) : null)
     }
     redraw.current = draw
     draw(time.current)
@@ -213,7 +234,25 @@ export function MovePreviewDialog({ move, onSave, onClose }: { move: Move; onSav
             setPlaying(false)
             redraw.current(time.current)
           }} />
-          <span className="muted">Frame {frame.toFixed(1)} of {length}</span>
+          <span className="muted">Frame {frame.toFixed(1)} of {length}{windows.length > 0 && (liveAt(frame).length ? ` · Hit: ${liveAt(frame).map((w) => reach.LIMB_LABELS[w.limb]).join(' and ')}` : ' · no hit')}</span>
+          {timeable && (
+            <>
+              <label>Hits</label>
+              <select value={timing ?? ''} title="When the move's hits are live, and on which limb" onChange={(e) => setTiming(e.target.value === 'clip' ? 'clip' : null)}>
+                <option value="">{label(c.base)}'s timing, stretched</option>
+                <option value="clip">From the clip's strikes</option>
+              </select>
+            </>
+          )}
+          {clipPick && travelling && (
+            <>
+              <label>Travel</label>
+              <select value={travel ?? ''} title={`Whether the move carries the character forward as ${label(c.base)}'s does, or stays where the clip puts it`} onChange={(e) => setTravel(e.target.value === 'base' ? 'base' : null)}>
+                <option value="base">{label(c.base)}'s (closes in on the opponent)</option>
+                <option value="">The clip's own</option>
+              </select>
+            </>
+          )}
           <label className="check"><input type="checkbox" checked={loop} onChange={(e) => setLoop(e.target.checked)} /> Loop</label>
           <label className="check"><input type="checkbox" checked={bones} onChange={(e) => setBones(e.target.checked)} /> Show bones</label>
           <label className="check" title="Hold the character over one spot instead of following where the move carries it"><input type="checkbox" checked={inPlace} onChange={(e) => setInPlace(e.target.checked)} /> Keep in place</label>
@@ -228,7 +267,7 @@ export function MovePreviewDialog({ move, onSave, onClose }: { move: Move; onSav
           {data?.notes.map((n) => <Note key={n}>{n}</Note>)}
           <span className="spacer" />
           <div className="row tight">
-            {onSave && <button disabled={from === null || pick === IDLE} title="Use this animation for the move" onClick={() => onSave(pick)}>Save</button>}
+            {onSave && <button disabled={(from === null || (pick === current && timing === savedTiming && travel === savedTravel)) || pick === IDLE} title="Use this animation for the move" onClick={() => onSave(pick, clipPick ? timing : undefined, clipPick ? travel : undefined)}>Save</button>}
             <button onClick={onClose}>Close preview</button>
           </div>
         </div>

@@ -20,6 +20,7 @@ import * as energy from './energy'
 import * as gun from './gun'
 import * as holster from './holster'
 import { Retarget, type MoveAnims } from './moveanim'
+import type { Retimed } from './strikes'
 import type { Effects } from './effects'
 import { EFFECT_FIELDS, effectNames, OWN_EFFECTS, Slots } from './effectslots'
 import * as projectiles from './projectiles'
@@ -285,6 +286,30 @@ export const WALL_JUMPS = ['WallJumpOff', 'WallJumpToWall', 'WallRunJumpOff']
 export const WALL_STATES = [...WALL_CLIMB, ...WALL_RUN, ...WALL_JUMPS]
 export const RANGE_GRAB = ['WirePull']
 export const LOW_ENERGY_STUN = ['LowEnergyStun']
+
+// e.g. 'hits from the clip: left arm at 4-8 (was right arm at 6-13)'
+export function hitsText(t: Retimed): string {
+  const span = (f: number, g: number) => `${formatG(Math.round(f * 10) / 10)}-${formatG(Math.round(g * 10) / 10)}`
+  const each = t.moved.map((m) => `${reach.LIMB_LABELS[m.limb]} at ${span(m.from, m.to)}${m.limb !== m.was.limb ? ` (was the ${reach.LIMB_LABELS[m.was.limb]})` : ''}`)
+  const missed = t.moved.length - t.matched
+  return `hits from the clip: ${each.join(', ')}${missed ? `; ${missed} of ${t.moved.length} found no strike and keep the stretched timing` : ''}`
+}
+
+// moves whose base version travels (Root moving across the ground)
+export function travelling(src: GameSource, base: R.BaseCharacter): string[] {
+  const set = motionSetOf(base), stem = stemOf(set)
+  const bundles = loadBundles(src, stem)
+  const mine = resolved(src, nmstool.parse(src.entry(`Motions/${set}`)), holds(bundles))
+  const recs = new Map([...bundles.values()].flat().map((r) => [r.name.toLowerCase(), r]))
+  const moves = (rec: ngbtool.Record | undefined) => (rec?.tracks.find(([b, ch]) => b === 0 && ch === 1)?.[2] ?? []).some(([, v]) => Math.hypot(...ngbtool.translation(v).slice(0, 2)) > 0.01)
+  return MOVES.filter((m) => m.states.some((st) => moves(recs.get(mine.get(st.toLowerCase())?.anim.toLowerCase() ?? '')))).map((m) => m.id)
+}
+
+// whether the base's version of a move has hit windows (hit volumes on)
+export function hasHits(cat: Catalog, base: string, move: Move): boolean {
+  const plans = cat[base]?.reach ?? {}
+  return (animations(cat, base, move) ?? []).some((a) => a !== null && plans[a.toLowerCase()]?.kind === 'hit')
+}
 
 // Whether a move can take an imported clip: one that plays only on the character, since a clip has no victim half.
 export const animatable = (move: Move) => !move.states.some((s) => VICTIM.test(s))
@@ -721,6 +746,8 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
         for (const n of rt.notes) notes.push(`moves: ${pick.file}: ${n}`)
       }
       let length = 0, stretch = 1
+      let timed: Retimed | null | undefined
+      let travelled: Retarget['travelled'] | undefined
       for (const state of move.states) {
         const m = now.get(state.toLowerCase())
         if (!m) continue
@@ -729,7 +756,12 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
           return rec ? [[slot, rec]] : []
         })
         if (!found.length) throw new LabError(`${base.label}'s ${state} has no animation to replace`)
-        const out = found.map(([slot, rec]): [string, ngbtool.Record] => [slot, sizedRec(rt.record(rec, pick.clip, plainModel.nodes, motionFps(m.opts)))])
+        const out = found.map(([slot, rec]): [string, ngbtool.Record] => {
+          const made = rt.record(rec, pick.clip, plainModel.nodes, motionFps(m.opts), pick.timing ?? null, pick.travel ?? null)
+          if (timed === undefined) timed = rt.timed
+          if (travelled === undefined) travelled = rt.travelled
+          return [slot, sizedRec(made)]
+        })
         length = out[0][1].length
         stretch = found[0][1].length > 0 ? length / found[0][1].length : 1
         const anim = ownName(out[0][1])
@@ -741,7 +773,9 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
         own.set({ state: m.state, anim, opts: m.opts })
       }
       if (!length) throw new LabError(`${base.label} has no ${move.label.toLowerCase()} to replace`)
-      notes.push(`moves: ${move.label} plays ${pick.clip} (${length} frames; ${base.label}'s timing cues ${stretch === 1 ? 'kept' : `stretched ×${formatG(Math.round(stretch * 100) / 100)}`})`)
+      const cues = `${base.label}'s timing cues ${stretch === 1 ? 'kept' : `stretched ×${formatG(Math.round(stretch * 100) / 100)}`}`
+      const travel = travelled ? `; travels ${formatG(Math.round(travelled.distance * 100) / 100)} m as ${base.label}'s does${travelled.shortened ? ', shortened to keep pace with the shorter clip' : ''}` : ''
+      notes.push(`moves: ${move.label} plays ${pick.clip} (${length} frames; ${pick.timing !== 'clip' ? cues : timed ? hitsText(timed) : `no hits to time from the clip, so ${cues}`}${travel})`)
     }
   }
   if (idle.length) {

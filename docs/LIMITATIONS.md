@@ -120,6 +120,21 @@ Moves taken from other bases (`moves`, [`FORMAT.md`](FORMAT.md)):
 - **A recolored line is a copy** of about 190 bytes per costume, out of the effect cache (above).
 - **The super throw range** (`super_throw_range`) needs the character's own tuning file, so a line in the tuning list (above). A long range with a close grab slides the character over to the opponent.
 
+## Imported move animations
+
+Moves that play a clip from a glTF file (`move_anims`, [`FORMAT.md`](FORMAT.md)):
+
+- **The clip has to be on the model's rig.** A clip from another rig (a Mixamo clip on a Biped model) is refused.
+- **Facing is guessed.** A file whose clips face another way than its rest pose needs a turn (`move_anim_files`); the import guesses it in steps of 90° and can guess wrong.
+- **Hit timing is the base's, stretched,** unless timed from the clip: a hit lands where the base's does in the move, not where the clip's swing does.
+- **Timed hits are found by a heuristic,** right about 84% of the time against about 32% stretched. A step forward can pass for a kick; a body blow or shoulder charge has no strike to find; a move with more hits than the clip has strikes keeps the stretched timing for the rest.
+- **Travel is the base's or the clip's, not both.** A clip that steps on its own steps on top of the base's travel, and one that stands still slides; a short clip on a long lunge travels less (at most 1.5 times the base's pace). With the clip's own, chained attacks fall short of an opponent they knock back.
+- **Projectile launches, wires and lines aren't found in the clip;** they keep the stretched timing.
+- **The fit is approximate.** Limb lengths stay the base's, so hands may sit a little off the body and feet may slide.
+- **Fingers move only where the mapping maps them.**
+- **No throws.**
+- **Space:** each clip adds about as much as the base's version of the move, and the `.imperfect` file keeps the whole animation file.
+
 ## Idle moves
 
 Moves that play the idle animation (`move_idle`, [`FORMAT.md`](FORMAT.md)):

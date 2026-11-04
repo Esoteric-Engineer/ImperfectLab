@@ -250,6 +250,8 @@ export interface MoveLines {
 export interface MoveAnim {
   file: string
   clip: string
+  timing?: 'clip'
+  travel?: 'base'
 }
 export const ANIM_FILE = /^animations\/[A-Za-z0-9_-]{1,48}\.glb$/
 // How an animation file's clips are turned to face the model's front (manifest `move_anim_files`).
@@ -1019,10 +1021,18 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     if (!animatable(move)) throw new LabError(`manifest: move_anims.${id} plays on the opponent too, so it can't take an imported animation`)
     if (c.moves[id]) throw new LabError(`manifest: move_anims names ${id}, which is taken from another base`)
     if (c.moveIdle.includes(id)) throw new LabError(`manifest: move_anims names ${id}, which plays the idle`)
-    const a = keys(v, ['file', 'clip'], `move_anims.${id}`)
+    const a = keys(v, ['file', 'clip', 'timing', 'travel'], `move_anims.${id}`)
     const file = str(a.file, `move_anims.${id}.file`, 80, ANIM_FILE)!
     if (!files.has(file)) throw new LabError(`manifest: move_anims.${id} names ${file}, which the file lacks`)
     c.moveAnims[id] = { file, clip: str(a.clip, `move_anims.${id}.clip`, 200)! }
+    if (a.timing !== undefined) {
+      if (a.timing !== 'clip') throw new LabError(`manifest: move_anims.${id}.timing is 'clip' or left out`)
+      c.moveAnims[id].timing = 'clip'
+    }
+    if (a.travel !== undefined) {
+      if (a.travel !== 'base') throw new LabError(`manifest: move_anims.${id}.travel is 'base' or left out`)
+      c.moveAnims[id].travel = 'base'
+    }
   }
   c.moveAnimFiles = {}
   for (const [member, v] of Object.entries(typed<Record<string, unknown>>(m.move_anim_files ?? {}, 'object', 'move_anim_files'))) {

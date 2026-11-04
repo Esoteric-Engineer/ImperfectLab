@@ -13,6 +13,7 @@ import { Joint, type Model, type Vec3 } from '../model/glb'
 import { autoMap, type Mapping, type Overrides } from '../model/mapping'
 import type { Skeleton } from '../model/skeleton'
 import { mul, Scene, split, tr } from './cutanim'
+import { type Retimed, retime } from './strikes'
 
 type Mat3 = ngbtool.Mat3
 type Quat = [number, number, number, number]
@@ -21,6 +22,7 @@ const IDENT: Mat3 = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
 const ROT_TOL = 1.5 / 16384
 const POS_TOL = 1e-4
 const TRAVEL = 0.01
+const SPEED_SLACK = 1.5
 
 export const ANIM_PREFIX = 'anim:'
 
@@ -29,9 +31,14 @@ export interface ClipInfo {
   seconds: number
 }
 
+export type Timing = 'clip'
+export type Travel = 'base'
+
 export interface AnimPick {
   file: string
   clip: string
+  timing?: Timing
+  travel?: Travel
 }
 
 export interface FitParams {
@@ -171,6 +178,8 @@ const apply = (a: Mat3, v: Vec3): Vec3 => [0, 1, 2].map((i) => a[i][0] * v[0] + 
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
 const flagged = (bone: number) => bone > 0xffff
+// each key has its own divisor, so decode before interpolating
+const at = (keys: ngbtool.Key[], f: number): Vec3 => ngbtool.sample(keys.map(([g, v]): [number, Vec3] => [g, ngbtool.translation(v)]), f)
 // a turn about the game's up axis, degrees counter-clockwise seen from above (to the character's left)
 const turnMat = (deg: number): Mat3 => {
   const a = (deg * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a)
@@ -227,6 +236,9 @@ export class Retarget {
   // the clip's poses into the game's frame: C, then the file's turn
   private pre: Mat3
   notes: string[] = []
+  // set by record(), for the notes
+  timed: Retimed | null = null
+  travelled: { distance: number; shortened: boolean } | null = null
   // game node -> [the clip's node, the turn after the joint's world delta]
   private targets = new Map<number, [number, Mat3]>()
   // twist node -> its limb's node
@@ -285,8 +297,10 @@ export class Retarget {
     this.pelvisRest = restOf(pj)[1]
   }
 
-  // The template record moved by the clip, at fps frames a second.
-  record(template: ngbtool.Record, clip: string, nodes: ngmtool.Node[], fps: number): ngbtool.Record {
+  // The template record moved by the clip.
+  record(template: ngbtool.Record, clip: string, nodes: ngmtool.Node[], fps: number, timing: Timing | null = null, travel: Travel | null = null): ngbtool.Record {
+    this.timed = null
+    this.travelled = null
     const [scene, t0, t1] = this.file.scene(clip)
     const n = Math.max(1, Math.round((t1 - t0) * fps))
     const frames = Array.from({ length: n + 1 }, (_, f) => f)
@@ -300,13 +314,17 @@ export class Retarget {
     for (const [b, ch, keys] of template.tracks) if (!flagged(b) && b < N && keys.length) (ch === 0 ? tplRot : tplPos).set(b, scaled(keys))
     const rootKeys = tplPos.get(0)
     const travels = !!rootKeys && rootKeys.some(([, v]) => Math.hypot(...ngbtool.translation(v).slice(0, 2)) > TRAVEL)
+    const baseTravel = travels && travel === 'base', clipTravel = travels && !baseTravel
     const driven = (i: number) => this.targets.has(i) || this.twists.has(i)
+    // the Root marker (the camera follows it): kept with the base's travel, left out with the clip's
+    const marker = (b: number, ch: number) => ch === 1 && b > 0 && b < N && parentOf(b) === 0 && !driven(b)
 
     const rots = new Map<number, Mat3[]>(), pos = new Map<number, Vec3[]>()
     const push = <T>(m: Map<number, T[]>, i: number, v: T) => {
       if (!m.has(i)) m.set(i, [])
       m.get(i)!.push(v)
     }
+    const root0: Vec3 = rootKeys ? at(rootKeys, 0) : [0, 0, 0]
     let start: Vec3 | null = null
     for (const f of frames) {
       const world = scene.worlds(t0 + Math.min(f / fps, t1 - t0))
@@ -324,12 +342,12 @@ export class Retarget {
           W.push(mul(PW, keys ? ngbtool.qmat(ngbtool.quat(ngbtool.sample(keys, f))) : IDENT))
         }
       }
-      // the pelvis lands where the clip's moved from its rest, by the fit's scale
       const p = apply(this.pre, split(world(this.pelvisNode))[1])
       start ??= p
-      const pelvisWorld = add(bind[this.pelvis], sub(p, apply(this.C, this.pelvisRest)).map((x) => x * this.fit.S) as Vec3)
-      let rootKey: Vec3 = rootKeys ? ngbtool.translation(ngbtool.sample(rootKeys, f)) : [0, 0, 0]
-      if (travels) {
+      let pelvisWorld = add(bind[this.pelvis], sub(p, apply(this.C, this.pelvisRest)).map((x) => x * this.fit.S) as Vec3)
+      let rootKey: Vec3 = rootKeys ? at(rootKeys, f) : [0, 0, 0]
+      if (baseTravel) pelvisWorld = add(pelvisWorld, sub(rootKey, root0))
+      if (clipTravel) {
         const d = sub(p, start).map((x) => x * this.fit.S)
         rootKey = [d[0], d[1], 0]
         push(pos, 0, rootKey)
@@ -343,29 +361,78 @@ export class Retarget {
       }
     }
 
+    const kept = (keys: ngbtool.Key[], time: (f: number) => number): ngbtool.Key[] => {
+      const out: ngbtool.Key[] = []
+      for (const [f, v] of keys) {
+        const g = Math.min(n, time(f))
+        if (out.length && out[out.length - 1][0] >= g - 1e-6) out[out.length - 1] = [out[out.length - 1][0], v]
+        else out.push([g, v])
+      }
+      return out
+    }
     const made = new Map<string, ngbtool.Key[]>()
     for (const [i, rs] of rots) made.set(`${i}.0`, quatKeys(frames, rs))
     for (const [i, ps] of pos) made.set(`${i}.1`, posKeys(frames, ps))
-    const tracks: ngbtool.Track[] = []
-    const done = new Set<string>()
-    for (const [b, ch, keys] of template.tracks) {
-      const key = `${b}.${ch}`
-      if (flagged(b) || b >= N) tracks.push([b, ch, scaled(keys)])
-      else if (made.has(key)) {
-        if (!done.has(key)) tracks.push([b, ch, made.get(key)!])
-        done.add(key)
-      } else if (!driven(b) && !(ch === 1 && b === this.pelvis)) tracks.push([b, ch, scaled(keys)])
+    const assemble = (time: (f: number) => number): ngbtool.Track[] => {
+      const tracks: ngbtool.Track[] = []
+      const done = new Set<string>()
+      for (const [b, ch, keys] of template.tracks) {
+        const key = `${b}.${ch}`
+        if (flagged(b) || b >= N) tracks.push([b, ch, kept(keys, time)])
+        else if (clipTravel && marker(b, ch)) continue
+        else if (made.has(key)) {
+          if (!done.has(key)) tracks.push([b, ch, made.get(key)!])
+          done.add(key)
+        } else if (!driven(b) && !(ch === 1 && b === this.pelvis)) tracks.push([b, ch, kept(keys, time)])
+      }
+      // a new track goes before the first of a later node, as the other generators add theirs
+      for (const [key, keys] of made) {
+        if (done.has(key)) continue
+        const [b, ch] = key.split('.').map(Number)
+        let i = tracks.findIndex(([tb, tc]) => (tb & 0xffff) > b || (tb === b && tc > ch))
+        if (i < 0) i = tracks.length
+        tracks.splice(i, 0, [b, ch, keys])
+      }
+      return tracks
     }
-    // a new track goes before the first of a later node, as the other generators add theirs
-    for (const [key, keys] of made) {
-      if (done.has(key)) continue
-      const [b, ch] = key.split('.').map(Number)
-      let i = tracks.findIndex(([tb, tc]) => (tb & 0xffff) > b || (tb === b && tc > ch))
-      if (i < 0) i = tracks.length
-      tracks.splice(i, 0, [b, ch, keys])
+    const speed = (keys: ngbtool.Key[] | undefined, length: number) => {
+      let top = 0
+      if (keys?.length) for (let f = 0; f < length; f++) {
+        const a = at(keys, f), b = at(keys, Math.min(f + 1, length))
+        top = Math.max(top, Math.hypot(b[0] - a[0], b[1] - a[1]))
+      }
+      return top
     }
+    const rootTrack = (tracks: ngbtool.Track[]) => tracks.find(([b, ch]) => b === 0 && ch === 1)?.[2]
+    const capped = (tracks: ngbtool.Track[]): ngbtool.Track[] => {
+      if (!baseTravel) return tracks
+      const keys = rootTrack(tracks)!
+      const far = (s: number) => {
+        this.travelled = { distance: s * Math.max(...keys.map(([, v]) => Math.hypot(...sub(ngbtool.translation(v), ngbtool.translation(keys[0][1])).slice(0, 2)))), shortened: s < 1 }
+      }
+      const was = speed(template.tracks.find(([b, ch]) => b === 0 && ch === 1)?.[2], template.length), now = speed(keys, n)
+      if (!(now > was * SPEED_SLACK) || was <= 0) {
+        far(1)
+        return tracks
+      }
+      const s = (was * SPEED_SLACK) / now
+      far(s)
+      const shrink = (keys: ngbtool.Key[]): ngbtool.Key[] => {
+        const o = ngbtool.translation(keys[0][1])
+        return keys.map(([f, v]) => {
+          const t = ngbtool.translation(v)
+          return [f, ngbtool.encodeTranslation([o[0] + (t[0] - o[0]) * s, o[1] + (t[1] - o[1]) * s, t[2]])]
+        })
+      }
+      return tracks.map(([b, ch, keys]): ngbtool.Track => (keys.length && ((b === 0 && ch === 1) || marker(b, ch)) ? [b, ch, shrink(keys)] : [b, ch, keys]))
+    }
+    const tracks = capped(assemble((f) => f * k))
     const events = template.events.map(([f, t, p, v]): ngbtool.Event => [f > 0 ? Math.min(n, Math.round(f * k * 100) / 100) : f, t, p, v])
-    return { ...template, head: template.head.slice(), length: n, pointers: [], tracks, events, extra: template.extra.map((x) => x.slice()) }
+    const out = { ...template, head: template.head.slice(), length: n, pointers: [], tracks, events, extra: template.extra.map((x) => x.slice()) }
+    if (timing !== 'clip') return out
+    this.timed = retime(template, out, nodes, this.sk)
+    // the template's tracks move with the hits, as its events do
+    return this.timed ? { ...out, events: this.timed.events, tracks: capped(assemble((f) => Math.round(this.timed!.warp(f) * 100) / 100)) } : out
   }
 }
 

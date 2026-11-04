@@ -7,7 +7,8 @@ import { Builder, glowRgba, gunPlanOf, onBackPlan, patch, type Progress, propSha
 import * as effects from '../core/build/effects'
 import * as eyes from '../core/build/eyes'
 import * as gun from '../core/build/gun'
-import { animGlb, animsOf, ClipFile, guessTurn, parseChoice } from '../core/build/moveanim'
+import { animGlb, animsOf, ClipFile, guessTurn, parseChoice, type Timing, type Travel } from '../core/build/moveanim'
+import * as reach from '../core/build/reach'
 import * as moves from '../core/build/moves'
 import * as portraits from '../core/build/portraits'
 import * as laser from '../core/build/laser'
@@ -185,6 +186,10 @@ export class Service {
         return { key, label: R.label(key), body: 'male', stats: [], altStats: [], hudName: '', icon: null, skeleton: null, error: e.message }
       }
     })
+  }
+
+  moveTravels(base: string): string[] {
+    return moves.travelling(this.src(), this.base(base))
   }
 
   moveCatalog(): moves.Catalog {
@@ -505,7 +510,7 @@ export class Service {
     return { slim, clips: file.clips, joints: file.joints.size, turn, credit: { by: text(x.author), license: text(x.license), url: text(x.source) } }
   }
 
-  movePreview(c: imperfect.Character, moveId: string, from: string | null = null): MovePreview | string {
+  movePreview(c: imperfect.Character, moveId: string, from: string | null = null, timing: Timing | null = null, travel: Travel | null = null): MovePreview | string {
     const move = moves.MOVE_IDS.get(moveId)
     if (!move) return `there is no move ${moveId}`
     if (from !== null) {
@@ -515,7 +520,7 @@ export class Service {
       const clip = parseChoice(from)
       if (clip) {
         delete c.moves[moveId]
-        c.moveAnims[moveId] = clip
+        c.moveAnims[moveId] = { ...clip, ...(timing && { timing }), ...(travel && { travel }) }
       } else if (from === c.base) delete c.moves[moveId]
       else c.moves[moveId] = from
     }
@@ -561,7 +566,13 @@ export class Service {
     notes.push(...mf.notes.filter((n) => n.startsWith(`moves: ${move.label} `) || n.startsWith(`reach: ${move.label} `)).map((n) => n.slice(n.indexOf(': ') + 2)))
     const variants = moves.played(src, mf, c.internalName, move).map((p) => ({ state: p.state, slot: p.slot, fps: moves.motionFps(p.opts), rec: p.rec }))
     const baseMesh = baseMeshes(src, base).map((m) => (c.size === 1 ? m : { ...m, positions: m.positions.map((v) => v * c.size) }))
-    return { nodes: mf.model.nodes, variants, custom, base: previewTextures(baseMesh), notes }
+    let hitBones: MovePreview['hitBones'] = {}
+    try {
+      hitBones = reach.bonesOf(new Skeleton(mf.model, base.body))
+    } catch (e) {
+      if (!(e instanceof LabError)) throw e
+    }
+    return { nodes: mf.model.nodes, variants, custom, base: previewTextures(baseMesh), notes, hitBones }
   }
 
   private materialSource(c: imperfect.Character, x: imperfect.Material): RgbaImage | null {

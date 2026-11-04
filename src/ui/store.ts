@@ -89,6 +89,7 @@ class Store {
   private skeletons = new Map<string, Skeleton | null>()
   private details = new Map<string, BaseDetails | 'loading'>()
   private moves: Catalog | 'loading' | null = null
+  private travels = new Map<string, string[] | 'loading'>()
   private cutscenes: CutsceneCatalog | Promise<CutsceneCatalog> | null = null
   private effectFits = new Map<string, EffectFit | 'loading'>()
   private moveFits = new Map<string, Record<string, MoveEffectFit> | 'loading'>()
@@ -253,6 +254,7 @@ class Store {
     this.skeletons.clear()
     this.details.clear()
     this.moves = null
+    this.travels.clear()
     this.cutscenes = null
     this.effectFits.clear()
     this.moveFits.clear()
@@ -312,6 +314,23 @@ class Store {
       return null
     }
     return d === 'loading' ? null : d
+  }
+
+  // null while loading
+  moveTravels(base = this.character.base): Set<string> | null {
+    if (!this.game) return null
+    const d = this.travels.get(base)
+    if (d === undefined) {
+      this.travels.set(base, 'loading')
+      const game = this.game
+      engine.call<string[]>('moveTravels', [base]).then((v) => {
+        if (this.game !== game) return
+        this.travels.set(base, v)
+        this.emit()
+      }, (e) => this.fail(e))
+      return null
+    }
+    return d === 'loading' ? null : new Set(d)
   }
 
   moveCatalog(): Catalog | null {

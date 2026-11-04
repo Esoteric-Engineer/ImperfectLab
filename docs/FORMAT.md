@@ -18,6 +18,7 @@ A ZIP archive (deflate). Only these members may appear, and nothing else is read
 | `cutscenes/<name>.asf` | new cutscene audio ([`cutscenes`](#cutscenes); `<name>`: 1-48 of `A-Z a-z 0-9 _ -`) |
 | `cutscenes/<name>.glb` | new cutscene animation, binary glTF 2.0 ([`cutscenes`](#cutscenes)) |
 | `sounds/<name>.dsp` | sounds that replace the base's (`<name>`: 1-48 of `A-Z a-z 0-9 _ -`; [`sounds`](#sounds)) |
+| `animations/<name>.glb` | clips that moves play, binary glTF 2.0 (`<name>`: 1-48 of `A-Z a-z 0-9 _ -`; [`move_anims`](#move_anims)) |
 
 Readers must reject:
 - any other member name, an absolute path, `..`, a backslash, a directory entry, or a duplicate member;
@@ -80,6 +81,8 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
   "move_lines": { "color": "#C0C0C0", "alt_color": null },
   "move_reach": { "SuperAttackFar": { "distance": 15 }, "WireSwing": {} },
   "move_idle": ["Run"],
+  "move_anims": { "PowerOn": { "file": "animations/cyclops.glb", "clip": "power_3" } },
+  "move_anim_files": { "animations/cyclops.glb": { "turn": -90 } },
   "cutscenes": { "finisher": "wolverine", "audio": { "finisher_1": "cutscenes/finisher_1.asf" } },
   "sounds": { "3": {"file": "sounds/sound3.dsp"}, "10": {"game": "spiderman:4"} },
   "z_button": { "stealth": { "undetected": true, "untouchable": true, "visible": 0.2 }, "costume": { "normal": { "0": "alt" }, "alt": { "0": "textures/mat0_altz.png" } }, "stats": { "attack_damage_3": 40, "damage_taken": 0.5, "lift": "heavy" }, "size": 2, "bullet": 0.5, "gun": { "side": "right", "damage": 10, "energy": 5, "bullets": 3, "automatic": true, "holster": { "place": "back_right", "position": [0.05, -0.2, 0.05], "rotation": [-90, 45, 180] }, "swap": { "position": [0.05, -0.2, 0.05], "rotation": [-90, 45, 0] }, "sound": "116:3" }, "requires": { "energy": { "seconds": 8, "regen": false } } },
@@ -243,6 +246,18 @@ Not allowed on `SuperAttackFar` with `base_moves.throw_reach`. See [`LIMITATIONS
 ### `move_idle`
 Optional, left out when empty. A list of move ids (not `Stand`, and none in `moves`) that play the character's idle (`Stand`) animation instead of their own. A move that plays once keeps its length, events and root (its travel and turning), with the idle's pose on every other bone. A looping move (`Run`, `Walk`) plays the idle itself, at the idle's own rate instead of the move's stride. The victim's side of a throw is unchanged.
 Not allowed with `move_reach` on the same move, nor on `SuperAttackFar` with `base_moves.throw_reach`. See [`LIMITATIONS.md`](LIMITATIONS.md).
+
+### `move_anims`
+Optional, left out when empty. Move id -> a clip of an `animations/` member that the move plays instead of the base's animation:
+- `file`: the `animations/` member.
+- `clip`: the name of one of its glTF animations.
+- `timing` (optional): `clip` to time the move's hit windows from the clip's strikes; left out, the base's timing is stretched to the clip's length.
+- `travel` (optional): `base` to keep the base move's Root travel; left out, Root takes the clip's own ground travel.
+
+The move can't be in `moves` or `move_idle`, and can't be one with a victim (a throw). It can be stretched (`move_reach`). The clip's joints are named as the model's (`model`); with no model, as the presets map them. An `animations/` member keeps the glTF's nodes, skin and animations; the meshes, materials and images are dropped. See [`LIMITATIONS.md`](LIMITATIONS.md).
+
+### `move_anim_files`
+Optional, left out when no file is turned. `animations/` member -> `turn`: degrees (-180 to 180) its clips are turned about the up axis, counter-clockwise seen from above, before they are fitted. A file left out takes 0.
 
 ### `cutscenes`
 Optional, and left out when the character keeps its base's cutscenes and audio.

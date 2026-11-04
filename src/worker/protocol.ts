@@ -1,5 +1,6 @@
 import type { TintPlan } from '../core/build/effects'
 import type { ClipInfo } from '../core/build/moveanim'
+import type { Limb } from '../core/build/reach'
 import type { BatchCheck } from '../core/build/batch'
 import type { RgbaImage } from '../core/image/rgba'
 import type { Material, Pose } from '../core/package/imperfect'
@@ -86,6 +87,7 @@ export interface MovePreview {
   custom: MeshData[] | null
   base: MeshData[]
   notes: string[]
+  hitBones: Partial<Record<Limb, number>>
 }
 
 export interface LayoutInfo {

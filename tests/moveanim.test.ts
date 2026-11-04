@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { animChoice, animGlb, animsOf, ClipFile, clipList, guessTurn, parseChoice, reduce, Retarget } from '../src/core/build/moveanim'
 import * as moves from '../src/core/build/moves'
-import { utf8 } from '../src/core/bytes'
+import * as reach from '../src/core/build/reach'
+import { sha256 } from '@noble/hashes/sha2.js'
+import { toHex, utf8 } from '../src/core/bytes'
 import { LabError } from '../src/core/errors'
 import * as R from '../src/core/game/roster'
 import { GLB, type Json } from '../src/core/mnroi/gltf'
@@ -85,13 +87,21 @@ const PUNCH: Channel[] = [
   { node: 'LeftArm', path: 'rotation', times: [0, 0.2], values: [[0, 0, -S45, S45], [0, 0, -S45, S45]] },
 ]
 
-const clipGlb = () => withClips(makeGlb(), { bend: BEND, still: STILL })
+// a left jab: both arms down, the left one straight ahead at 4/30 s and back down by 8/30
+const DOWN_L = [0, 0, -S45, S45], AHEAD_L = [0, -S45, 0, S45]
+const JAB: Channel[] = [
+  { node: 'LeftArm', path: 'rotation', times: [0, 2 / 30, 4 / 30, 6 / 30, 8 / 30, 0.5], values: [DOWN_L, DOWN_L, AHEAD_L, DOWN_L, DOWN_L, DOWN_L] },
+  { node: 'RightArm', path: 'rotation', times: [0, 0.5], values: [[0, 0, S45, S45], [0, 0, S45, S45]] },
+]
+
+const LONG_STILL: Channel[] = [{ node: 'Hips', path: 'translation', times: [0, 3], values: [[0, 1.0, 0], [0, 1.0, 0]] }]
+const clipGlb = () => withClips(makeGlb(), { bend: BEND, still: STILL, long_still: LONG_STILL })
 
 describe('animation files', () => {
   it('lists the clips and their lengths, and keeps them when slimmed', () => {
     const raw = clipGlb()
     const file = new ClipFile(raw)
-    expect(file.clips.map((x) => x.name)).toEqual(['bend', 'still'])
+    expect(file.clips.map((x) => x.name)).toEqual(['bend', 'still', 'long_still'])
     expect(file.clips[0].seconds).toBeCloseTo(1 / 3, 5)
     expect(file.joints.get('mixamorig:Hips')).toBe(0)
     const slim = animGlb(raw)
@@ -102,7 +112,7 @@ describe('animation files', () => {
     const again = new ClipFile(slim)
     expect(again.clips).toEqual(file.clips)
     expect([...again.joints]).toEqual([...file.joints])
-    expect(clipList(slim).map((x) => x.name)).toEqual(['bend', 'still'])
+    expect(clipList(slim).map((x) => x.name)).toEqual(['bend', 'still', 'long_still'])
   })
 
   it('refuses a file with no animations or no skin', () => {
@@ -140,8 +150,14 @@ describe('the project file', () => {
     expect(back.moveAnims).toEqual(c.moveAnims)
     expect([...back.files.keys()]).toEqual(['animations/hero.glb'])
     expect(imperfect.manifest(imperfect.newCharacter()).move_anims).toBeUndefined()
-    expect(imperfect.animFiles(back).map(([m, n, clips]) => [m, n, clips.length])).toEqual([['animations/hero.glb', 'hero', 2]])
+    expect(imperfect.animFiles(back).map(([m, n, clips]) => [m, n, clips.length])).toEqual([['animations/hero.glb', 'hero', 3]])
     expect(back.moveAnimFiles).toEqual({})
+    expect(JSON.stringify(imperfect.manifest(c).move_anims)).not.toContain('timing')
+    c.moveAnims.PowerOn.timing = 'clip'
+    c.moveAnims.PowerOn.travel = 'base'
+    expect(imperfect.load(imperfect.save(c)).moveAnims.PowerOn).toEqual({ file: 'animations/hero.glb', clip: 'bend', timing: 'clip', travel: 'base' })
+    delete c.moveAnims.PowerOn.timing
+    delete c.moveAnims.PowerOn.travel
     c.moveAnimFiles = { 'animations/hero.glb': { turn: -90 } }
     expect(imperfect.load(imperfect.save(c)).moveAnimFiles).toEqual(c.moveAnimFiles)
   })
@@ -159,6 +175,8 @@ describe('the project file', () => {
     expect(reload((c) => { c.moveIdle = ['PowerOn'] })).toThrow('idle')
     expect(reload((c) => { c.moveAnimFiles = { 'animations/other.glb': { turn: 90 } } })).toThrow('lacks')
     expect(reload((c) => { c.moveAnimFiles = { 'animations/hero.glb': { turn: 270 } } })).toThrow('-180 to 180')
+    expect(reload((c) => { (c.moveAnims.PowerOn as { timing?: string }).timing = 'base' })).toThrow('timing')
+    expect(reload((c) => { (c.moveAnims.PowerOn as { travel?: string }).travel = 'clip' })).toThrow('travel')
   })
 
   it('finds a missing clip, and a file no move plays', () => {
@@ -171,9 +189,9 @@ describe('the project file', () => {
 })
 
 describe.skipIf(!ISO)('retargeting a clip', () => {
-  const setup = () => {
+  const setup = (key = 'wolverine') => {
     const src = gameSource()
-    const base = new R.BaseCharacter(src, 'wolverine')
+    const base = new R.BaseCharacter(src, key)
     const model = ngmtool.read(base.bundleFiles()[0])[1][0]
     const sk = new Skeleton(model, base.body)
     const glb = clipGlb()
@@ -219,14 +237,53 @@ describe.skipIf(!ISO)('retargeting a clip', () => {
     for (const [, , keys] of rec.tracks) for (const [f] of keys) expect(f).toBeLessThanOrEqual(rec.length)
   })
 
-  it("puts no travel on Root for a clip that stays in place, though the template's travels", () => {
-    const { model, rt, template } = setup()
-    const travel = (r: ngbtool.Record) => {
-      const keys = r.tracks.find(([b, ch]) => b === 0 && ch === 1)?.[2] ?? []
-      return Math.max(0, ...keys.map(([, v]) => Math.hypot(...ngbtool.translation(v).slice(0, 2))))
+  it("keeps the base's travel and its Root marker, and carries the clip's body along with them", () => {
+    const { model, sk, rt, template } = setup()
+    const marker = sk.nodes.find((x) => x.name === 'Root marker')!.index
+    const last = (r: ngbtool.Record, b: number) => {
+      const keys = r.tracks.find(([bb, ch]) => bb === b && ch === 1)?.[2] ?? []
+      return keys.length ? ngbtool.translation(keys[keys.length - 1][1]) : [0, 0, 0]
     }
-    expect(travel(template)).toBeGreaterThan(0.1)
-    expect(travel(rt.record(template, 'still', model.nodes, 30))).toBeLessThan(1e-3)
+    expect(Math.hypot(...last(template, 0).slice(0, 2))).toBeGreaterThan(0.1)
+    // a 3 s clip, longer than Wolverine's attack: no squeeze, so the whole travel
+    const rec = rt.record(template, 'long_still', model.nodes, 30, null, 'base')
+    expect(rec.length).toBeGreaterThan(template.length)
+    last(rec, 0).forEach((v, i) => expect(v).toBeCloseTo(last(template, 0)[i], 2))
+    last(rec, marker).forEach((v, i) => expect(v).toBeCloseTo(last(template, marker)[i], 2))
+    const pelvis = sk.node('pelvis')!
+    const moved = ngbtool.pose(model, rec, rec.length)[pelvis][1][1] - ngbtool.pose(model, rec, 0)[pelvis][1][1]
+    expect(moved).toBeCloseTo(last(template, 0)[1] - ngbtool.translation(rec.tracks.find(([b, ch]) => b === 0 && ch === 1)![2][0][1])[1], 2)
+  })
+
+  it("with the clip's own travel, leaves out the Root marker's, so it stays on Root (the camera follows it)", () => {
+    // Magneto's attacks move the Root marker against the travel
+    const { model, sk, rt, template } = setup('magneto')
+    const marker = sk.nodes.find((x) => x.name === 'Root marker')!.index
+    expect(template.tracks.some(([b, ch]) => b === marker && ch === 1)).toBe(true)
+    const rec = rt.record(template, 'still', model.nodes, 30)
+    expect(rt.travelled).toBeNull()
+    expect(rec.tracks.some(([b, ch]) => b === marker && ch === 1)).toBe(false)
+    // the clip stands still: Root barely moves
+    const keys = rec.tracks.find(([b, ch]) => b === 0 && ch === 1)![2]
+    expect(Math.max(...keys.map(([, v]) => Math.hypot(...ngbtool.translation(v).slice(0, 2))))).toBeLessThan(1e-3)
+  })
+
+  it('squeezes a travel into a short clip no faster than half again the base\'s', () => {
+    const { model, rt, template } = setup()
+    const top = (r: ngbtool.Record) => {
+      const keys = r.tracks.find(([b, ch]) => b === 0 && ch === 1)![2]
+      let best = 0
+      for (let f = 0; f < r.length; f++) {
+        const a = ngbtool.translation(ngbtool.sample(keys, f)), b = ngbtool.translation(ngbtool.sample(keys, f + 1))
+        best = Math.max(best, Math.hypot(b[0] - a[0], b[1] - a[1]))
+      }
+      return best
+    }
+    // bend is a third of a second: Wolverine's attack squeezed to 10 frames
+    const rec = rt.record(template, 'bend', model.nodes, 30, null, 'base')
+    expect(rec.length).toBe(10)
+    expect(top(rec)).toBeLessThanOrEqual(top(template) * 1.5 + 0.01)
+    expect(rt.travelled?.shortened).toBe(true)
   })
 
   it('guesses the turn that faces a file\'s attacks forward, and turns its clips by it', () => {
@@ -246,6 +303,43 @@ describe.skipIf(!ISO)('retargeting a clip', () => {
     const left = reach(0), ahead = reach(-90)
     expect(left[0]).toBeLessThan(-0.95)
     expect(ahead[1]).toBeGreaterThan(0.95)
+  })
+
+  // pins the records as first built
+  it('builds the same records with the base\'s timing and the clip\'s travel as it did', () => {
+    const { model, sk, m, auto, template } = setup()
+    const file = new ClipFile(animGlb(withClips(makeGlb(), { bend: BEND, still: STILL, attack_punch: PUNCH })))
+    const rig = { model: m, mapping: auto.mapping, overrides: auto.overrides, fit: { scale: null, flip: null } }
+    const hash = (turn: number, clip: string) => toHex(sha256(ngbtool.writeRecord(new Retarget(rig, sk, file, turn).record(template, clip, model.nodes, 30))))
+    const want: Record<string, string> = {
+      'bend 0': '9eb748724d47a8bd708c2979963fbf065e69574126111872112165bb8268792b',
+      'bend -90': '591d3d48d0016c0133140261262ae80962600bbf29c2a1341a611baf6e8bb37d',
+      'still 0': '159f238acadc9c3f626b1e28456e05b914dac8b431ccfe558fb78736dcf894a5',
+      'still -90': '05e1e36eb8f7a5d1925f731fc6b07d041ec847fe7ebce64edbb1597a5fca39b3',
+      'attack_punch 0': 'aa29a475f28f7321ff1c701070d824966d5ceb995ccc3753a98a27e1acfdd980',
+      'attack_punch -90': '57fe00e0c1a86b8a0479311a1a29aaf956bf5d8890882280efe063a2907509ae',
+    }
+    for (const [key, sum] of Object.entries(want)) {
+      const [clip, turn] = key.split(' ')
+      expect(hash(Number(turn), clip), key).toBe(sum)
+    }
+  })
+
+  it("moves the template's hits onto the clip's strike, on the clip's limb, when timed from the clip", () => {
+    const { model, sk, m, auto, template } = setup()
+    const file = new ClipFile(animGlb(withClips(makeGlb(), { attack_jab: JAB })))
+    const rt = new Retarget({ model: m, mapping: auto.mapping, overrides: auto.overrides, fit: { scale: null, flip: null } }, sk, file)
+    const stretched = rt.record(template, 'attack_jab', model.nodes, 30)
+    expect(rt.timed).toBeNull()
+    const timed = rt.record(template, 'attack_jab', model.nodes, 30, 'clip')
+    expect(rt.timed).not.toBeNull()
+    expect(timed.tracks.map(([b, ch]) => `${b}.${ch}`)).toEqual(stretched.tracks.map(([b, ch]) => `${b}.${ch}`))
+    expect(timed.events.length).toBe(template.events.length)
+    expect(timed.events.every(([f]) => f >= 0 && f <= timed.length)).toBe(true)
+    const p = reach.plan(timed.events, timed.length)!
+    expect(p.kind).toBe('hit')
+    expect(p.windows.some((w) => w.limb === 'left_arm' && w.from <= 4 && 4 <= w.to)).toBe(true)
+    expect(moves.hitsText(rt.timed!)).toMatch(/^hits from the clip: left arm at /)
   })
 
   it('refuses a clip from a rig without the joints the model maps', () => {
@@ -283,5 +377,9 @@ describe.skipIf(!ISO)('retargeting a clip', () => {
     expect(r.variants.length).toBeGreaterThan(0)
     expect(r.variants[0].rec.length).toBe(Math.round(r.variants[0].fps))
     expect(r.notes.some((n) => n.startsWith('Power on plays still'))).toBe(true)
+    // Power on has no hits, so a clip's timing keeps the stretched cues and says so
+    const t = s.movePreview({ ...c, moveAnims: {} }, 'PowerOn', pick, 'clip') as MovePreview
+    expect(t.notes.some((n) => n.includes('no hits to time from the clip'))).toBe(true)
+    expect(Object.keys(t.hitBones).sort()).toEqual(['left_arm', 'left_leg', 'right_arm', 'right_leg'])
   })
 })
