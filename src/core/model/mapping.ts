@@ -133,7 +133,7 @@ function compareScore(a: [number, number], b: [number, number]): number {
 // Rigs built on an exported base keep this tool's own bone names. Covers every node.
 const gameName: Normalize = (name) => name.replace(/[\s_]+/g, ' ').trim().toLowerCase()
 
-function gameNameMap(model: Model, skeleton: Skeleton): Mapping {
+export function gameNameMap(model: Pick<Model, 'jointNames'>, skeleton: Skeleton): Mapping {
   const lookup = new Map<string, string>()
   for (const n of model.jointNames()) {
     const k = gameName(n)

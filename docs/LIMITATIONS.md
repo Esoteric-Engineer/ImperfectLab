@@ -124,7 +124,10 @@ Moves taken from other bases (`moves`, [`FORMAT.md`](FORMAT.md)):
 
 Moves that play a clip from a glTF file (`move_anims`, [`FORMAT.md`](FORMAT.md)):
 
-- **The clip has to be on the model's rig.** A clip from another rig (a Mixamo clip on a Biped model) is refused.
+- **The clip has to be on the model's rig,** or on the game's own skeleton (a base's exported animations, edited). A clip from another rig (a Mixamo clip on a Biped model) is refused.
+- **On the game's skeleton, only the body bones are the clip's.** Root's turn, and the markers and props (hand markers, palms, the Root marker the camera follows), stay the base's. Clips from another base of the same body class play bone for bone; another body class is approximate.
+- **A base's exported animations are large:** about 6 MB (2.5 MB compressed) in the `.imperfect` file once imported.
+- **Assign changed clips** finds a clip only if a body bone is more than 1 cm or 2° off, or a frame count differs; a smaller edit has to be picked on its move by hand.
 - **Facing is guessed.** A file whose clips face another way than its rest pose needs a turn (`move_anim_files`); the import guesses it in steps of 90° and can guess wrong.
 - **Hit timing is the base's, stretched,** unless timed from the clip: a hit lands where the base's does in the move, not where the clip's swing does.
 - **Timed hits are found by a heuristic,** right about 84% of the time against about 32% stretched. A step forward can pass for a kick; a body blow or shoulder charge has no strike to find; a move with more hits than the clip has strikes keeps the stretched timing for the rest.

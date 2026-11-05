@@ -251,10 +251,11 @@ Not allowed with `move_reach` on the same move, nor on `SuperAttackFar` with `ba
 Optional, left out when empty. Move id -> a clip of an `animations/` member that the move plays instead of the base's animation:
 - `file`: the `animations/` member.
 - `clip`: the name of one of its glTF animations.
+- `states` (optional): state -> clip, the clip each of the move's states plays instead of `clip` (`Block` has `BlockStart`, `Block`, `BlockEnd`). Each key is one of the move's states.
 - `timing` (optional): `clip` to time the move's hit windows from the clip's strikes; left out, the base's timing is stretched to the clip's length.
 - `travel` (optional): `base` to keep the base move's Root travel; left out, Root takes the clip's own ground travel.
 
-The move can't be in `moves` or `move_idle`, and can't be one with a victim (a throw). It can be stretched (`move_reach`). The clip's joints are named as the model's (`model`); with no model, as the presets map them. An `animations/` member keeps the glTF's nodes, skin and animations; the meshes, materials and images are dropped. See [`LIMITATIONS.md`](LIMITATIONS.md).
+The move can't be in `moves` or `move_idle`, and can't be one with a victim (a throw). It can be stretched (`move_reach`). The clip's joints are named as the model's (`model`); with no model, as the presets map them. A file whose joints are named as the game's bones drives the base's bones directly, with or without a model. An `animations/` member keeps the glTF's nodes, skin and animations; the meshes, materials and images are dropped. See [`LIMITATIONS.md`](LIMITATIONS.md).
 
 ### `move_anim_files`
 Optional, left out when no file is turned. `animations/` member -> `turn`: degrees (-180 to 180) its clips are turned about the up axis, counter-clockwise seen from above, before they are fitted. A file left out takes 0.

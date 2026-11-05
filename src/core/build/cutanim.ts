@@ -55,13 +55,13 @@ const apply = (a: Mat3, v: Vec3): Vec3 => [0, 1, 2].map((i) => a[i][0] * v[0] + 
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
 // glTF's quaternions are (x, y, z, w), ngbtool's are (w, x, y, z)
-const toGltf = ([w, x, y, z]: Quat) => [x, y, z, w]
+export const toGltf = ([w, x, y, z]: Quat) => [x, y, z, w]
 const kind = (t: cuttool.Track) => u32le(t.head, 4)
 // A performer's bone word with flags in its high half is a second track on its node. Those tracks stay as they are.
 const flagged = (t: cuttool.Track) => cuttool.bone(t) > 0xffff
 const actorIn = (ch: cuttool.Chunk, name: string) => ch.actors.find((a) => cuttool.recordName(a.record).toLowerCase() === name.toLowerCase()) ?? null
 
-function rest(nodes: ngmtool.Node[]): Vec3[] {
+export function rest(nodes: ngmtool.Node[]): Vec3[] {
   const out: Vec3[] = []
   nodes.forEach(([q, , parent], i) => {
     const local: Vec3 = [q[0], q[1], q[2]]
@@ -70,7 +70,7 @@ function rest(nodes: ngmtool.Node[]): Vec3[] {
   return out
 }
 
-class Writer {
+export class Writer {
   json: Json = { asset: { version: '2.0', generator: 'ImperfectLab' }, scene: 0, scenes: [{ nodes: [] }], nodes: [], meshes: [], skins: [], cameras: [], animations: [], accessors: [], bufferViews: [], buffers: [] }
   bin = new ByteWriter(1 << 16)
 
@@ -91,6 +91,10 @@ class Writer {
     for (const r of rows) r.forEach((v, k) => { min[k] = Math.min(min[k], Math.fround(v)); max[k] = Math.max(max[k], Math.fround(v)) })
     const view = this.view(() => { for (const r of rows) for (const v of r) this.bin.f32le(v) })
     return this.json.accessors.push({ bufferView: view, componentType: 5126, count: rows.length, type, min, max }) - 1
+  }
+
+  blob(data: Uint8Array): number {
+    return this.view(() => this.bin.bytes(data))
   }
 
   shorts(rows: number[][], type: string): number {
@@ -129,11 +133,38 @@ function timeline(cut: cuttool.Cut, actor: string, bone: number, ch: number, val
   return out
 }
 
-function hemisphere(keys: [number, number[]][]) {
+export function hemisphere(keys: [number, number[]][]) {
   for (let i = 1; i < keys.length; i++) {
     const a = keys[i - 1][1], b = keys[i][1]
     if (a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3] < 0) keys[i][1] = b.map((x) => -x)
   }
+}
+
+// An actor's skeleton as a skinned armature under a node `name`.
+export function armature(g: Writer, name: string, rg: Rig, markers = true): { root: number; joints: number[]; skin: number } {
+  const root = g.node({ name, children: [] })
+  g.json.scenes[0].nodes.push(root)
+  const joints = rg.nodes.map(([q], i) => g.node({ name: rg.names[i], translation: conv(q) }))
+  rg.nodes.forEach(([, , parent], i) => (parent >= 0 && parent < i ? (g.json.nodes[joints[parent]].children ??= []) : g.json.nodes[root].children).push(joints[i]))
+  const at = rest(rg.nodes).map((p) => conv(p))
+  const ibm = g.floats(at.map(([x, y, z]) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -x, -y, -z, 1]), 'MAT4')
+  const skin = g.json.skins.push({ name, joints, inverseBindMatrices: ibm }) - 1
+  if (!markers) return { root, joints, skin }
+  const pos: number[][] = [], jnt: number[][] = [], wgt: number[][] = [], idx: number[][] = []
+  at.forEach((p, i) => {
+    const b = pos.length
+    for (const d of [[MARK, 0, 0], [0, MARK, 0], [0, 0, MARK], [0, 0, 0]]) pos.push(add(p, d as Vec3))
+    for (let k = 0; k < 4; k++) {
+      jnt.push([i, 0, 0, 0])
+      wgt.push([1, 0, 0, 0])
+    }
+    idx.push([b, b + 1, b + 2], [b, b + 3, b + 1], [b + 1, b + 3, b + 2], [b, b + 2, b + 3])
+  })
+  if (pos.length > 0xffff) throw new LabError(`${name}'s skeleton has too many bones to export`)
+  const prim = { attributes: { POSITION: g.floats(pos, 'VEC3'), JOINTS_0: g.shorts(jnt, 'VEC4'), WEIGHTS_0: g.floats(wgt, 'VEC4') }, indices: g.shorts(idx.flat().map((v) => [v]), 'SCALAR') }
+  const mesh = g.json.meshes.push({ name: `${name}_joints`, primitives: [prim] }) - 1
+  g.json.nodes[root].children.push(g.node({ name: `${name}_joints`, mesh, skin }))
+  return { root, joints, skin }
 }
 
 // The cutscene's cameras and the actors with a rig, animated; the others are left out.
@@ -166,27 +197,7 @@ export function toGlb(cut: cuttool.Cut, rigs: Rigs): Uint8Array {
     }
     const rg = rigs.get(name.toLowerCase())
     if (!rg) continue
-    const root = g.node({ name, children: [] })
-    g.json.scenes[0].nodes.push(root)
-    const joints = rg.nodes.map(([q], i) => g.node({ name: rg.names[i], translation: conv(q) }))
-    rg.nodes.forEach(([, , parent], i) => (parent >= 0 && parent < i ? (g.json.nodes[joints[parent]].children ??= []) : g.json.nodes[root].children).push(joints[i]))
-    const at = rest(rg.nodes).map((p) => conv(p))
-    const ibm = g.floats(at.map(([x, y, z]) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -x, -y, -z, 1]), 'MAT4')
-    const skin = g.json.skins.push({ name, joints, inverseBindMatrices: ibm }) - 1
-    const pos: number[][] = [], jnt: number[][] = [], wgt: number[][] = [], idx: number[][] = []
-    at.forEach((p, i) => {
-      const b = pos.length
-      for (const d of [[MARK, 0, 0], [0, MARK, 0], [0, 0, MARK], [0, 0, 0]]) pos.push(add(p, d as Vec3))
-      for (let k = 0; k < 4; k++) {
-        jnt.push([i, 0, 0, 0])
-        wgt.push([1, 0, 0, 0])
-      }
-      idx.push([b, b + 1, b + 2], [b, b + 3, b + 1], [b + 1, b + 3, b + 2], [b, b + 2, b + 3])
-    })
-    const prim = { attributes: { POSITION: g.floats(pos, 'VEC3'), JOINTS_0: g.shorts(jnt, 'VEC4'), WEIGHTS_0: g.floats(wgt, 'VEC4') }, indices: g.shorts(idx.flat().map((v) => [v]), 'SCALAR') }
-    if (pos.length > 0xffff) throw new LabError(`${name}'s skeleton has too many bones to export`)
-    const mesh = g.json.meshes.push({ name: `${name}_joints`, primitives: [prim] }) - 1
-    g.json.nodes[root].children.push(g.node({ name: `${name}_joints`, mesh, skin }))
+    const joints = armature(g, name, rg).joints
     for (const bone of used(name, 0)) if (bone < joints.length) animate(joints[bone], 'rotation', timeline(cut, name, bone, 0, (p) => toGltf(ngbtool.matQuat(mul(mul(M, ngbtool.qmat(ngbtool.quat(p))), M))), [0, 0, 0, 1]))
     for (const bone of used(name, 1)) if (bone < joints.length) animate(joints[bone], 'translation', timeline(cut, name, bone, 1, (p) => conv(add(ngbtool.translation(p), rg.nodes[bone][0].slice(0, 3) as Vec3)), conv(rg.nodes[bone][0])))
   }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { animChoice, parseChoice, type Timing, type Travel, TURNS } from '../../core/build/moveanim'
+import { animChoice, clipList, parseChoice, stateClips, type Timing, type Travel, TURNS } from '../../core/build/moveanim'
+import type { Changes } from '../../core/build/moveexport'
 import { addOptions, animatable, animations, CATEGORIES, hasHits, type Catalog, LOW_ENERGY_STUN, type Move, MOVE_IDS, MOVES, options, RANGE_GRAB, WALL_JUMPS } from '../../core/build/moves'
 import * as holster from '../../core/build/holster'
 import * as reach from '../../core/build/reach'
@@ -11,7 +12,7 @@ import { ColorButton, Note, NumberInput, Warning } from '../components/common'
 import { MovePreviewDialog } from '../components/MovePreviewDialog'
 import { Viewport } from '../components/viewport'
 import { engine, errorText } from '../engine'
-import { pickFile } from '../../io/files'
+import { download, pickFile } from '../../io/files'
 import type { ImportedAnimations } from '../../worker/protocol'
 import { store, useStore } from '../store'
 
@@ -127,9 +128,12 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
       delete c.moves[move.id]
       delete c.moveEffects[move.id]
       const t = timing === undefined ? was?.timing : timing
-      // so chained attacks close in on the opponent
-      const g = travel === undefined ? (was ? was.travel : travels ? 'base' : undefined) : travel
-      c.moveAnims[move.id] = { ...anim, ...(t && { timing: t }), ...(g && { travel: g }) }
+      // so chained attacks close in on the opponent; a set's clip already carries the base's travel
+      const fromSet = move.states.some((s) => s.toLowerCase() === anim.clip.toLowerCase())
+      const g = travel === undefined ? (was ? was.travel : travels && !fromSet ? 'base' : undefined) : travel
+      const data = store.character.files.get(anim.file)
+      const states = stateClips(move.states, anim.clip, data ? clipList(data).map((x) => x.name) : [])
+      c.moveAnims[move.id] = { ...anim, ...(states && { states }), ...(t && { timing: t }), ...(g && { travel: g }) }
     } else if (v && v !== IDLE) c.moves[move.id] = v
     else {
       delete c.moves[move.id]
@@ -168,6 +172,7 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
           <PreviewButton move={move} onSave={locked ? undefined : (from, timing, travel) => choose(from === c.base ? '' : from, timing, travel)} />
         </div>
         {!opts.length && !offer && !picked && !files.length && <span className="muted"> no other version</span>}
+        {clip?.states && <div className="muted" title="Each state of the move plays its own clip">plays {move.states.map((s) => clip.states![s] ?? clip.clip).join(' / ')}</div>}
       </td>
       <td className="fx">
         {picked && <MoveEffects id={move.id} from={picked} />}
@@ -241,6 +246,47 @@ function AnimationFiles() {
     })
   }
 
+  const exportSet = async () => {
+    try {
+      download(await engine.call<Uint8Array>('moveAnimations', [c.base]), `${label(c.base)} - animations.glb`, 'model/gltf-binary')
+    } catch (e) {
+      store.fail(`The animations could not be exported:\n${errorText(e)}`)
+    }
+  }
+
+  // Every move with a clip that differs from the base's own plays it (each state its own clip).
+  const assignChanged = async (member: string, clips: string[]) => {
+    await store.edit(async () => {
+      let got: Changes
+      try {
+        got = await engine.call<Changes>('changedClips', [copyCharacter({ ...c, glb: null }), member])
+      } catch (e) {
+        store.fail(`The clips could not be compared:\n${errorText(e)}`)
+        return
+      }
+      const first = new Map<string, string>()
+      for (const x of got.changed) if (!first.has(x.move)) first.set(x.move, x.clip)
+      const replaced: string[] = []
+      for (const [id, clip] of first) {
+        const move = MOVE_IDS.get(id)!
+        if (c.moves[id]) replaced.push(`${move.label} (from ${label(c.moves[id])})`)
+        else if (c.moveIdle.includes(id)) replaced.push(`${move.label} (idle)`)
+        else if (c.moveAnims[id] && c.moveAnims[id].file !== member) replaced.push(`${move.label} (${c.moveAnims[id].clip})`)
+        delete c.moves[id]
+        delete c.moveEffects[id]
+        c.moveIdle = c.moveIdle.filter((m) => m !== id)
+        const was = c.moveAnims[id]
+        const states = stateClips(move.states, clip, clips)
+        c.moveAnims[id] = { file: member, clip, ...(states && { states }), ...(was?.timing && { timing: was.timing }) }
+      }
+      const names = [...first.keys()].map((id) => MOVE_IDS.get(id)!.label)
+      store.message(first.size
+        ? `${names.length} move${names.length === 1 ? '' : 's'} now play${names.length === 1 ? 's' : ''} the changed clip${names.length === 1 ? '' : 's'}: ${names.join(', ')}; ${got.same} clip${got.same === 1 ? '' : 's'} unchanged${replaced.length ? `. Replaced: ${replaced.join(', ')}` : ''}`
+        : `None of the ${got.same} clips differ from ${label(c.base)}'s own animations`, 12000)
+      store.touch('character')
+    })
+  }
+
   const remove = (member: string) => {
     c.files.delete(member)
     delete c.moveAnimFiles[member]
@@ -257,12 +303,39 @@ function AnimationFiles() {
       <h4>Imported animations</h4>
       <Note>
         Play a clip from a glTF file (.glb) as a move: import the file, then pick its clip in the move's list, under Imported.
-        The clips have to be on your model's rig (the joint names the Model page maps). Some rigs face one way at rest and another in their clips: Facing turns the clips (it is guessed on import from which way the attacks reach). They are fitted onto {label(c.base)}'s skeleton the way the model is, and keep {label(c.base)}'s timing cues (hits, effects, sounds), stretched to the clip's length.<br />
+        The clips have to be on your model's rig (the joint names the Model page maps), or on the game's own skeleton (a base's animations, downloaded below and edited). Some rigs face one way at rest and another in their clips: Facing turns the clips (it is guessed on import from which way the attacks reach). They are fitted onto {label(c.base)}'s skeleton the way the model is, and keep {label(c.base)}'s timing cues (hits, effects, sounds), stretched to the clip's length.<br />
         Moves with a victim (throws) can't take a clip.
       </Note>
+      <details>
+        <summary><b>Editing {label(c.base)}'s animations in Blender</b></summary>
+        <ol>
+          <li>Download {label(c.base)}'s animations below. Each state of a move is a clip named after it (<code>Attack1</code>, <code>BlockStart</code>, <code>Block</code>, <code>BlockEnd</code> ...).</li>
+          <li>Open Blender and set the scene to <b>30 fps</b> via Output Properties &gt; Frame Rate.</li>
+          <li>Go to File &gt; Import &gt; glTF 2.0, and import the downloaded file. Each clip is an action on the armature.</li>
+          <li>Edit the actions you want to change.</li>
+          <li>
+            Export via File &gt; Export &gt; glTF 2.0 (.glb):
+            <ul>
+              <li>Ensure <b>Format</b> is set to <code>glTF Binary (.glb)</code>.</li>
+              <li>Under <b>Animation</b>, ensure <b>Sampling Animations</b> is unchecked, and that every action is exported.</li>
+            </ul>
+          </li>
+          <li>Import the exported <code>.glb</code> with <b>Import animations</b>, then <b>Assign changed clips</b> to play every clip you changed (or pick clips one move at a time).</li>
+        </ol>
+        <Note>
+          Good to Know:
+          <ul>
+            <li>Don't rename any bones or actions. The bone names put the clips on the game's skeleton, and the action names say which state each clip is.</li>
+            <li>The clips play on {label(c.base)}'s skeleton bone for bone, so they work with or without a custom model. Clips from another base of the same body class are fitted to this one.</li>
+            <li>Root carries the move's travel. Its turn, and the markers and props (hand markers, palms, Root marker), stay as {label(c.base)}'s.</li>
+            <li>The hits, effects and sounds stay where {label(c.base)}'s are, stretched if a clip gets longer or shorter (or follow the clip's strikes with <b>Hits: from the clip</b>).</li>
+            <li>Don't ask me for help with animating. <a href="https://youtu.be/gFAuKtT_o-0" target='_blank'>You can almost certainly do it better than I can.</a></li>
+          </ul>
+        </Note>
+      </details>
       {files.length > 0 && (
         <table className="gameplay grid">
-          <thead><tr><th>File</th><th>Clips</th><th title="Which way the clips play: some rigs face one way at rest and another in their clips">Facing</th><th>Played by</th><th></th></tr></thead>
+          <thead><tr><th>File</th><th>Clips</th><th title="Which way the clips play: some rigs face one way at rest and another in their clips">Facing</th><th>Played by</th><th></th><th></th></tr></thead>
           <tbody>
             {files.map(([member, name, clips]) => {
               const by = users(member)
@@ -276,6 +349,7 @@ function AnimationFiles() {
                     </select>
                   </td>
                   <td>{by.length ? by.join(', ') : <span className="muted">no move</span>}</td>
+                  <td><button className="small" title={`Play every clip that differs from ${label(c.base)}'s own animation on its move`} onClick={() => assignChanged(member, clips.map((x) => x.name))}>Assign changed clips</button></td>
                   <td><button className="small" disabled={by.length > 0} title={by.length ? 'Set the moves that play it to something else first' : undefined} onClick={() => remove(member)}>Remove</button></td>
                 </tr>
               )
@@ -283,7 +357,10 @@ function AnimationFiles() {
           </tbody>
         </table>
       )}
-      <div className="row"><button onClick={importGlb}>Import animations (.glb)...</button></div>
+      <div className="row">
+        <button onClick={importGlb}>Import animations (.glb)...</button>
+        <button onClick={exportSet} title={`Every move ${label(c.base)} plays, as clips on its skeleton, to edit in Blender and import back`}>Download {label(c.base)}'s animations (.glb)</button>
+      </div>
     </section>
   )
 }

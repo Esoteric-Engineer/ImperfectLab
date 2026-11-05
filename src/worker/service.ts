@@ -7,7 +7,8 @@ import { Builder, glowRgba, gunPlanOf, onBackPlan, patch, type Progress, propSha
 import * as effects from '../core/build/effects'
 import * as eyes from '../core/build/eyes'
 import * as gun from '../core/build/gun'
-import { animGlb, animsOf, ClipFile, guessTurn, parseChoice, type Timing, type Travel } from '../core/build/moveanim'
+import { animGlb, animsOf, ClipFile, guessTurn, parseChoice, stateClips, type Timing, type Travel } from '../core/build/moveanim'
+import * as moveexport from '../core/build/moveexport'
 import * as reach from '../core/build/reach'
 import * as moves from '../core/build/moves'
 import * as portraits from '../core/build/portraits'
@@ -510,6 +511,16 @@ export class Service {
     return { slim, clips: file.clips, joints: file.joints.size, turn, credit: { by: text(x.author), license: text(x.license), url: text(x.source) } }
   }
 
+  moveAnimations(base: string): Uint8Array {
+    return moveexport.movesGlb(this.src(), this.base(base))
+  }
+
+  changedClips(c: imperfect.Character, member: string): moveexport.Changes {
+    const data = c.files.get(member)
+    if (!data) throw new LabError(`the project has no animation file ${member}`)
+    return moveexport.changedClips(this.src(), this.base(c.base), this.clipFile(data), c.moveAnimFiles[member]?.turn ?? 0)
+  }
+
   movePreview(c: imperfect.Character, moveId: string, from: string | null = null, timing: Timing | null = null, travel: Travel | null = null): MovePreview | string {
     const move = moves.MOVE_IDS.get(moveId)
     if (!move) return `there is no move ${moveId}`
@@ -520,7 +531,9 @@ export class Service {
       const clip = parseChoice(from)
       if (clip) {
         delete c.moves[moveId]
-        c.moveAnims[moveId] = { ...clip, ...(timing && { timing }), ...(travel && { travel }) }
+        const data = c.files.get(clip.file)
+        const states = data ? stateClips(move.states, clip.clip, this.clipFile(data).clips.map((x) => x.name)) : undefined
+        c.moveAnims[moveId] = { ...clip, ...(states && { states }), ...(timing && { timing }), ...(travel && { travel }) }
       } else if (from === c.base) delete c.moves[moveId]
       else c.moves[moveId] = from
     }

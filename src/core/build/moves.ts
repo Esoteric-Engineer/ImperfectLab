@@ -393,13 +393,13 @@ export function idleRecord(rec: ngbtool.Record, idle: ngbtool.Record): ngbtool.R
   return { ...rec, tracks: all.map(([t]) => t), pointers: all.map(([, p]) => p) }
 }
 
-function loadBundles(src: GameSource, stem: string): Map<string, ngbtool.Record[]> {
+export function loadBundles(src: GameSource, stem: string): Map<string, ngbtool.Record[]> {
   const out = new Map<string, ngbtool.Record[]>()
   for (const slot of SLOTS) if (src.has(`Bundles/${stem}${slot}.ngb`)) out.set(slot, ngbtool.parse(src.entry(`Bundles/${stem}${slot}.ngb`)))
   return out
 }
 
-const holds = (bundles: Map<string, ngbtool.Record[]>) => {
+export const holds = (bundles: Map<string, ngbtool.Record[]>) => {
   const names = new Set([...bundles.values()].flatMap((rs) => rs.map((r) => r.name.toLowerCase())))
   return (anim: string) => names.has(anim.toLowerCase())
 }
@@ -757,7 +757,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
         })
         if (!found.length) throw new LabError(`${base.label}'s ${state} has no animation to replace`)
         const out = found.map(([slot, rec]): [string, ngbtool.Record] => {
-          const made = rt.record(rec, pick.clip, plainModel.nodes, motionFps(m.opts), pick.timing ?? null, pick.travel ?? null)
+          const made = rt.record(rec, pick.states?.[state] ?? pick.clip, plainModel.nodes, motionFps(m.opts), pick.timing ?? null, pick.travel ?? null)
           if (timed === undefined) timed = rt.timed
           if (travelled === undefined) travelled = rt.travelled
           return [slot, sizedRec(made)]
@@ -775,7 +775,8 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       if (!length) throw new LabError(`${base.label} has no ${move.label.toLowerCase()} to replace`)
       const cues = `${base.label}'s timing cues ${stretch === 1 ? 'kept' : `stretched ×${formatG(Math.round(stretch * 100) / 100)}`}`
       const travel = travelled ? `; travels ${formatG(Math.round(travelled.distance * 100) / 100)} m as ${base.label}'s does${travelled.shortened ? ', shortened to keep pace with the shorter clip' : ''}` : ''
-      notes.push(`moves: ${move.label} plays ${pick.clip} (${length} frames; ${pick.timing !== 'clip' ? cues : timed ? hitsText(timed) : `no hits to time from the clip, so ${cues}`}${travel})`)
+      const clips = [...new Set(move.states.filter((s) => now.has(s.toLowerCase())).map((s) => pick.states?.[s] ?? pick.clip))].join(' / ')
+      notes.push(`moves: ${move.label} plays ${clips} (${length} frames; ${pick.timing !== 'clip' ? cues : timed ? hitsText(timed) : `no hits to time from the clip, so ${cues}`}${travel})`)
     }
   }
   if (idle.length) {

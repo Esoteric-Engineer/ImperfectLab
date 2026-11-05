@@ -250,6 +250,7 @@ export interface MoveLines {
 export interface MoveAnim {
   file: string
   clip: string
+  states?: Record<string, string>
   timing?: 'clip'
   travel?: 'base'
 }
@@ -611,7 +612,10 @@ export function problems(c: Character): Problem[] {
     const label = MOVE_IDS.get(id)?.label ?? id
     const data = c.files.get(pick.file)
     if (!data) out.push(['error', `the animation file of ${label} (${pick.file}) is missing`])
-    else if (!clipList(data).some((x) => x.name === pick.clip)) out.push(['error', `${label} plays ${pick.clip}, which ${pick.file} doesn't have`])
+    else {
+      const have = new Set(clipList(data).map((x) => x.name))
+      for (const clip of new Set([pick.clip, ...Object.values(pick.states ?? {})])) if (!have.has(clip)) out.push(['error', `${label} plays ${clip}, which ${pick.file} doesn't have`])
+    }
     if (c.moves[id] || c.moveIdle.includes(id)) out.push(['error', `${label} plays an imported animation and another one: pick one on the Moves page`])
   }
   for (const member of Object.keys(c.moveAnimFiles)) if (!c.files.has(member)) out.push(['error', `the animation file ${member} is missing`])
@@ -1021,10 +1025,19 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     if (!animatable(move)) throw new LabError(`manifest: move_anims.${id} plays on the opponent too, so it can't take an imported animation`)
     if (c.moves[id]) throw new LabError(`manifest: move_anims names ${id}, which is taken from another base`)
     if (c.moveIdle.includes(id)) throw new LabError(`manifest: move_anims names ${id}, which plays the idle`)
-    const a = keys(v, ['file', 'clip', 'timing', 'travel'], `move_anims.${id}`)
+    const a = keys(v, ['file', 'clip', 'states', 'timing', 'travel'], `move_anims.${id}`)
     const file = str(a.file, `move_anims.${id}.file`, 80, ANIM_FILE)!
     if (!files.has(file)) throw new LabError(`manifest: move_anims.${id} names ${file}, which the file lacks`)
     c.moveAnims[id] = { file, clip: str(a.clip, `move_anims.${id}.clip`, 200)! }
+    if (a.states !== undefined) {
+      const states: Record<string, string> = {}
+      for (const [state, clip] of Object.entries(typed<Record<string, unknown>>(a.states, 'object', `move_anims.${id}.states`))) {
+        const own = move.states.find((s) => s === state)
+        if (!own) throw new LabError(`manifest: move_anims.${id}.states names ${JSON.stringify(state.slice(0, 40))}, which isn't a state of ${id} (${move.states.join(', ')})`)
+        states[own] = str(clip, `move_anims.${id}.states.${own}`, 200)!
+      }
+      if (Object.keys(states).length) c.moveAnims[id].states = states
+    }
     if (a.timing !== undefined) {
       if (a.timing !== 'clip') throw new LabError(`manifest: move_anims.${id}.timing is 'clip' or left out`)
       c.moveAnims[id].timing = 'clip'

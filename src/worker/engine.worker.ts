@@ -11,7 +11,7 @@ import { Service } from './service'
 declare const self: DedicatedWorkerGlobalScope
 
 const service = new Service()
-const FRESH = new Set(['preview', 'holsterPreview', 'eyesPreview', 'projectilePreview', 'laserPreview', 'movePreview', 'materialThumbs', 'materialPngs', 'compose', 'layout', 'bases', 'stripOutlines', 'cutscenePcm', 'cutsceneAnimation', 'encodeCutsceneAudio', 'decodeCutsceneAudio', 'soundPcm', 'encodeSound'])
+const FRESH = new Set(['preview', 'holsterPreview', 'eyesPreview', 'projectilePreview', 'laserPreview', 'movePreview', 'materialThumbs', 'materialPngs', 'compose', 'layout', 'bases', 'stripOutlines', 'cutscenePcm', 'cutsceneAnimation', 'moveAnimations', 'encodeCutsceneAudio', 'decodeCutsceneAudio', 'soundPcm', 'encodeSound'])
 
 function fileReader(file: Blob): ReadAt {
   const reader = new FileReaderSync()
@@ -91,6 +91,8 @@ const handlers: Record<string, (progress: (stage: string, done?: number, total?:
   encodeSound: (_p, pcm: Int16Array, rate: number) => service.encodeSound(pcm, rate),
   importModel: (_p, raw: Uint8Array) => service.importModel(raw),
   importAnimations: (_p, raw: Uint8Array, base: string | null, map: Map<number, string> | null) => service.importAnimations(raw, base, map),
+  moveAnimations: (_p, base: string) => service.moveAnimations(base),
+  changedClips: (_p, c, member: string) => service.changedClips(c, member),
   setModel: (_p, glb: Uint8Array | null) => service.setModel(glb),
   autoMap: (_p, key: string) => service.autoMap(key),
   preview: (_p, c, needBase: boolean) => service.preview(c, needBase),

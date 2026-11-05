@@ -10,7 +10,7 @@ import * as ngbtool from '../mnroi/ngbtool'
 import type * as ngmtool from '../mnroi/ngmtool'
 import { Fit, type FitModel } from '../model/fit'
 import { Joint, type Model, type Vec3 } from '../model/glb'
-import { autoMap, type Mapping, type Overrides } from '../model/mapping'
+import { autoMap, gameNameMap, type Mapping, type Overrides } from '../model/mapping'
 import type { Skeleton } from '../model/skeleton'
 import { mul, Scene, split, tr } from './cutanim'
 import { type Retimed, retime } from './strikes'
@@ -22,6 +22,7 @@ const IDENT: Mat3 = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
 const ROT_TOL = 1.5 / 16384
 const POS_TOL = 1e-4
 const TRAVEL = 0.01
+const OFFSET = 1e-3
 const SPEED_SLACK = 1.5
 
 export const ANIM_PREFIX = 'anim:'
@@ -37,6 +38,7 @@ export type Travel = 'base'
 export interface AnimPick {
   file: string
   clip: string
+  states?: Record<string, string>
   timing?: Timing
   travel?: Travel
 }
@@ -172,6 +174,27 @@ export class ClipFile {
   }
 }
 
+// A file on the game's skeleton: its body bones by name (Root and the props stay the replaced record's). Null for any other rig.
+export function gameRig(file: ClipFile, sk: Skeleton): Mapping | null {
+  const map = gameNameMap(file.rig(), sk)
+  const body = sk.nodes.filter((n) => n.index > 0 && n.group !== 'props')
+  if (!sk.requiredRoles().every((r) => map.has(sk.node(r)!)) || body.filter((n) => map.has(n.index)).length < 0.9 * body.length) return null
+  for (const node of [...map.keys()]) if (node === 0 || sk.nodes[node]?.group === 'props') map.delete(node)
+  return map
+}
+
+// The clip per state of a move, when the file has clips named after its states (an exported set).
+export function stateClips(states: string[], clip: string, clips: string[]): Record<string, string> | undefined {
+  const named = new Map(clips.map((c) => [c.toLowerCase(), c]))
+  if (states.length < 2 || !states.some((s) => s.toLowerCase() === clip.toLowerCase())) return undefined
+  const out: Record<string, string> = {}
+  for (const s of states) {
+    const c = named.get(s.toLowerCase())
+    if (c && c !== clip) out[s] = c
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
 // glTF (y up) to the game (z up, facing +y), as the fit turns the model.
 const convMat = (flip: boolean): Mat3 => (flip ? [[1, 0, 0], [0, 0, -1], [0, 1, 0]] : [[-1, 0, 0], [0, 0, 1], [0, 1, 0]])
 const apply = (a: Mat3, v: Vec3): Vec3 => [0, 1, 2].map((i) => a[i][0] * v[0] + a[i][1] * v[1] + a[i][2] * v[2]) as Vec3
@@ -246,13 +269,21 @@ export class Retarget {
   private pelvis: number
   private pelvisNode: number
   private pelvisRest: Vec3
+  // game skeleton: bones that move against their parent, node -> [clip node, parent's clip node, offset at rest]
+  private offsets = new Map<number, [number, number, Vec3]>()
+  // game skeleton: the clip's Root and its rest place; it carries the travel
+  private rootNode: number | null = null
+  private rootRest: Vec3 = [0, 0, 0]
+  game = false
 
   constructor(rig: AnimRig, sk: Skeleton, file: ClipFile, turn = 0) {
     this.sk = sk
     this.file = file
     let model: FitModel, mapping = rig.mapping, overrides = rig.overrides, params = rig.fit
     let restG: GLB
-    if (rig.model) {
+    const own = gameRig(file, sk)
+    this.game = own !== null
+    if (rig.model && !own) {
       model = rig.model
       restG = rig.model.g
       const missing = [...mapping].filter(([, j]) => !file.joints.has(j))
@@ -263,16 +294,23 @@ export class Retarget {
     } else {
       model = file.rig()
       restG = file.g
-      const auto = autoMap(model, sk)
-      mapping = auto.mapping
-      overrides = auto.overrides
       params = { scale: null, torso_squash: true, flip: null }
-      this.notes.push(`no custom model, so the animation's rig is mapped by ${auto.preset}`)
+      if (own) {
+        // the model is skinned to these bones, so the clips drive them without the model's fit
+        mapping = own
+        overrides = new Map()
+        this.notes.push(`on the game's skeleton, bone for bone`)
+      } else {
+        const auto = autoMap(model, sk)
+        mapping = auto.mapping
+        overrides = auto.overrides
+        this.notes.push(`no custom model, so the animation's rig is mapped by ${auto.preset}`)
+      }
     }
     this.fit = new Fit(model, sk, mapping, overrides, params.scale, params.torso_squash ?? true, params.flip, params.floor_from_mesh ?? false)
     this.C = convMat(this.fit.flip)
     this.pre = mul(turnMat(turn), this.C)
-    const restJoints = rig.model ? jointNodes(restG) : file.joints
+    const restJoints = rig.model && !own ? jointNodes(restG) : file.joints
     const restWorld = restG.world()
     const restOf = (joint: string) => {
       const n = restJoints.get(joint)
@@ -284,7 +322,8 @@ export class Retarget {
       const at = file.joints.get(joint)
       if (at === undefined) continue
       // G = C Δ Cᵀ R⁻¹ with Δ = A B⁻¹: the post-turn is B⁻¹ Cᵀ R⁻¹
-      const R = this.fit.geo(joint).R as Mat3
+      // (on the game's skeleton, bones turn as they do in the clip, as the game shares moves between bases)
+      const R = own ? IDENT : (this.fit.geo(joint).R as Mat3)
       this.targets.set(node, [at, mul(mul(tr(restOf(joint)[0]), tr(this.C)), tr(R))])
     }
     for (const [role, [twistRole]] of Object.entries(sk.twist)) {
@@ -292,6 +331,19 @@ export class Retarget {
       if (limb !== undefined && twist !== undefined && this.targets.has(limb) && !this.targets.has(twist)) this.twists.set(twist, limb)
     }
     this.pelvis = sk.node('pelvis')!
+    if (own) {
+      const rootJoint = gameNameMap(model, sk).get(0)
+      if (rootJoint !== undefined && file.joints.has(rootJoint)) {
+        this.rootNode = file.joints.get(rootJoint)!
+        this.rootRest = restOf(rootJoint)[1]
+      }
+      for (const [node, joint] of mapping) {
+        const up = sk.nodes[node].parent, upJoint = up >= 0 ? mapping.get(up) : undefined
+        if (node === this.pelvis || upJoint === undefined) continue
+        const d = sub(restOf(joint)[1], restOf(upJoint)[1])
+        this.offsets.set(node, [file.joints.get(joint)!, file.joints.get(upJoint)!, apply(this.C, d).map((x) => x * this.fit.S) as Vec3])
+      }
+    }
     const pj = mapping.get(this.pelvis)!
     this.pelvisNode = file.joints.get(pj)!
     this.pelvisRest = restOf(pj)[1]
@@ -318,6 +370,7 @@ export class Retarget {
     const driven = (i: number) => this.targets.has(i) || this.twists.has(i)
     // the Root marker (the camera follows it): kept with the base's travel, left out with the clip's
     const marker = (b: number, ch: number) => ch === 1 && b > 0 && b < N && parentOf(b) === 0 && !driven(b)
+    const clipRoot = this.rootNode !== null && !baseTravel
 
     const rots = new Map<number, Mat3[]>(), pos = new Map<number, Vec3[]>()
     const push = <T>(m: Map<number, T[]>, i: number, v: T) => {
@@ -325,7 +378,7 @@ export class Retarget {
       m.get(i)!.push(v)
     }
     const root0: Vec3 = rootKeys ? at(rootKeys, 0) : [0, 0, 0]
-    let start: Vec3 | null = null
+    let start: Vec3 | null = null, rd0: Vec3 | null = null
     for (const f of frames) {
       const world = scene.worlds(t0 + Math.min(f / fps, t1 - t0))
       const target = new Map<number, Mat3>()
@@ -342,12 +395,28 @@ export class Retarget {
           W.push(mul(PW, keys ? ngbtool.qmat(ngbtool.quat(ngbtool.sample(keys, f))) : IDENT))
         }
       }
+      // offset from the parent, in the parent's frame, less its offset at rest
+      for (const [i, [at, upAt, rest]] of this.offsets) {
+        const up = parentOf(i)
+        if (up < 0) continue
+        const d = sub(split(world(at))[1], split(world(upAt))[1]).map((x) => x * this.fit.S) as Vec3
+        push(pos, i, sub(apply(tr(W[up]), apply(this.pre, d)), rest))
+      }
       const p = apply(this.pre, split(world(this.pelvisNode))[1])
       start ??= p
       let pelvisWorld = add(bind[this.pelvis], sub(p, apply(this.C, this.pelvisRest)).map((x) => x * this.fit.S) as Vec3)
       let rootKey: Vec3 = rootKeys ? at(rootKeys, f) : [0, 0, 0]
-      if (baseTravel) pelvisWorld = add(pelvisWorld, sub(rootKey, root0))
-      if (clipTravel) {
+      const rd = this.rootNode === null ? null : sub(apply(this.pre, split(world(this.rootNode))[1]), apply(this.C, this.rootRest)).map((x) => x * this.fit.S) as Vec3
+      rd0 ??= rd
+      if (baseTravel) {
+        // the clip's own travel gives way to the base's
+        if (rd) pelvisWorld = sub(pelvisWorld, sub(rd, rd0!))
+        pelvisWorld = add(pelvisWorld, sub(rootKey, root0))
+      }
+      if (clipRoot) {
+        rootKey = rd!
+        push(pos, 0, rootKey)
+      } else if (clipTravel) {
         const d = sub(p, start).map((x) => x * this.fit.S)
         rootKey = [d[0], d[1], 0]
         push(pos, 0, rootKey)
@@ -361,6 +430,8 @@ export class Retarget {
       }
     }
 
+    // only the offsets (and Root) the record keys or the clip moves
+    for (const i of [...this.offsets.keys(), ...(clipRoot ? [0] : [])]) if (!tplPos.has(i) && pos.get(i)?.every((v) => Math.hypot(...v) <= OFFSET)) pos.delete(i)
     const kept = (keys: ngbtool.Key[], time: (f: number) => number): ngbtool.Key[] => {
       const out: ngbtool.Key[] = []
       for (const [f, v] of keys) {
@@ -379,7 +450,7 @@ export class Retarget {
       for (const [b, ch, keys] of template.tracks) {
         const key = `${b}.${ch}`
         if (flagged(b) || b >= N) tracks.push([b, ch, kept(keys, time)])
-        else if (clipTravel && marker(b, ch)) continue
+        else if (clipTravel && !this.game && marker(b, ch)) continue
         else if (made.has(key)) {
           if (!done.has(key)) tracks.push([b, ch, made.get(key)!])
           done.add(key)
@@ -533,9 +604,10 @@ export function animsOf(c: { moveAnims: Record<string, AnimPick>; moveAnimFiles:
 
 const REACHING = /attack|punch|kick|strike|jab|hit/i
 
-// The turn (multiple of 90°) that brings a file's clips to face the model's front.
-// Read from where the clips named as attacks reach furthest; 0 when none is, nothing reaches, or the rig can't be mapped.
+// The turn (multiple of 90°) that brings a file's clips to face the model's front: none for a file on the game's skeleton.
+// Otherwise read from where the clips named as attacks reach furthest; 0 when none is, nothing reaches, or the rig can't be mapped.
 export function guessTurn(file: ClipFile, sk: Skeleton, mapping: Mapping | null = null): number {
+  if (gameRig(file, sk)) return 0
   const map = mapping && [...mapping.values()].every((j) => file.joints.has(j)) ? mapping : autoMap(file.rig(), sk).mapping
   const joint = (role: string) => {
     const n = sk.node(role)
