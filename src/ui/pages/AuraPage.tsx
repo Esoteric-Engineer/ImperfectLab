@@ -2,7 +2,7 @@ import * as effects from '../../core/build/effects'
 import * as projectileswap from '../../core/build/projectileswap'
 import * as trails from '../../core/build/trails'
 import { EYE_POSITION, EYE_SIZE, EYE_X, EYE_YZ, FLAME_SIZE, TRAIL_LENGTH } from '../../core/package/imperfect'
-import { ColorButton, Note, NumberInput, Warning } from '../components/common'
+import { ColorButton, Note, NumberInput, OptionCard, ToggleCard, Warning } from '../components/common'
 import { store, useStore } from '../store'
 import { PlacementView } from './MovesPage'
 
@@ -18,7 +18,6 @@ const LEVELS: [string, string][] = [
 ]
 
 const FLAME_MODES: [string, string][] = [
-  ['none', 'None'],
   ['parts', 'On chosen body parts'],
   ['body', 'Over the entire body'],
 ]
@@ -113,139 +112,137 @@ export function AuraPage() {
   return (
     <div className="page">
       <h3>Aura and effects</h3>
-      <Note>{about}</Note>
-      {TEXTS.map(([mode, text]) => (
-        <label key={mode} className="check block">
-          <input type="radio" name="aura" checked={c.aura.mode === mode} disabled={mode === 'tint' && !tintable}
-            onChange={() => { c.aura.mode = mode; edited() }} /> {text}
-        </label>
-      ))}
-      {tint && (
-        <Warning title="Tinting the aura is memory-intensive">
-          <p>
-            A tint copies the base's effects into the game's effect memory.
-            When the copies don't fit, the patch enlarges that memory, taking memory from what the characters are loaded into.
-          </p>
-          <p>
-            A tint paired with a large custom model can easily run a match out of memory (in Dolphin, showing an error like "Invalid write to 0x0000000c"). If that happens, try switching to <b>Idle and power-up effects only</b>. Alternatively, just use the <b>Base</b> or <b>Swapped</b> options, as these don't take any additional memory.
-          </p>
-          <p>
-            Note that tinted auras also require their own tuning files, and only a few of those fit when several characters are patched into a single ISO together.
-          </p>
-        </Warning>
-      )}
-      <div className="form">
-        <label>Tinted effects</label>
-        <select value={c.aura.tint} disabled={!tint} onChange={(e) => { c.aura.tint = e.target.value; edited() }}>
-          {LEVELS.map(([l, text]) => <option key={l} value={l} disabled={tooBig(l)}>{text}{memory(l)}</option>)}
-        </select>
-        <label>Costume 1 color</label>
-        <ColorButton color={c.aura.color} alpha disabled={!tint} onChange={(v) => { c.aura.color = v; edited() }} />
-        <label>Costume 2 color</label>
-        <ColorButton color={c.aura.alt_color} alpha disabled={!tint} onChange={(v) => { c.aura.alt_color = v; edited() }} />
-      </div>
-      <Note>
-        A fully transparent color (0%) hides that costume's effects, which takes much less memory than a tint.
-        Any other transparency still copies every effect.
-      </Note>
-      <p>{cost}</p>
-
-      <h3>Flames</h3>
-      <Note>
-        Add flames to the character on chosen parts or the whole body.
-      </Note>
-      {FLAME_MODES.map(([mode, text]) => (
-        <label key={mode} className="check block">
-          <input type="radio" name="flames" checked={flameMode === mode} onChange={() => setFlameMode(mode)} /> {text}
-        </label>
-      ))}
-      {flameMode === 'parts' && (
-        <div>
-          {PARTS.map(([part, text]) => (
-            <label key={part} className="check">
-              <input type="checkbox" checked={f.parts.includes(part)} onChange={(e) => togglePart(part, e.target.checked)} /> {text}
-            </label>
-          ))}
-        </div>
-      )}
-      <div className="form">
-        <label>Costume 1 flames</label>
-        <FlameColor color={f.color} onChange={(v) => { f.color = v; edited() }} />
-        <label>Costume 2 flames</label>
-        <FlameColor color={f.alt_color} onChange={(v) => { f.alt_color = v; edited() }} />
-        <label>Flame size</label>
-        <NumberInput value={f.size} min={FLAME_SIZE[0]} max={FLAME_SIZE[1]} step={0.1} disabled={flameMode === 'none'} onChange={(v) => { f.size = v; edited() }} />
-      </div>
-      <p>
-        {flameMode === 'none' ? '' : fireBytes ? `The flames add ${fireBytes} bytes to the game's effect memory.` : 'The flames use the game\'s own effect, which takes no more memory.'}
-      </p>
-      <h3>Motion Trails</h3>
-      <Note>
-        Colored trails that show while the character is moving.
-      </Note>
-      <div>
-        {TRAIL_PARTS.map(([part, text]) => (
-          <label key={part} className="check">
-            <input type="checkbox" checked={t.parts.includes(part)} onChange={(e) => toggleTrail(part, e.target.checked)} /> {text}
+      <Note>Recolor or swap the character's aura, and add various effects to the character.</Note>
+      <h4>Base effects</h4>
+      <OptionCard plain head="Aura" note={about}>
+        {TEXTS.map(([mode, text]) => (
+          <label key={mode} className="check block">
+            <input type="radio" name="aura" checked={c.aura.mode === mode} disabled={mode === 'tint' && !tintable}
+              onChange={() => { c.aura.mode = mode; edited() }} /> {text}
           </label>
         ))}
-      </div>
-      <div className="form">
-        <label>Costume 1 trails</label>
-        <ColorButton color={t.color} alpha disabled={!t.parts.length} onChange={(v) => { t.color = v; edited() }} />
-        <label>Costume 2 trails</label>
-        <ColorButton color={t.alt_color} alpha disabled={!t.parts.length} onChange={(v) => { t.alt_color = v; edited() }} />
-        <label>Trail length (seconds)</label>
-        <NumberInput value={t.length} min={TRAIL_LENGTH[0]} max={TRAIL_LENGTH[1]} step={0.05} disabled={!t.parts.length} onChange={(v) => { t.length = v; edited() }} />
-      </div>
-      <p>
-        {t.parts.length ? `The trails add ${trailBytes} bytes to the game's effect memory.` : ''}
-      </p>
-      <h3>Glowing Eyes</h3>
-      <label className="check block">
-        <input type="checkbox" checked={e.on} onChange={(ev) => { e.on = ev.target.checked; edited() }} /> Add glowing eyes
-      </label>
-      {e.on && c.base === 'ironman' && <Note>These replace Iron Man's own eye glow.</Note>}
-      <div className="form">
-        <label>Costume 1 eyes</label>
-        <ColorButton color={e.color} alpha disabled={!e.on} onChange={(v) => { e.color = v; edited() }} />
-        <label>Costume 2 eyes</label>
-        <ColorButton color={e.alt_color} alpha disabled={!e.on} onChange={(v) => { e.alt_color = v; edited() }} />
-        <label>Glow size</label>
-        <NumberInput value={e.size} min={EYE_SIZE[0]} max={EYE_SIZE[1]} step={0.05} disabled={!e.on} onChange={(v) => { e.size = v; edited() }} />
-      </div>
-      <Note>A fully transparent color (0%) gives that costume no glowing eyes.</Note>
-      {e.on && (
-        <>
-          <h4>Eye Location</h4>
-          <Note>
-            Where the eyes sit from the head bone. X moves both eyes away from the middle, one to each side.
-          </Note>
-          <div className="row">
-            <div>
-              <table className="gameplay grid">
-                <thead><tr><th>Axis</th><th>Position</th></tr></thead>
-                <tbody>
-                  {EYE_AXES.map(([axis, [lo, hi]], k) => (
-                    <tr key={axis}>
-                      <td>{axis}</td>
-                      <td><span><NumberInput min={lo} max={hi} step={0.005} value={e.position[k]} onChange={(v) => setEye(k, v)} /> m</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <button onClick={() => { e.position = [...EYE_POSITION]; edited() }}>Reset to Iron Man's</button>
+        {tint && (
+          <>
+            <Warning title="Tinting the aura is memory-intensive">
+              <p>
+                A tint copies the base's effects into the game's effect memory.
+                When the copies don't fit, the patch enlarges that memory, taking memory from what the characters are loaded into.
+              </p>
+              <p>
+                A tint paired with a large custom model can easily run a match out of memory (in Dolphin, showing an error like "Invalid write to 0x0000000c"). If that happens, try switching to <b>Idle and power-up effects only</b>. Alternatively, just use the <b>Base</b> or <b>Swapped</b> options, as these don't take any additional memory.
+              </p>
+              <p>
+                Note that tinted auras also require their own tuning files, and only a few of those fit when several characters are patched into a single ISO together.
+              </p>
+            </Warning>
+            <div className="form">
+              <label>Tinted effects</label>
+              <select value={c.aura.tint} onChange={(e) => { c.aura.tint = e.target.value; edited() }}>
+                {LEVELS.map(([l, text]) => <option key={l} value={l} disabled={tooBig(l)}>{text}{memory(l)}</option>)}
+              </select>
+              <label>Costume 1 color</label>
+              <ColorButton color={c.aura.color} alpha onChange={(v) => { c.aura.color = v; edited() }} />
+              <label>Costume 2 color</label>
+              <ColorButton color={c.aura.alt_color} alpha onChange={(v) => { c.aura.alt_color = v; edited() }} />
             </div>
-            <PlacementView first="front" method="eyesPreview" what="the eyes" />
+            <Note>
+              A fully transparent color (0%) hides that costume's effects, which takes much less memory than a tint.
+              Any other transparency still copies every effect.
+            </Note>
+            {cost && <p>{cost}</p>}
+          </>
+        )}
+      </OptionCard>
+      <ToggleCard title="Keep the base's always-on effect" checked={f.base_effect} onChange={(on) => { f.base_effect = on; edited() }}
+        note="If the base has one, such as Human Torch's body fire or Elektra's hair." />
+
+      <h4>Added effects</h4>
+      <ToggleCard title="Flames" checked={flameMode !== 'none'} onChange={(on) => setFlameMode(on ? 'parts' : 'none')}
+        note="Add flames to the character on chosen parts or the whole body.">
+        {FLAME_MODES.map(([mode, text]) => (
+          <label key={mode} className="check block">
+            <input type="radio" name="flames" checked={flameMode === mode} onChange={() => setFlameMode(mode)} /> {text}
+          </label>
+        ))}
+        {flameMode === 'parts' && (
+          <div className="row tight toggle-indent">
+            {PARTS.map(([part, text]) => {
+              const on = f.parts.includes(part)
+              return (
+                <label key={part} className="check">
+                  <input type="checkbox" checked={on} disabled={on && f.parts.length === 1} onChange={(e) => togglePart(part, e.target.checked)} /> {text}
+                </label>
+              )
+            })}
           </div>
-          <p>{eyeBytes ? `The eyes add ${eyeBytes} bytes to the game's effect memory.` : ''}</p>
-        </>
-      )}
-      <h3>Always-On Effect</h3>
-      <label className="check block">
-        <input type="checkbox" checked={f.base_effect} onChange={(e) => { f.base_effect = e.target.checked; edited() }} />
-        {' '}Keep the base's own always-on effect, if it has one (such as Human Torch's body fire or Elektra's hair).
-      </label>
+        )}
+        <div className="form">
+          <label>Costume 1 flames</label>
+          <FlameColor color={f.color} onChange={(v) => { f.color = v; edited() }} />
+          <label>Costume 2 flames</label>
+          <FlameColor color={f.alt_color} onChange={(v) => { f.alt_color = v; edited() }} />
+          <label>Flame size</label>
+          <NumberInput value={f.size} min={FLAME_SIZE[0]} max={FLAME_SIZE[1]} step={0.1} onChange={(v) => { f.size = v; edited() }} />
+        </div>
+        <Note>{fireBytes ? `The flames add ${fireBytes} bytes to the game's effect memory.` : 'The flames use the game\'s own effect, which takes no more memory.'}</Note>
+      </ToggleCard>
+      <ToggleCard title="Motion Trails" checked={t.parts.length > 0} onChange={(on) => { t.parts = on ? [TRAIL_PARTS[0][0]] : []; edited() }}
+        note="Colored trails that show while the character is moving.">
+        <div className="row tight">
+          {TRAIL_PARTS.map(([part, text]) => {
+            const on = t.parts.includes(part)
+            return (
+              <label key={part} className="check">
+                <input type="checkbox" checked={on} disabled={on && t.parts.length === 1} onChange={(e) => toggleTrail(part, e.target.checked)} /> {text}
+              </label>
+            )
+          })}
+        </div>
+        <div className="form">
+          <label>Costume 1 trails</label>
+          <ColorButton color={t.color} alpha onChange={(v) => { t.color = v; edited() }} />
+          <label>Costume 2 trails</label>
+          <ColorButton color={t.alt_color} alpha onChange={(v) => { t.alt_color = v; edited() }} />
+          <label>Trail length (seconds)</label>
+          <NumberInput value={t.length} min={TRAIL_LENGTH[0]} max={TRAIL_LENGTH[1]} step={0.05} onChange={(v) => { t.length = v; edited() }} />
+        </div>
+        {trailBytes > 0 && <Note>The trails add {trailBytes} bytes to the game's effect memory.</Note>}
+      </ToggleCard>
+      <ToggleCard title="Glowing Eyes" checked={e.on} onChange={(on) => { e.on = on; edited() }}
+        note="A glow at each eye, placed from the head bone.">
+        {c.base === 'ironman' && <Note>These replace Iron Man's own eye glow.</Note>}
+        <div className="form">
+          <label>Costume 1 eyes</label>
+          <ColorButton color={e.color} alpha onChange={(v) => { e.color = v; edited() }} />
+          <label>Costume 2 eyes</label>
+          <ColorButton color={e.alt_color} alpha onChange={(v) => { e.alt_color = v; edited() }} />
+          <label>Glow size</label>
+          <NumberInput value={e.size} min={EYE_SIZE[0]} max={EYE_SIZE[1]} step={0.05} onChange={(v) => { e.size = v; edited() }} />
+        </div>
+        <Note>A fully transparent color (0%) gives that costume no glowing eyes.</Note>
+        <h4>Eye Location</h4>
+        <Note>
+          Where the eyes sit from the head bone. X moves both eyes away from the middle, one to each side.
+        </Note>
+        <div className="row">
+          <div>
+            <table className="gameplay grid">
+              <thead><tr><th>Axis</th><th>Position</th></tr></thead>
+              <tbody>
+                {EYE_AXES.map(([axis, [lo, hi]], k) => (
+                  <tr key={axis}>
+                    <td>{axis}</td>
+                    <td><span><NumberInput min={lo} max={hi} step={0.005} value={e.position[k]} onChange={(v) => setEye(k, v)} /> m</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <button onClick={() => { e.position = [...EYE_POSITION]; edited() }}>Reset to Iron Man's</button>
+          </div>
+          <PlacementView first="front" method="eyesPreview" what="the eyes" />
+        </div>
+        {eyeBytes > 0 && <Note>The eyes add {eyeBytes} bytes to the game's effect memory.</Note>}
+      </ToggleCard>
     </div>
   )
 }

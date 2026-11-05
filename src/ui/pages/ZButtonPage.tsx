@@ -7,7 +7,7 @@ import { encodePng } from '../../core/image/png'
 import { defaultGun, defaultLaser, GAMEPLAY as RANGES, LASER_DAMAGE, LASER_POSITION, LASER_RANGE, laserDefault, GUN_BULLETS, GUN_DAMAGE, GUN_ENERGY, GUN_PLACES, GUN_SIDES, gunBone, gunHolster, type GunPlace, type GunSide, LIFT, mirrorPlace, swapBone, soundRef, type ZButton, type ZCostume, Z_COSTUMES, type ZStats, zTexture } from '../../core/package/imperfect'
 import { decodePicture, pickFile } from '../../io/files'
 import { BoneSelect, PositionTable } from '../components/bones'
-import { ColorButton, Note, NumberInput } from '../components/common'
+import { ColorButton, Note, NumberInput, ToggleCard } from '../components/common'
 import { store, useStore } from '../store'
 import { DamageTable } from '../components/DamageTable'
 import { HolsterPlace, PlacementView } from './MovesPage'
@@ -59,39 +59,32 @@ export function ZButtonPage() {
       Pick what Z does in a match, and what it needs. Holding Z runs every ticked action at once. CPU players will never use these abilities.
       </Note>
       <h4>Requirements</h4>
-      <div className={`card zaction ${energy ? 'on' : ''}`}>
-        <label className="check zaction-head">
-          <input type="checkbox" disabled={!z} checked={!!energy} onChange={(e) => {
-            z!.requires = e.target.checked ? { ...z!.requires, energy: { seconds: 8, regen: false } } : {}
-            edited()
-          }} /> Drains Energy
-        </label>
-        <Note>The actions use energy while active, and can't start with none.</Note>
-        {z && energy && (
-          <div className="zaction-body">
+      <ToggleCard title="Drains Energy" checked={!!energy} disabled={!z} onChange={(on) => {
+        z!.requires = on ? { ...z!.requires, energy: { seconds: 8, regen: false } } : {}
+        edited()
+      }} note="The actions use energy while active, and can't start with none.">
+        {energy && (
+          <>
             <div className="row tight">
               A full bar lasts <NumberInput className="short" min={Z_SECONDS[0]} max={Z_SECONDS[1]} step={1} value={energy.seconds} onChange={(v) => { energy.seconds = Math.round(v); edited() }} /> seconds
             </div>
             <label className="check block">
               <input type="checkbox" checked={energy.regen} onChange={(e) => { energy.regen = e.target.checked; edited() }} /> Keep the game's energy regeneration running while active (it lasts longer)
             </label>
-          </div>
+          </>
         )}
-      </div>
+      </ToggleCard>
       <h4>Actions</h4>
       {ACTIONS.map(([action, text]) => (
-        <div key={action} className={`card zaction ${z?.[action] ? 'on' : ''}`}>
-          <label className="check zaction-head">
-            <input type="checkbox" checked={!!z?.[action]} onChange={(e) => setAction(action, e.target.checked)} /> {text}
-          </label>
-          {action === 'stealth' && z?.stealth && <Stealth />}
-          {action === 'costume' && z?.costume && <Costume />}
-          {action === 'stats' && z?.stats && <Stats />}
-          {action === 'size' && z?.size && <Size />}
-          {action === 'bullet' && z?.bullet && <BulletTime />}
-          {action === 'gun' && z?.gun && <Gun />}
-          {action === 'laser' && z?.laser && <LaserBeam />}
-        </div>
+        <ToggleCard key={action} title={text} checked={!!z?.[action]} onChange={(on) => setAction(action, on)}>
+          {action === 'stealth' && <Stealth />}
+          {action === 'costume' && <Costume />}
+          {action === 'stats' && <Stats />}
+          {action === 'size' && <Size />}
+          {action === 'bullet' && <BulletTime />}
+          {action === 'gun' && <Gun />}
+          {action === 'laser' && <LaserBeam />}
+        </ToggleCard>
       ))}
     </div>
   )
@@ -102,7 +95,7 @@ function Stealth() {
   const count = [s.undetected, s.untouchable, s.visible !== null].filter(Boolean).length
   const edited = () => store.touch('character')
   return (
-    <div className="zaction-body">
+    <>
       {EFFECTS.map(([key, text]) => (
         <label key={key} className="check block">
           <input type="checkbox" checked={s[key]} disabled={s[key] && count === 1}
@@ -114,12 +107,12 @@ function Stealth() {
           onChange={(e) => { s.visible = e.target.checked ? 0.2 : null; edited() }} /> Fade out: you're only partly visible
       </label>
       {s.visible !== null && (
-        <div className="row tight zaction-indent">
+        <div className="row tight toggle-indent">
           <input type="range" min={100 * Z_VISIBLE[0]} max={100 * Z_VISIBLE[1]} step={5} value={Math.round(100 * s.visible)} aria-label="Visibility"
             onChange={(e) => { s.visible = Number(e.target.value) / 100; edited() }} /> {Math.round(100 * s.visible)}% visible{s.visible === 0 && ' (not drawn at all)'}
         </div>
       )}
-    </div>
+    </>
   )
 }
 
@@ -127,7 +120,7 @@ function Costume() {
   const c = store.character
   const included = c.materials.filter((m) => m.include)
   return (
-    <div className="zaction-body">
+    <>
       <Note>While Z is held, costumes are replaced with the textures below. Uses additional in-match memory. Holding Z overrides any health-based texture changes, if those are set.</Note>
       {!included.length ? <Note>Import a model in the Model step first.</Note> : (
         <table className="gameplay grid">
@@ -142,7 +135,7 @@ function Costume() {
           </tbody>
         </table>
       )}
-    </div>
+    </>
   )
 }
 
@@ -192,7 +185,7 @@ function CostumeTexture({ costume, material }: { costume: ZCostume; material: nu
 function Size() {
   const z = store.character.zButton!
   return (
-    <div className="zaction-body">
+    <>
       <div className="row tight">
         <NumberInput className="short" step={0.05} min={Z_SIZE[0]} max={Z_SIZE[1]} value={z.size!} onChange={(v) => {
           z.size = v
@@ -200,7 +193,7 @@ function Size() {
         }} />x
       </div>
       <Note>Times the character's size while Z is held, on top of the Model page's size.</Note>
-    </div>
+    </>
   )
 }
 
@@ -213,7 +206,7 @@ function LaserBeam() {
     edited()
   }
   return (
-    <div className="zaction-body">
+    <>
       <Note>While Z is held, the character stands and fires Iron Man's finisher beam straight ahead. The beam stops at the first thing it hits, and whatever it hits takes damage {Math.round(1 / LASER_TICK_SECONDS)} times a second.</Note>
       {c.zButton!.gun && <Note>✖ The Gun also fires with Z: untick one of them.</Note>}
       <div className="form">
@@ -239,20 +232,20 @@ function LaserBeam() {
         {/* remounted per bone, so the view frames the new spot */}
         <PlacementView key={l.bone} first="front" method="laserPreview" what="the beam's origin" />
       </div>
-    </div>
+    </>
   )
 }
 
 function BulletTime() {
   const z = store.character.zButton!
   return (
-    <div className="zaction-body">
+    <>
       <div className="row tight">
         <input type="range" min={100 * Z_SLOW[0]} max={100 * Z_SLOW[1]} step={5} value={Math.round(100 * z.bullet!)} aria-label="World speed"
           onChange={(e) => { z.bullet = Number(e.target.value) / 100; store.touch('character') }} /> {Math.round(100 * z.bullet!)}% world speed
       </div>
       <Note>While Z is held, everything else (opponents, CPU players, projectiles and thrown objects) moves at this speed, and you move at full speed.</Note>
-    </div>
+    </>
   )
 }
 
@@ -272,7 +265,7 @@ function Stats() {
   const lift = c.gameplay.lift ?? bv?.lift
   const [lo, hi] = RANGES.damage_taken
   return (
-    <div className="zaction-body">
+    <>
       <Note>While Z is held, these values replace the character's own.</Note>
       {store.game && <DamageTable values={stats as Record<string, number | undefined>} set={(k, v) => set(k as keyof ZStats, v === null ? null : Math.round(v * 10) / 10)} own />}
       <table className="gameplay grid">
@@ -310,7 +303,7 @@ function Stats() {
           </tr>
         </tbody>
       </table>
-    </div>
+    </>
   )
 }
 
@@ -364,7 +357,7 @@ function Gun() {
   const setSound = (v: string) => set({ sound: v === 'none' ? undefined : v.split(':').map(Number) as [number, number] })
   const asIn = (moves: string[]) => (moves.length ? ` (as in ${moves.slice(0, 3).join(', ')}${moves.length > 3 ? `, and ${moves.length - 3} more` : ''})` : '')
   return (
-    <div className="zaction-body">
+    <>
       <Note>
         The gun rides in a holster at a hip or on the back. Holding Z draws the gun, and once it's in hand any attack except a rise attack fires it.<br />
         What the gun hand holds can swap into the holster as the gun comes out, and back into the hand when it goes back.
@@ -435,6 +428,6 @@ function Gun() {
         onChange={(h) => set({ holster: { place: g.holster.place, position: h.position, rotation: h.rotation } })} />
       {g.swap && <HolsterPlace h={g.swap} from={from} view={g.holster.place.startsWith('back') ? 'back' : 'front'} kind="swap" title="Swap Location"
         what="the swapped part's middle, while the gun is drawn," onChange={(h) => set({ swap: { position: h.position, rotation: h.rotation } })} />}
-    </div>
+    </>
   )
 }

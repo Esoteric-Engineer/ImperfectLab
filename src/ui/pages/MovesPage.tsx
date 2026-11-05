@@ -8,7 +8,7 @@ import { formatG } from '../../core/format'
 import { keys, label } from '../../core/game/roster'
 import { animFiles, BASE_MOVES, copyCharacter, defaultHolster, GAMEPLAY, type Holster as HolsterPlan, HOLSTER_POSITION, HOLSTER_ROTATION, type MoveEffect, STUN_BASES, THROW_REACH, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
 import type { BoneLine, MeshData } from '../../core/preview'
-import { ColorButton, Note, NumberInput, Warning } from '../components/common'
+import { ColorButton, Note, NumberInput, OptionCard, ToggleCard, Warning } from '../components/common'
 import { MovePreviewDialog } from '../components/MovePreviewDialog'
 import { Viewport } from '../components/viewport'
 import { engine, errorText } from '../engine'
@@ -53,16 +53,16 @@ export function MovesPage() {
   const added = new Set(cat && mine ? [...wallRows(cat).map((r) => r.id), ...(c.baseMoves.range_grab ? RANGE_GRAB : []), ...(c.gameplay.low_energy_stun ? LOW_ENERGY_STUN : [])] : [])
   const swapped = Object.keys(c.moves).filter((id) => !added.has(id)).length + c.moveIdle.length + Object.keys(c.moveAnims).length
   const held = c.baseMoves.holster !== undefined
+  const ownMoves = (BASE_MOVES[c.base] ?? []).length > 0
 
   return (
     <div className="page">
       <h3>Moves</h3>
       <Note>
-        Swap any of {label(c.base)}'s moves for another character's version of the move. The move's animations are copied into this character, along with the victim's side of a throw.<br />
-        What the move does stays {label(c.base)}'s: its cost and reach, its sounds, and whether the AI uses it. Its damage is one of the character's damage values (Stats page), though the swapped animation may pick a different one of them. Its effects play from {label(c.base)}'s own unless you pick the other character's under Effects.<br />
-        A match loads both fighters' animations, so every swapped move uses a little more of the memory a match has.
+        Swap any of your character's moves for another character's version of the move, or for an imported clip.<br />
+        The animations are copied into this character, along with the victim's side of a throw; a match loads both fighters' animations, so every swapped move uses a little more of its memory.<br />
+        What the move does stays {label(c.base)}'s: its cost and reach, its sounds, and whether the AI uses it. Its damage is one of the character's damage values (Stats page), though the swapped animation may pick a different one, and its effects play from {label(c.base)}'s own unless you pick the other character's under Effects.
       </Note>
-      <AnimationFiles />
       {cross.length > 0 && (
         <Warning title="Moves from another body class are approximate">
           <p>
@@ -77,6 +77,7 @@ export function MovesPage() {
         c.moveAnims = {}
         edited()
       }}>Set all back to {label(c.base)}'s</button></div>}
+      <AnimationFiles />
       {!cat ? <p className="muted">Reading every character's moves...</p> : !mine ? <p className="muted">{label(c.base)}'s moves could not be read from this disc.</p> : (
         CATEGORIES.map((category) => {
           const rows = MOVES.filter((m) => m.category === category && animations(cat, c.base, m))
@@ -93,12 +94,13 @@ export function MovesPage() {
           )
         })
       )}
+      {(mine || ownMoves) && <h4>More move options</h4>}
       {mine && WALL.some((w) => !w.bases.includes(c.base)) && <WallMoves cat={cat!} />}
       {mine && <GrabRange cat={cat!} />}
       {mine && <LowEnergyStun cat={cat!} />}
+      {ownMoves && <BaseMoves cat={cat} />}
       {mine && <Stretching cat={cat!} />}
       <LineColors cat={cat} />
-      {(BASE_MOVES[c.base] ?? []).length > 0 && <BaseMoves cat={cat} />}
     </div>
   )
 }
@@ -299,40 +301,14 @@ function AnimationFiles() {
   }
 
   return (
-    <section>
-      <h4>Imported animations</h4>
-      <Note>
-        Play a clip from a glTF file (.glb) as a move: import the file, then pick its clip in the move's list, under Imported.
-        The clips have to be on your model's rig (the joint names the Model page maps), or on the game's own skeleton (a base's animations, downloaded below and edited). Some rigs face one way at rest and another in their clips: Facing turns the clips (it is guessed on import from which way the attacks reach). They are fitted onto {label(c.base)}'s skeleton the way the model is, and keep {label(c.base)}'s timing cues (hits, effects, sounds), stretched to the clip's length.<br />
-        Moves with a victim (throws) can't take a clip.
-      </Note>
-      <details>
-        <summary><b>Editing {label(c.base)}'s animations in Blender</b></summary>
-        <ol>
-          <li>Download {label(c.base)}'s animations below. Each state of a move is a clip named after it (<code>Attack1</code>, <code>BlockStart</code>, <code>Block</code>, <code>BlockEnd</code> ...).</li>
-          <li>Open Blender and set the scene to <b>30 fps</b> via Output Properties &gt; Frame Rate.</li>
-          <li>Go to File &gt; Import &gt; glTF 2.0, and import the downloaded file. Each clip is an action on the armature.</li>
-          <li>Edit the actions you want to change.</li>
-          <li>
-            Export via File &gt; Export &gt; glTF 2.0 (.glb):
-            <ul>
-              <li>Ensure <b>Format</b> is set to <code>glTF Binary (.glb)</code>.</li>
-              <li>Under <b>Animation</b>, ensure <b>Sampling Animations</b> is unchecked, and that every action is exported.</li>
-            </ul>
-          </li>
-          <li>Import the exported <code>.glb</code> with <b>Import animations</b>, then <b>Assign changed clips</b> to play every clip you changed (or pick clips one move at a time).</li>
-        </ol>
-        <Note>
-          Good to Know:
-          <ul>
-            <li>Don't rename any bones or actions. The bone names put the clips on the game's skeleton, and the action names say which state each clip is.</li>
-            <li>The clips play on {label(c.base)}'s skeleton bone for bone, so they work with or without a custom model. Clips from another base of the same body class are fitted to this one.</li>
-            <li>Root carries the move's travel. Its turn, and the markers and props (hand markers, palms, Root marker), stay as {label(c.base)}'s.</li>
-            <li>The hits, effects and sounds stay where {label(c.base)}'s are, stretched if a clip gets longer or shorter (or follow the clip's strikes with <b>Hits: from the clip</b>).</li>
-            <li>Don't ask me for help with animating. <a href="https://youtu.be/gFAuKtT_o-0" target='_blank'>You can almost certainly do it better than I can.</a></li>
-          </ul>
-        </Note>
-      </details>
+    <OptionCard plain head="Imported animations" note={<>
+      Play a clip from a glTF file (.glb) as a move: import the file, then pick its clip in the move's list, under Imported.
+      Moves with a victim (throws) can't take a clip.
+    </>}>
+      <div className="row">
+        <button onClick={importGlb}>Import animations (.glb)...</button>
+        <button onClick={exportSet} title={`Every move ${label(c.base)} plays, as clips on its skeleton, to edit in Blender and import back`}>Download {label(c.base)}'s animations (.glb)</button>
+      </div>
       {files.length > 0 && (
         <table className="gameplay grid">
           <thead><tr><th>File</th><th>Clips</th><th title="Which way the clips play: some rigs face one way at rest and another in their clips">Facing</th><th>Played by</th><th></th><th></th></tr></thead>
@@ -357,11 +333,40 @@ function AnimationFiles() {
           </tbody>
         </table>
       )}
-      <div className="row">
-        <button onClick={importGlb}>Import animations (.glb)...</button>
-        <button onClick={exportSet} title={`Every move ${label(c.base)} plays, as clips on its skeleton, to edit in Blender and import back`}>Download {label(c.base)}'s animations (.glb)</button>
-      </div>
-    </section>
+      <details>
+        <summary><b>How imported clips are fitted</b></summary>
+        <Note>
+          The clips have to be on your model's rig (the joint names the Model page maps), or on the game's own skeleton (a base's animations, downloaded above and edited). Some rigs face one way at rest and another in their clips: Facing turns the clips (it is guessed on import from which way the attacks reach). They are fitted onto {label(c.base)}'s skeleton the way the model is, and keep {label(c.base)}'s timing cues (hits, effects, sounds), stretched to the clip's length.
+        </Note>
+      </details>
+      <details>
+        <summary><b>Editing {label(c.base)}'s animations in Blender</b></summary>
+        <ol>
+          <li>Download {label(c.base)}'s animations with the button above. Each state of a move is a clip named after it (<code>Attack1</code>, <code>BlockStart</code>, <code>Block</code>, <code>BlockEnd</code> ...).</li>
+          <li>Open Blender and set the scene to <b>30 fps</b> via Output Properties &gt; Frame Rate.</li>
+          <li>Go to File &gt; Import &gt; glTF 2.0, and import the downloaded file. Each clip is an action on the armature.</li>
+          <li>Edit the actions you want to change.</li>
+          <li>
+            Export via File &gt; Export &gt; glTF 2.0 (.glb):
+            <ul>
+              <li>Ensure <b>Format</b> is set to <code>glTF Binary (.glb)</code>.</li>
+              <li>Under <b>Animation</b>, ensure <b>Sampling Animations</b> is unchecked, and that every action is exported.</li>
+            </ul>
+          </li>
+          <li>Import the exported <code>.glb</code> with <b>Import animations</b>, then <b>Assign changed clips</b> to play every clip you changed (or pick clips one move at a time).</li>
+        </ol>
+        <div className="note">
+          Good to Know:
+          <ul>
+            <li>Don't rename any bones or actions. The bone names put the clips on the game's skeleton, and the action names say which state each clip is.</li>
+            <li>The clips play on {label(c.base)}'s skeleton bone for bone, so they work with or without a custom model. Clips from another base of the same body class are fitted to this one.</li>
+            <li>Root carries the move's travel. Its turn, and the markers and props (hand markers, palms, Root marker), stay as {label(c.base)}'s.</li>
+            <li>The hits, effects and sounds stay where {label(c.base)}'s are, stretched if a clip gets longer or shorter (or follow the clip's strikes with <b>Hits: from the clip</b>).</li>
+            <li>Don't ask me for help with animating. <a href="https://youtu.be/gFAuKtT_o-0" target='_blank'>You can almost certainly do it better than I can.</a></li>
+          </ul>
+        </div>
+      </details>
+    </OptionCard>
   )
 }
 
@@ -477,21 +482,16 @@ function WallMoves({ cat }: { cat: Catalog }) {
   const froms = keys().filter((k) => k !== c.base && cat[k] && required.every((id) => animations(cat, k, MOVE_IDS.get(id)!)))
   const picked = new Set(rows.flatMap((r) => c.moves[r.id] ?? []))
   return (
-    <>
-      <h3>Wall moves</h3>
-      <Note>
-        Lets {label(c.base)} {offered.map((w) => (w.key === 'wall_climb' ? 'climb walls like Spider-Man' : 'run along walls like Wolverine')).join(' or ')}.<br />
-        Each action plays the animation picked here, copied into this character. The jumps off the wall are optional: Venom has animations for only one of them.
-      </Note>
-      <div className="row">
-        {offered.map((w) => (
-          <label key={w.key} className="check"><input type="checkbox" checked={Boolean(c.gameplay[w.key])} onChange={(e) => {
-            setWall(cat, w, e.target.checked)
-            edited()
-          }} /> {w.label[0].toUpperCase() + w.label.slice(1)}</label>
-        ))}
-        {rows.length > 0 && (
-          <>
+    <OptionCard on={offered.some((w) => c.gameplay[w.key])} head={offered.map((w) => (
+      <label key={w.key} className="check"><input type="checkbox" checked={Boolean(c.gameplay[w.key])} onChange={(e) => {
+        setWall(cat, w, e.target.checked)
+        edited()
+      }} /> {w.label[0].toUpperCase() + w.label.slice(1)}</label>
+    ))} note={<>Lets {label(c.base)} {offered.map((w) => (w.key === 'wall_climb' ? 'climb walls like Spider-Man' : 'run along walls like Wolverine')).join(' or ')}.</>}>
+      {rows.length > 0 && (
+        <>
+          <Note>Each action plays the animation picked here, copied into this character. The jumps off the wall are optional: Venom has animations for only one of them.</Note>
+          <div className="row">
             <label>Take all from</label>
             <select value={picked.size === 1 ? [...picked][0] : ''} onChange={(e) => {
               if (!e.target.value) return
@@ -501,16 +501,14 @@ function WallMoves({ cat }: { cat: Catalog }) {
               {picked.size !== 1 && <option value="">(mixed)</option>}
               {froms.map((k) => <option key={k} value={k}>{label(k)}{cat[k].body !== cat[c.base].body ? ` (${cat[k].body}, approximate)` : ''}</option>)}
             </select>
-          </>
-        )}
-      </div>
-      {rows.length > 0 && (
-        <table className="gameplay grid fixed">
-          <thead><tr><th className="c-move">Action</th><th>Taken from</th><th className="c-fx">Effects</th></tr></thead>
-          <tbody>{rows.map((r) => <WallRow key={r.id} cat={cat} move={MOVE_IDS.get(r.id)!} required={r.required} />)}</tbody>
-        </table>
+          </div>
+          <table className="gameplay grid fixed">
+            <thead><tr><th className="c-move">Action</th><th>Taken from</th><th className="c-fx">Effects</th></tr></thead>
+            <tbody>{rows.map((r) => <WallRow key={r.id} cat={cat} move={MOVE_IDS.get(r.id)!} required={r.required} />)}</tbody>
+          </table>
+        </>
       )}
-    </>
+    </OptionCard>
   )
 }
 
@@ -557,31 +555,22 @@ function GrabRange({ cat }: { cat: Catalog }) {
   const base = cat[c.base]?.range
   if (base === undefined || !animations(cat, c.base, MOVE_IDS.get('SuperThrow')!)) return null
   const edited = () => store.touch('character')
+  const theirs = from && cat[from] && cat[from].range !== base ? `, and ${label(from)}'s is ${formatG(cat[from].range)} m` : ''
   return (
-    <>
-      <h3>Super throw range</h3>
-      <Note>
-        How far away the opponent can be for the super throw (R + X grab) to start.
-        A long-range grab (Daredevil's cable, Spider-Man's web) starts where the character stands; a close one first moves the character to the opponent, so a long range makes it slide over.
-      </Note>
-      <table className="gameplay grid">
-        <thead><tr><th>Value</th><th className="num">Base</th><th>New</th></tr></thead>
-        <tbody>
-          <tr>
-            <td><label className="check"><input type="checkbox" checked={have} onChange={(e) => {
-              if (e.target.checked) gp.super_throw_range = from ? cat[from]?.range ?? base : base
-              else delete gp.super_throw_range
-              edited()
-            }} /> Super throw grab range</label></td>
-            <td className="num">{formatG(base)} m{from && cat[from] && cat[from].range !== base ? ` (${label(from)}'s ${formatG(cat[from].range)} m)` : ''}</td>
-            <td><span><NumberInput disabled={!have} min={RANGE[0]} max={RANGE[1]} step={0.5} value={gp.super_throw_range ?? base} onChange={(v) => {
-              gp.super_throw_range = Math.round(v * 10) / 10
-              edited()
-            }} /> m</span></td>
-          </tr>
-        </tbody>
-      </table>
-    </>
+    <ToggleCard title="Super throw range" checked={have} onChange={(on) => {
+      if (on) gp.super_throw_range = from ? cat[from]?.range ?? base : base
+      else delete gp.super_throw_range
+      edited()
+    }} note={`How far away the opponent can be for the super throw (R + X grab) to start. ${label(c.base)}'s is ${formatG(base)} m${theirs}.`}>
+      <div className="row">
+        <label>Range</label>
+        <span><NumberInput min={RANGE[0]} max={RANGE[1]} step={0.5} value={gp.super_throw_range ?? base} onChange={(v) => {
+          gp.super_throw_range = Math.round(v * 10) / 10
+          edited()
+        }} /> m</span>
+      </div>
+      <Note>A long-range grab (Daredevil's cable, Spider-Man's web) starts where the character stands; a close one first moves the character to the opponent, so a long range makes it slide over.</Note>
+    </ToggleCard>
   )
 }
 
@@ -613,19 +602,17 @@ function LineColors({ cat }: { cat: Catalog | null }) {
   if (!lined && !stretched && c.moveLines.color === null && c.moveLines.alt_color === null) return null
   const edited = () => store.touch('character')
   return (
-    <>
-      <h3>Line color</h3>
-      <Note>
-        The line a taken or stretched move draws from the hand, such as Daredevil's cable or Spider-Man's web. A recolored or hidden line adds a small copy of it to the game's effects for each costume.<br />
-        A stretched move's line is changed in every move that draws it.
-      </Note>
+    <OptionCard plain head="Line color" note={<>
+      The line a taken or stretched move draws from the hand, such as Daredevil's cable or Spider-Man's web. A recolored or hidden line adds a small copy of it to the game's effects for each costume.<br />
+      A stretched move's line is changed in every move that draws it.
+    </>}>
       <div className="row">
         <label>Costume 1</label>
         <LineColor color={c.moveLines.color} onChange={(v) => { c.moveLines.color = v; edited() }} />
         <label>Costume 2</label>
         <LineColor color={c.moveLines.alt_color} onChange={(v) => { c.moveLines.alt_color = v; edited() }} />
       </div>
-    </>
+    </OptionCard>
   )
 }
 
@@ -660,18 +647,17 @@ function Stretching({ cat }: { cat: Catalog }) {
   const rows = MOVES.map((m): [Move, reach.Summary | null] => [m, stretchOf(cat, m)]).filter(([m, p]) => p || c.moveReach[m.id])
   if (!rows.length) return null
   return (
-    <>
-      <h3>Stretching Limbs</h3>
-      <Note>
-        A stretched move sends a limb out and brings it back within the move.<br />
-        <ul>
+    <OptionCard plain head="Stretching limbs" note="A stretched move sends a limb out and brings it back within the move.">
+      <details>
+        <summary><b>How each kind of move stretches</b></summary>
+        <ul className="note">
           <li>A hit reaches further ahead than the move does, at about a meter a frame so it can't pass through the opponent</li>
           <li>A wire move goes out to where the wire would reach</li>
           <li>A grab steps the character to its distance from the opponent</li>
           <li>A pickup keeps time with the wire, and its distance is also how far away a prop can be</li>
           <li>A jump lengthens the legs along the shin without changing how high or far it goes</li>
         </ul>
-      </Note>
+      </details>
       {CATEGORIES.map((category) => {
         const mine = rows.filter(([m]) => m.category === category)
         if (!mine.length) return null
@@ -686,7 +672,7 @@ function Stretching({ cat }: { cat: Catalog }) {
           </details>
         )
       })}
-    </>
+    </OptionCard>
   )
 }
 
@@ -699,7 +685,7 @@ function StretchRow({ move, plan }: { move: Move; plan: reach.Summary | null }) 
   const baton = move.id === 'SuperAttackFar' && c.baseMoves.throw_reach !== undefined
   return (
     <tr>
-      <td><label className="check" title={baton ? 'The baton throw reach changes this move: untick it below to stretch the move' : undefined}><input type="checkbox" checked={Boolean(want)} disabled={(!plan || baton) && !want} onChange={(e) => {
+      <td><label className="check" title={baton ? 'The baton throw reach changes this move: untick it above to stretch the move' : undefined}><input type="checkbox" checked={Boolean(want)} disabled={(!plan || baton) && !want} onChange={(e) => {
         if (e.target.checked && plan) c.moveReach[move.id] = freshReach(move, plan)
         else delete c.moveReach[move.id]
         edited()
@@ -734,7 +720,7 @@ function StretchRow({ move, plan }: { move: Move; plan: reach.Summary | null }) 
   )
 }
 
-// Options for one base's own moves; only Daredevil's baton throw so far.
+// Options for one base's own moves; only Daredevil's so far.
 function BaseMoves({ cat }: { cat: Catalog | null }) {
   const c = store.character
   const bv = store.baseDetails()
@@ -747,15 +733,14 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
   const held = mv.holster !== undefined
   return (
     <>
-      <h3>{label(c.base)}-specific moves</h3>
-      <Note>
+      <OptionCard plain head={`${label(c.base)}-specific moves`} note={<>
         Whatever is fixed to game bone 39, the club/baton, is what flies: on the Materials page, fix a prop to that bone.<br />
         The cable is drawn from the forearm to the baton all the time.<br />
         The holster carries the same prop on the back outside power mode: power-on reaches back for it and power-off puts it back. It needs the cable off.
         {farSwapped && <><br />Super attack far is swapped above, so the reach can't be changed.</>}
-        {farStretched && <><br />Super attack far is stretched above, so the reach can't be changed.</>}
-      </Note>
-      <table className="gameplay grid">
+        {farStretched && <><br />Super attack far is stretched below, so the reach can't be changed.</>}
+      </>}>
+        <table className="gameplay grid">
         <thead><tr><th>Value</th><th className="num">Base</th><th>New</th></tr></thead>
         <tbody>
           <tr>
@@ -794,6 +779,7 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
         </tbody>
       </table>
       {held && <Holster />}
+      </OptionCard>
       {grab && cat && <RangeGrab cat={cat} />}
     </>
   )
@@ -922,24 +908,18 @@ function RangeGrab({ cat }: { cat: Catalog }) {
   const c = store.character
   const on = Boolean(c.baseMoves.range_grab)
   return (
-    <>
-      <div className="row">
-        <label className="check"><input type="checkbox" checked={on} onChange={(e) => {
-          setRangeGrab(cat, e.target.checked)
-          store.touch('character')
-        }} /> Range grab</label>
-      </div>
-      <Note>
-        Lets {label(c.base)} pick up props from a distance. The animation is copied into this character like a swapped move.<br />
-        Lift strength on the Stats page affects which objects can be picked up. Reach defaults to 10m, but can also be adjusted by setting a stretch for the move.
-      </Note>
-      {on && (
-        <table className="gameplay grid fixed">
-          <thead><tr><th className="c-move">Action</th><th>Taken from</th><th className="c-fx">Effects</th></tr></thead>
-          <tbody>{RANGE_GRAB.map((id) => <WallRow key={id} cat={cat} move={MOVE_IDS.get(id)!} required />)}</tbody>
-        </table>
-      )}
-    </>
+    <ToggleCard title="Range grab" checked={on} onChange={(v) => {
+      setRangeGrab(cat, v)
+      store.touch('character')
+    }} note={<>
+      Lets {label(c.base)} pick up props from a distance. The animation is copied into this character like a swapped move.<br />
+      Lift strength on the Stats page affects which objects can be picked up. Reach defaults to 10m, but can also be adjusted by setting a stretch for the move.
+    </>}>
+      <table className="gameplay grid fixed">
+        <thead><tr><th className="c-move">Action</th><th>Taken from</th><th className="c-fx">Effects</th></tr></thead>
+        <tbody>{RANGE_GRAB.map((id) => <WallRow key={id} cat={cat} move={MOVE_IDS.get(id)!} required />)}</tbody>
+      </table>
+    </ToggleCard>
   )
 }
 
@@ -964,25 +944,16 @@ function LowEnergyStun({ cat }: { cat: Catalog }) {
   const own = STUN_BASES.includes(c.base)
   const on = c.gameplay.low_energy_stun ?? own
   return (
-    <>
-      <h3>Low-energy stun</h3>
-      <Note>
-        {own && "When Megalith's energy is low, he's stunned in place for a moment."}
-        {!own && "Megalith's low-energy stun effect. The stun animation is copied into this character like a swapped move."}
-        
-      </Note>
-      <div className="row">
-        <label className="check"><input type="checkbox" checked={on} onChange={(e) => {
-          setStun(cat, e.target.checked)
-          store.touch('character')
-        }} /> Low-energy stun</label>
-      </div>
-      {on && !own && (
+    <ToggleCard title="Low-energy stun" checked={on} onChange={(v) => {
+      setStun(cat, v)
+      store.touch('character')
+    }} note={own ? "When Megalith's energy is low, he's stunned in place for a moment." : "Megalith's low-energy stun effect. The stun animation is copied into this character like a swapped move."}>
+      {!own && (
         <table className="gameplay grid fixed">
           <thead><tr><th className="c-move">Action</th><th>Taken from</th><th className="c-fx">Effects</th></tr></thead>
           <tbody>{LOW_ENERGY_STUN.map((id) => <WallRow key={id} cat={cat} move={MOVE_IDS.get(id)!} required />)}</tbody>
         </table>
       )}
-    </>
+    </ToggleCard>
   )
 }

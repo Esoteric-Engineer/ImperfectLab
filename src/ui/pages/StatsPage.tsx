@@ -141,6 +141,7 @@ export function StatsPage() {
         </tbody>
       </table>
       {store.game && <Damage />}
+      {store.game && <h3>Energy</h3>}
       {store.game && <Recharge />}
       {store.game && <Energy />}
     </div>
@@ -213,7 +214,7 @@ function Recharge() {
   const bv = store.baseDetails()
   return (
     <>
-      <h3>Energy recharge</h3>
+      <h4>Recharge</h4>
       <Note>
         Energy refills on its own until the bar is full. Holding R refills it at the second rate instead.
       </Note>
@@ -247,14 +248,14 @@ function Energy() {
   const other = energy.OTHER.filter((e) => c.gameplay[e.key] !== undefined || (e.flight ? flies : !users || users[e.key].length > 0))
   return (
     <>
-      <h3>Energy costs</h3>
+      <h4>Costs</h4>
       <Note>
         A full energy bar is 100. A move can't start without enough energy for it. Moves that share a cost can't be set apart.<br />
         A super move other than the super attack set to 0 costs the super attack's amount instead, so it goes down to 0.1.
       </Note>
       <EnergyTable costs={energy.SUPER} users={users} />
       {other.length > 0 && <>
-        <h4>Other energy use</h4>
+        <h5>Other energy use</h5>
         <EnergyTable costs={other} users={users} />
       </>}
     </>
