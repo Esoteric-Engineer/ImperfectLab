@@ -129,6 +129,10 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(u32be(out, at(0x801a483c)) & 1).toBe(1)
     for (const site of [0x801afb8c, 0x80094e88, 0x8007487c, 0x800748f8, 0x80061af0]) expect(target(site) > 0x80132838 && target(site) < 0x80132838 + 0x274).toBe(true)
     for (const site of [0x800bd30c, 0x800bd3e4]) expect(target(site) > 0x80138868 && target(site) < 0x80138868 + 0x1bc).toBe(true)
+    // z_update eases through cut_ease, which lets Z go while a cutscene plays (the cut player's +0x9C above its +0xA0).
+    expect(target(0x801374dc)).toBe(0x80138868 + 0x1a0)
+    expect([0x80138a08, 0x80138a0c, 0x80138a10, 0x80138a14, 0x80138a18].map((va) => u32be(out, at(va)))).toEqual([0x3d208054, 0x8009337c, 0x81293380, 0x7c004840, 0x40810008])
+    expect(target(0x80138a20)).toBe(0x80148bd8)
     expect(u32be(out, at(0x80132838))).toBe(0x4e800020)
     expect(u32be(out, at(0x80085f4c))).toBe(0x80030304)
     expect(u32be(out, at(0x800b1884))).toBe(0x3804ffea)

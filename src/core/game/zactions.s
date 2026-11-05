@@ -7,7 +7,7 @@
 #     --defsym fn_80085EEC=0x80085EEC --defsym fn_80086730=0x80086730 --defsym fn_80084A60=0x80084A60 --defsym fn_801A5B1C=0x801A5B1C \
 #     --defsym fn_800B0C58=0x800B0C58 --defsym fn_8015F278=0x8015F278 --defsym fn_80433D20=0x80433D20 \
 #     --defsym fn_800B9534=0x800B9534 --defsym fn_80074954=0x80074954 --defsym fn_80074D64=0x80074D64 \
-#     --defsym fn_80327EC4=0x80327EC4 -o zactions.elf zactions.o
+#     --defsym fn_80327EC4=0x80327EC4 --defsym lbl_805432E0=0x805432E0 -o zactions.elf zactions.o
 #   powerpc-eabi-objcopy -O binary -j <.text, .tuning, .taken, .grow, .costume or .time> zactions.elf <section>.bin
 # `slots`: two {actor, stamp ms, seconds, flags, entry, saved actor+0x308}.
 # `sizes`: two {actor, f32 size now, f32 target, f32 change per second, saved radius, saved height}.
@@ -45,7 +45,7 @@ z_update:
 	cmpwi r9, 0
 	beq 1f
 	lwz r27, 19 * 4(r9)
-1:	bl ease
+1:	bl cut_ease
 	lis r29, slots@ha
 	addi r29, r29, slots@l
 	lwz r0, 0(r29)
@@ -685,6 +685,19 @@ hasten:
 
 	.balign 4
 sizes:	.long 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+
+# z_update's ease, with Z let go while a cutscene plays, so no action starts and a held one ends as on a release. The cut
+# player lbl_805432E0's +0x9C is 1 from a start (fn_800531D4) to a stop (fn_800542A8), its +0xA0 1 once the cutscene has
+# finished (fn_80054F00) or stopped, so one plays while +0x9C > +0xA0 (fn_8005287C, "done", is the opposite). Fills
+# .costume to its last byte.
+cut_ease:
+	lis r9, lbl_805432E0@ha
+	lwz r0, (lbl_805432E0 + 0x9c)@l(r9)
+	lwz r9, (lbl_805432E0 + 0xa0)@l(r9)
+	cmplw r0, r9
+	ble 1f
+	li r28, 0
+1:	b ease
 
 	.section .time, "awx"
 	blr
