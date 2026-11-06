@@ -20,6 +20,7 @@ import * as ui from '../core/build/ui'
 import { LabError } from '../core/errors'
 import { FolderDisc, ImageDisc, type ReadAt, type Sink } from '../core/game/disc'
 import * as R from '../core/game/roster'
+import { menuCity } from '../core/game/menuart'
 import { GameSource } from '../core/game/source'
 import { decodePng, encodePng } from '../core/image/png'
 import { resizeNearest } from '../core/image/resample'
@@ -636,6 +637,10 @@ export class Service {
       if (!(e instanceof LabError)) throw e
     }
     return c.damageStages.map(() => null)
+  }
+
+  menuArt(): Uint8Array {
+    return encodePng(menuCity(this.src()))
   }
 
   private layout(): portraits.SelectLayout {

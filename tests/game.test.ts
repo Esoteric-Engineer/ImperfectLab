@@ -22,6 +22,7 @@ import * as ui from '../src/core/build/ui'
 import { equal, f32be, latin1, u32be } from '../src/core/bytes'
 import { LabError } from '../src/core/errors'
 import * as D from '../src/core/game/dol'
+import { menuCity } from '../src/core/game/menuart'
 import * as R from '../src/core/game/roster'
 import { Apt } from '../src/core/mnroi/apt'
 import * as cuttool from '../src/core/mnroi/cuttool'
@@ -317,6 +318,16 @@ describe.skipIf(!ISO)('main.dol', () => {
 
 describe.skipIf(!ISO)('game', () => {
   const src = () => gameSource()
+
+  it('reads the menu city for the Nemesis theme', () => {
+    const im = menuCity(src())
+    expect(im.size).toEqual([512, 256])
+    const sum = [0, 0, 0]
+    for (let i = 0; i < im.data.length; i += 4) for (let c = 0; c < 3; c++) sum[c] += im.data[i + c]
+    const mean = sum.map((v) => v / (im.width * im.height))
+    // the teal skyline, not the grey layer beside it in the same bank
+    for (const [got, want] of mean.map((v, c) => [v, [34, 116, 136][c]])) expect(Math.abs(got - want)).toBeLessThan(3)
+  })
 
   it('loads every base', () => {
     const t = new R.Templates(src().entry('Misc/Global.not'))

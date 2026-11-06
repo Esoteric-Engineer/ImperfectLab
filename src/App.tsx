@@ -1,6 +1,9 @@
 import { Fragment, useEffect, useState } from 'react'
 import { COMMIT, RELEASES, REPO_URL, VERSION } from './core/version'
 import * as actions from './ui/actions'
+import { restoreDisc } from './ui/disc'
+import { engine } from './ui/engine'
+import { droppedCharacter } from './io/files'
 import { Modal } from './ui/components/common'
 import { type Menu, MenuBar } from './ui/components/MenuBar'
 import { ArtPage } from './ui/pages/ArtPage'
@@ -18,7 +21,7 @@ import { SoundsPage } from './ui/pages/SoundsPage'
 import { StatsPage } from './ui/pages/StatsPage'
 import { ZButtonPage } from './ui/pages/ZButtonPage'
 import { store, useStore } from './ui/store'
-import { THEMES, setTheme, useTheme } from './ui/theme'
+import { THEMES, hasMenuArt, setMenuArt, setTheme, useTheme } from './ui/theme'
 import './App.css'
 
 const STEPS: [string, () => React.JSX.Element][] = [
@@ -60,11 +63,24 @@ function App() {
   const [step, setStep] = useState(0)
   const [about, setAbout] = useState(false)
   const [whatsNew, setWhatsNew] = useState(false)
+  const [dragging, setDragging] = useState(false)
   const theme = useTheme()
 
   useEffect(() => {
     document.title = s.title()
   })
+
+  useEffect(() => {
+    void restoreDisc()
+  }, [])
+
+  const gameKey = s.game?.key ?? null
+  useEffect(() => {
+    if (theme !== 'nemesis' || !gameKey || hasMenuArt(gameKey)) return
+    engine.call<Uint8Array>('menuArt').then((png) => {
+      if (store.game?.key === gameKey) setMenuArt(gameKey, png)
+    }, () => {})
+  }, [theme, gameKey])
 
   useEffect(() => {
     const unload = (e: BeforeUnloadEvent) => {
@@ -87,11 +103,53 @@ function App() {
         void actions.open().then((ok) => ok && setStep(store.game ? STEPS.length - 1 : 0))
       }
     }
+    // Files dragged in from the file explorer.
+    let depth = 0
+    const hasFiles = (e: DragEvent) => e.dataTransfer?.types.includes('Files') ?? false
+    const dragEnter = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      depth++
+      setDragging(true)
+    }
+    const dragOver = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      e.dataTransfer!.dropEffect = 'copy'
+    }
+    const dragLeave = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      depth = Math.max(0, depth - 1)
+      if (depth === 0) setDragging(false)
+    }
+    const drop = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      depth = 0
+      setDragging(false)
+      if (dialogOpen()) return
+      const pending = droppedCharacter(e.dataTransfer!)
+      if (!pending) {
+        const names = [...e.dataTransfer!.files].map((f) => f.name)
+        const what = names.length === 1 ? names[0] : names.length ? `These ${names.length} files` : 'That'
+        store.fail(`${what} can't be opened here.\nOnly ImperfectLab character files (.imperfect) can be dropped in.`)
+        return
+      }
+      void actions.openDropped(pending).then((ok) => ok && setStep(store.game ? STEPS.length - 1 : 0))
+    }
     window.addEventListener('beforeunload', unload)
     window.addEventListener('keydown', keys)
+    window.addEventListener('dragenter', dragEnter)
+    window.addEventListener('dragover', dragOver)
+    window.addEventListener('dragleave', dragLeave)
+    window.addEventListener('drop', drop)
     return () => {
       window.removeEventListener('beforeunload', unload)
       window.removeEventListener('keydown', keys)
+      window.removeEventListener('dragenter', dragEnter)
+      window.removeEventListener('dragover', dragOver)
+      window.removeEventListener('dragleave', dragLeave)
+      window.removeEventListener('drop', drop)
     }
   }, [])
 
@@ -156,6 +214,7 @@ function App() {
         <span>{s.status}</span>
         <span>{s.game ? `Game: ${s.game.name}` : 'No game disc chosen'}</span>
       </footer>
+      {dragging && <div className="drop-overlay">Drop a .imperfect file to open it</div>}
       {s.error && (
         <Modal title="ImperfectLab" onClose={() => store.dismissError()}>
           <pre className="message">{s.error}</pre>

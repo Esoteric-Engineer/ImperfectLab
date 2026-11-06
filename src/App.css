@@ -287,6 +287,33 @@ button.small {
   margin: 10px 0;
 }
 
+.disc-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 720px;
+  margin: 14px 0;
+  padding: 12px 14px;
+  border-left: 4px solid var(--line);
+}
+
+.disc-status.ready {
+  border-left-color: var(--good);
+}
+
+.disc-status .disc-name {
+  font-size: 14px;
+}
+
+.disc-status .disc-check {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
 .card h4 {
   margin: 0 0 8px;
 }
@@ -1033,4 +1060,19 @@ button.toggle.active {
 .modal h3 {
   font-size: 14px;
   margin: 12px 0 4px;
+}
+
+.drop-overlay {
+  position: fixed;
+  inset: 8px;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  border: 3px dashed var(--accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
+  color: var(--accent);
+  font-size: 1.4em;
+  font-weight: 600;
 }

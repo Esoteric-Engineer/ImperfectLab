@@ -1,5 +1,5 @@
 import * as imperfect from '../core/package/imperfect'
-import { openCharacter, saveCharacter } from '../io/files'
+import { type OpenedCharacter, openCharacter, saveCharacter } from '../io/files'
 import { errorText } from './engine'
 import { store } from './store'
 
@@ -13,11 +13,19 @@ export async function newCharacter(): Promise<boolean> {
   return true
 }
 
-export async function open(): Promise<boolean> {
+export function open(): Promise<boolean> {
+  return openFrom(openCharacter)
+}
+
+export function openDropped(pending: Promise<OpenedCharacter | null>): Promise<boolean> {
+  return openFrom(() => pending)
+}
+
+async function openFrom(get: () => Promise<OpenedCharacter | null>): Promise<boolean> {
   if (!confirmDiscard()) return false
   let opened
   try {
-    opened = await openCharacter()
+    opened = await get()
   } catch (e) {
     store.fail(e)
     return false

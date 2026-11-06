@@ -1,20 +1,34 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#000000" />
-    <meta name="description" content="Make custom characters for Marvel Nemesis: Rise of the Imperfects (GameCube) and patch them into the game." />
-    <script>
-      try {
-        document.documentElement.dataset.theme = localStorage.getItem('imperfectlab.theme') || 'dark'
-      } catch (e) {}
-    </script>
-    <title>ImperfectLab</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="description"
+    content="Make custom characters for Marvel Nemesis: Rise of the Imperfects (GameCube) and patch them into the game." />
+  <script>
+    try {
+      var theme = localStorage.getItem('imperfectlab.theme.v2')
+      if (theme === null) {
+        // One-time migration from v1 to v2. See src/ui/theme.ts
+        var old = localStorage.getItem('imperfectlab.theme')
+        if (old !== null) {
+          theme = old === 'nemesis' ? 'nemesis-classic' : old
+          localStorage.setItem('imperfectlab.theme.v2', theme)
+          localStorage.removeItem('imperfectlab.theme')
+        }
+      }
+      document.documentElement.dataset.theme = theme || 'dark'
+    } catch (e) { }
+  </script>
+  <title>ImperfectLab</title>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
 </html>
