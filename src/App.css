@@ -1061,3 +1061,18 @@ button.toggle.active {
   font-size: 14px;
   margin: 12px 0 4px;
 }
+
+.drop-overlay {
+  position: fixed;
+  inset: 8px;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  border: 3px dashed var(--accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
+  color: var(--accent);
+  font-size: 1.4em;
+  font-weight: 600;
+}

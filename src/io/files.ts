@@ -151,6 +151,25 @@ export async function openCharacter(): Promise<OpenedCharacter | null> {
   return file ? { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()), handle: null } : null
 }
 
+interface HandleItem {
+  getAsFileSystemHandle?: () => Promise<FileSystemHandle | null>
+}
+
+export function droppedCharacter(dt: DataTransfer): Promise<OpenedCharacter | null> | null {
+  for (const item of dt.items) {
+    if (item.kind !== 'file') continue
+    const file = item.getAsFile()
+    if (!file?.name.toLowerCase().endsWith('.imperfect')) continue
+    const pendingHandle = (item as unknown as HandleItem).getAsFileSystemHandle?.() ?? Promise.resolve(null)
+    return (async () => {
+      const h = await pendingHandle.catch(() => null)
+      const handle = h?.kind === 'file' ? (h as FileSystemFileHandle) : null
+      return { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()), handle }
+    })()
+  }
+  return null
+}
+
 export function download(bytes: Uint8Array | string, name: string, type = 'application/octet-stream') {
   const blob = new Blob([bytes as BlobPart], { type })
   downloadBlob(blob, name)
