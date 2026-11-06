@@ -5,10 +5,11 @@ export const THEMES = [
   { id: 'dark', label: 'Dark' },
   { id: 'light', label: 'Light' },
   { id: 'nemesis', label: 'Nemesis' },
+  { id: 'nemesis-classic', label: 'Nemesis Classic' },
 ]
 
 const DEFAULT = 'dark'
-const KEY = 'imperfectlab.theme'
+const KEY = 'imperfectlab.theme.v2' // v2 since 'nemesis' changed meaning. index.html migrates the old key.
 const listeners = new Set<() => void>()
 
 function stored(): string {
@@ -45,6 +46,18 @@ export function onThemeChange(fn: () => void) {
 
 export function useTheme(): string {
   return useSyncExternalStore(onThemeChange, () => current)
+}
+
+let menuArt: { key: string; url: string } | null = null
+
+export function hasMenuArt(key: string): boolean {
+  return menuArt?.key === key
+}
+
+export function setMenuArt(key: string, png: Uint8Array) {
+  if (menuArt) URL.revokeObjectURL(menuArt.url)
+  menuArt = { key, url: URL.createObjectURL(new Blob([png as BlobPart], { type: 'image/png' })) }
+  document.documentElement.style.setProperty('--menu-city', `url("${menuArt.url}")`)
 }
 
 export function themeColor(name: string): [number, number, number] {

@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { COMMIT, RELEASES, REPO_URL, VERSION } from './core/version'
 import * as actions from './ui/actions'
 import { restoreDisc } from './ui/disc'
+import { engine } from './ui/engine'
 import { droppedCharacter } from './io/files'
 import { Modal } from './ui/components/common'
 import { type Menu, MenuBar } from './ui/components/MenuBar'
@@ -20,7 +21,7 @@ import { SoundsPage } from './ui/pages/SoundsPage'
 import { StatsPage } from './ui/pages/StatsPage'
 import { ZButtonPage } from './ui/pages/ZButtonPage'
 import { store, useStore } from './ui/store'
-import { THEMES, setTheme, useTheme } from './ui/theme'
+import { THEMES, hasMenuArt, setMenuArt, setTheme, useTheme } from './ui/theme'
 import './App.css'
 
 const STEPS: [string, () => React.JSX.Element][] = [
@@ -72,6 +73,14 @@ function App() {
   useEffect(() => {
     void restoreDisc()
   }, [])
+
+  const gameKey = s.game?.key ?? null
+  useEffect(() => {
+    if (theme !== 'nemesis' || !gameKey || hasMenuArt(gameKey)) return
+    engine.call<Uint8Array>('menuArt').then((png) => {
+      if (store.game?.key === gameKey) setMenuArt(gameKey, png)
+    }, () => {})
+  }, [theme, gameKey])
 
   useEffect(() => {
     const unload = (e: BeforeUnloadEvent) => {

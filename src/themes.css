@@ -47,6 +47,299 @@
 
 :root[data-theme='nemesis'] {
   color-scheme: dark;
+  --bg: #000000;
+  --panel: #071a21;
+  --panel2: #0d2a33;
+  --line: #1f5670;
+  --text: #c9eef7;
+  --muted: #6fa0ad;
+  --accent: #c39a45;
+  --accent2: #8fe3f5;
+  --good: #6fcf8a;
+  --bad: #e0574f;
+  --warn: #e8b84a;
+  --canvas: #0a1f27;
+  --crop-bg: #000000;
+  --thumb: #08191f;
+  --thumb-line: #1f5670;
+  --pip-off: #12313b;
+  --selected: #123d4a;
+  --slant: #2b6f95;
+  --nemesis-font: Teko, Rajdhani, Bahnschrift, 'Arial Narrow', system-ui, sans-serif;
+  --band: linear-gradient(90deg, rgba(120, 190, 205, 0.4), rgba(120, 190, 205, 0.12) 70%, transparent);
+  scrollbar-color: var(--slant) transparent;
+
+  .app {
+    grid-template-columns: 220px 1fr;
+    isolation: isolate;
+    background: #000;
+
+    &::before {
+      content: '';
+      grid-row: 2;
+      grid-column: 1 / -1;
+      z-index: -1;
+      pointer-events: none;
+      background:
+        linear-gradient(94deg, rgba(3, 30, 38, 0.3) 0 211px, var(--slant) 212px 213.5px, rgba(3, 24, 31, 0.8) 214.5px),
+        linear-gradient(180deg, rgba(0, 0, 0, 0.4), transparent 16%, transparent 78%, rgba(0, 0, 0, 0.5)),
+        var(--menu-city, url('./assets/themes/skyline.svg')) center 70% / cover no-repeat,
+        #0c3d4a;
+    }
+  }
+
+  header {
+    grid-row: 1;
+  }
+
+  aside {
+    grid-row: 2;
+    grid-column: 1;
+  }
+
+  main {
+    grid-row: 2;
+    grid-column: 2;
+  }
+
+  footer {
+    grid-row: 3;
+  }
+
+  header,
+  footer {
+    background: #000;
+    border: none;
+  }
+
+  header .brand,
+  .menu-trigger,
+  .page h3,
+  .modal h2,
+  .tabs button,
+  aside button {
+    font-family: var(--nemesis-font);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  header .brand {
+    font-size: 21px;
+    font-weight: 600;
+    line-height: 1;
+    padding-top: 3px;
+    color: #9a9a9a;
+  }
+
+  .menu-trigger {
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1.1;
+    padding: 5px 10px 2px;
+    color: #9a9a9a;
+
+    &:hover:not(:disabled),
+    &.open {
+      color: #fff;
+      background: transparent;
+      border-color: transparent;
+    }
+  }
+
+  .menu-popup {
+    background: var(--panel);
+    border-color: var(--line);
+    border-top: 2px solid var(--slant);
+    border-radius: 0;
+
+    button:hover,
+    button:focus-visible {
+      color: var(--accent);
+    }
+  }
+
+  /* skew and slant both start at the band's top so item gaps stay constant at any window height */
+  aside {
+    background: transparent;
+    border: none;
+    gap: 0;
+    padding: 10px 8px 10px 40px;
+    transform: skewX(-4deg);
+    transform-origin: top left;
+
+    button {
+      transform: skewX(4deg);
+      font-size: 18px;
+      font-weight: 600;
+      line-height: 1;
+      padding: 8px 4px 4px;
+      color: var(--accent2);
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+
+      &:hover:not(.active):not(:disabled) {
+        color: #e6fbff;
+      }
+
+      &.active {
+        color: var(--accent);
+        background: transparent;
+      }
+    }
+
+    .divider {
+      width: 150px;
+      border-top-color: color-mix(in srgb, var(--slant) 60%, transparent);
+    }
+  }
+
+  main {
+    background: transparent;
+  }
+
+  .page {
+    padding-left: 22px;
+  }
+
+  .page h3,
+  .modal h2 {
+    font-weight: 600;
+    line-height: 1.1;
+    color: #08222b;
+    background: var(--band);
+    padding: 5px 12px 1px;
+  }
+
+  .page h3 {
+    font-size: 21px;
+
+    a,
+    .note {
+      color: #08222b;
+    }
+  }
+
+  .modal h2 {
+    font-size: 24px;
+    margin: -16px -20px 12px;
+    padding: 8px 20px 3px;
+  }
+
+  .card,
+  .problems,
+  pre.log,
+  .tab-body,
+  .disc-status.ready {
+    border-radius: 0;
+    border-color: color-mix(in srgb, var(--slant) 45%, transparent);
+    background: rgba(6, 30, 38, 0.72);
+  }
+
+  .modal {
+    border-radius: 0;
+    border-color: var(--slant);
+    background: rgba(5, 24, 31, 0.97);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  }
+
+  .modal-backdrop {
+    background: rgba(0, 0, 0, 0.75);
+  }
+
+  .disc-status.ready {
+    border-left-color: var(--good);
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    border-radius: 0;
+
+    &:focus-visible {
+      outline: 1px solid var(--accent);
+      outline-offset: 1px;
+    }
+  }
+
+  button {
+    color: var(--accent2);
+  }
+
+  button:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  input:is([type='text'], [type='number'], [type='search'], :not([type])),
+  select,
+  textarea {
+    background-color: #04141a;
+
+    &:focus {
+      border-color: var(--accent);
+    }
+  }
+
+  select {
+    appearance: none;
+    padding-right: 30px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 10'%3E%3Cpath fill='%238fe3f5' d='M5 0 0 5l5 5V7.5L2.5 5 5 2.5zM13 0l5 5-5 5V7.5L15.5 5 13 2.5z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 7px center;
+    background-size: 16px 9px;
+
+    &:focus {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 10'%3E%3Cpath fill='%23c39a45' d='M5 0 0 5l5 5V7.5L2.5 5 5 2.5zM13 0l5 5-5 5V7.5L15.5 5 13 2.5z'/%3E%3C/svg%3E");
+    }
+  }
+
+  .tabs {
+    border-bottom-color: color-mix(in srgb, var(--slant) 60%, transparent);
+
+    button {
+      font-size: 18px;
+      font-weight: 600;
+      line-height: 1.1;
+      padding: 5px 12px 1px;
+      border: none;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      background: transparent;
+
+      &.active {
+        color: var(--accent);
+        background: transparent;
+        border-bottom-color: var(--accent);
+      }
+    }
+  }
+
+  table.grid thead th {
+    color: var(--accent2);
+  }
+
+  .progress .bar {
+    background: linear-gradient(90deg, var(--accent2), var(--accent));
+  }
+
+  .drop-overlay {
+    border-radius: 0;
+    background: rgba(0, 0, 0, 0.75);
+    font-family: var(--nemesis-font);
+    font-size: 2.2em;
+    text-transform: uppercase;
+  }
+
+  & ::selection {
+    background: color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+}
+
+:root[data-theme='nemesis-classic'] {
+  color-scheme: dark;
   --bg: #050b0d;
   --panel: #0a1317;
   --panel2: #112027;
