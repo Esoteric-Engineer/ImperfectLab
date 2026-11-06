@@ -264,6 +264,15 @@ The action picked on the **Z-Button Actions** page (`z_button`, [`FORMAT.md`](FO
 - **Width.** The beam hits a fighter its middle misses if the fighter's body touches the beam's width (0.25 m, times the character's size).
 - **One tint for the whole beam.** Every piece is painted the chosen color and keeps only its own transparency, so the beam can't be two-toned. Iron Man's own costume 2 beam is dim, so a very dark color shows little.
 - **Memory.** Each beam color takes about 2.4 KB of the effect cache (two colors when the costumes differ), counted with the aura tint's, and each costume's bundle gets about 10 KB of textures.
+- **Impersonation copies the other player:** the first other one in a match of more, nobody in a match of one. In a mirror match the moves and model are the character's own.
+- **Impersonated moves across body classes are approximate.**
+- **Throws stay the character's own across body classes.**
+- **Impersonated moves switch only between moves,** while the character stands, walks or runs. Releasing Z mid-air keeps the opponent's moves until landing.
+- **The character's own taken moves, imported clips and gun shots** don't play while the opponent's moves are on.
+- **The impersonated model is drawn, not swapped.** The character's skeleton, hit regions, attack volumes and camera stay. Across body classes the joints are approximate.
+- **The character's own auras, flames and attached effects still show** on the impersonated model, and so does the opponent's damage-stage or Z costume.
+- **The skin budget.** Drawing the opponent costs about 100-300 KB of the 512 KB a frame skins into; against a very large model the frame can run out and parts of a fighter draw wrong.
+- **Impersonated attack damage and super move costs apply from the next move.** Health becomes theirs at the same fraction, and back on release.
 
 ## Damage stages
 

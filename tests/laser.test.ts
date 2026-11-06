@@ -29,7 +29,7 @@ function lasered(base: string, l: Partial<imperfect.Laser> = {}): imperfect.Char
   const auto = mapping.autoMap(new Model(c.glb), Skeleton.ofBase(new R.BaseCharacter(src(), c.base)))
   c.mapping = auto.mapping
   c.overrides = auto.overrides
-  c.zButton = { stealth: null, costume: null, stats: null, size: null, bullet: null, gun: null, laser: { ...imperfect.defaultLaser(), ...l }, requires: { energy: { seconds: 8, regen: false } } }
+  c.zButton = { stealth: null, costume: null, stats: null, size: null, bullet: null, gun: null, laser: { ...imperfect.defaultLaser(), ...l }, impersonate: null, requires: { energy: { seconds: 8, regen: false } } }
   return c
 }
 

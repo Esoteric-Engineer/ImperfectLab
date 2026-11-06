@@ -291,8 +291,12 @@ export interface ZButton {
   bullet: number | null
   gun: Gun | null
   laser: Laser | null
+  impersonate: Impersonate | null
   requires: { energy?: { seconds: number; regen: boolean } }
 }
+
+export const IMPERSONATE_PARTS = ['moves', 'model', 'stats'] as const
+export type Impersonate = Record<(typeof IMPERSONATE_PARTS)[number], boolean>
 
 export const LASER_RANGE: [number, number] = [5, 60]
 export const LASER_DAMAGE: [number, number] = [1, 200]
@@ -463,6 +467,7 @@ function fitJson(fit: Character['fit']): Json {
 
 export function manifest(c: Character): Json {
   const z = c.zButton, zStats = z?.stats && Object.keys(z.stats).length ? z.stats : undefined
+  const zImpersonate = z?.impersonate && IMPERSONATE_PARTS.some((k) => z.impersonate![k]) ? Object.fromEntries(IMPERSONATE_PARTS.filter((k) => z.impersonate![k]).map((k) => [k, true])) : undefined
   const files = new Map(c.files)
   if (c.glb !== null) files.set('model/model.glb', c.glb)
   return {
@@ -498,7 +503,7 @@ export function manifest(c: Character): Json {
     move_anim_files: Object.keys(c.moveAnimFiles).length ? c.moveAnimFiles : undefined,
     cutscenes: hasCutscenes(c.cutscenes) ? { ...c.cutscenes, effects: Object.keys(c.cutscenes.effects).length ? c.cutscenes.effects : undefined, animation: Object.keys(c.cutscenes.animation).length ? c.cutscenes.animation : undefined } : undefined,
     sounds: Object.keys(c.sounds).length ? c.sounds : undefined,
-    z_button: z && (z.stealth || z.costume || zStats || z.size !== null || z.bullet !== null || z.gun || z.laser) ? {
+    z_button: z && (z.stealth || z.costume || zStats || z.size !== null || z.bullet !== null || z.gun || z.laser || zImpersonate) ? {
       stealth: z.stealth ? { undetected: z.stealth.undetected || undefined, untouchable: z.stealth.untouchable || undefined, visible: z.stealth.visible ?? undefined } : undefined,
       costume: z.costume ?? undefined,
       stats: zStats,
@@ -506,6 +511,7 @@ export function manifest(c: Character): Json {
       bullet: z.bullet ?? undefined,
       gun: z.gun ? { ...z.gun, sound: z.gun.sound === undefined ? undefined : soundRef(z.gun.sound) } : undefined,
       laser: z.laser ?? undefined,
+      impersonate: zImpersonate,
       requires: Object.keys(z.requires).length ? z.requires : undefined,
     } : undefined,
     files: Object.fromEntries([...files].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, v]) => [k, sha(v)])),
@@ -637,6 +643,12 @@ export function problems(c: Character): Problem[] {
   if (c.zButton?.gun && c.zButton.laser) out.push(['error', 'the Gun and the Laser Beam both fire with Z: pick one on the Z-Button Actions page'])
   if (c.zButton?.laser && !c.zButton.requires.energy) out.push(['note', 'the laser beam never runs out: tick Drains Energy on the Z-Button Actions page to limit it'])
   if (c.zButton?.stats && !Object.keys(c.zButton.stats).length) out.push(['warning', 'Stat Change is ticked but changes nothing: tick a value on the Z-Button Actions page'])
+  const imp = c.zButton?.impersonate
+  if (imp && !IMPERSONATE_PARTS.some((k) => imp[k])) out.push(['warning', 'Impersonation is ticked but takes nothing: tick moves, model or stats on the Z-Button Actions page'])
+  if (imp?.moves && c.zButton?.gun) out.push(['error', "the Gun's shots are moves of the character's own: Impersonation can't also take the opponent's moves"])
+  if (imp?.model && c.zButton?.gun) out.push(['error', "the Gun is drawn on the character's own model: Impersonation can't also take the opponent's model"])
+  if (imp?.stats && c.zButton?.stats) out.push(['error', 'Stat Change and Impersonation both set the stats Z changes: pick one on the Z-Button Actions page'])
+  if (imp?.model && c.zButton?.costume) out.push(['error', "Costume Change doesn't show while Impersonation draws the opponent's model: pick one on the Z-Button Actions page"])
   if (c.zButton?.size === 1) out.push(['warning', 'Change Size is ticked but changes nothing: set a size other than 1 on the Z-Button Actions page'])
   if (c.zButton?.costume) {
     for (const costume of Z_COSTUMES) {
@@ -1100,7 +1112,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   }
   c.zButton = null
   if (m.z_button !== undefined && m.z_button !== null) {
-    const z = keys(m.z_button, ['action', 'stealth', 'costume', 'stats', 'size', 'bullet', 'gun', 'laser', 'requires'], 'z_button')
+    const z = keys(m.z_button, ['action', 'stealth', 'costume', 'stats', 'size', 'bullet', 'gun', 'laser', 'impersonate', 'requires'], 'z_button')
     if (z.action !== undefined && z.action !== 'stealth') throw new LabError('manifest: z_button.action can only be stealth, as older files have it')
     let stealth: ZButton['stealth'] = null
     if (z.stealth !== undefined || z.action === 'stealth') {
@@ -1148,9 +1160,19 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     const bullet = num(z.bullet, 'z_button.bullet', ...Z_SLOW)
     const gun = z.gun !== undefined && z.gun !== null ? readGun(z.gun, 'z_button.gun') : null
     const laser = z.laser !== undefined && z.laser !== null ? readLaser(z.laser) : null
-    if (!stealth && !costume && !stats && size === null && bullet === null && !gun && !laser) throw new LabError('manifest: z_button needs at least one of stealth, costume, stats, size, bullet, gun and laser')
+    let impersonate: Impersonate | null = null
+    if (z.impersonate !== undefined && z.impersonate !== null) {
+      const im = keys(z.impersonate, [...IMPERSONATE_PARTS], 'z_button.impersonate')
+      impersonate = { moves: false, model: false, stats: false }
+      for (const k of IMPERSONATE_PARTS) {
+        if (im[k] !== undefined && im[k] !== true) throw new LabError(`manifest: z_button.impersonate.${k} is true or left out`)
+        impersonate[k] = im[k] === true
+      }
+      if (!IMPERSONATE_PARTS.some((k) => impersonate![k])) throw new LabError('manifest: z_button.impersonate needs at least one of moves, model and stats')
+    }
+    if (!stealth && !costume && !stats && size === null && bullet === null && !gun && !laser && !impersonate) throw new LabError('manifest: z_button needs at least one of stealth, costume, stats, size, bullet, gun, laser and impersonate')
     const requires = keys(z.requires ?? {}, ['energy'], 'z_button.requires')
-    c.zButton = { stealth, costume, stats, size, bullet, gun, laser, requires: {} }
+    c.zButton = { stealth, costume, stats, size, bullet, gun, laser, impersonate, requires: {} }
     if (requires.energy !== undefined) {
       const e = keys(requires.energy, ['seconds', 'regen'], 'z_button.requires.energy')
       c.zButton.requires.energy = { seconds: num(e.seconds, 'z_button.requires.energy.seconds', ...Z_SECONDS, false)!, regen: typed<boolean>(e.regen ?? false, 'boolean', 'z_button.requires.energy.regen') }
@@ -1160,7 +1182,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   if (m.gun !== undefined && m.gun !== null) {
     if (c.zButton?.gun) throw new LabError('manifest: the gun is in z_button.gun, not also gun')
     const gun = readGun(m.gun, 'gun', true)
-    c.zButton = c.zButton ? { ...c.zButton, gun } : { stealth: null, costume: null, stats: null, size: null, bullet: null, gun, laser: null, requires: {} }
+    c.zButton = c.zButton ? { ...c.zButton, gun } : { stealth: null, costume: null, stats: null, size: null, bullet: null, gun, laser: null, impersonate: null, requires: {} }
   }
   c.glb = files.get('model/model.glb') ?? null
   files.delete('model/model.glb')

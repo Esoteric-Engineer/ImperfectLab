@@ -530,7 +530,7 @@ describe.skipIf(!ISO)('game', () => {
     c.mapping = auto.mapping
     c.overrides = auto.overrides
     c.gameplay = { lift: 'heavy' }
-    c.zButton = { stealth: { undetected: true, untouchable: false, visible: 0.5 }, costume: null, stats: null, size: null, bullet: null, gun: null, laser: null, requires: { energy: { seconds: 5, regen: false } } }
+    c.zButton = { stealth: { undetected: true, untouchable: false, visible: 0.5 }, costume: null, stats: null, size: null, bullet: null, gun: null, laser: null, impersonate: null, requires: { energy: { seconds: 5, regen: false } } }
     const r = new Builder(src(), c).build()
     expect(r.adds.has('Bundles/synth.ngm')).toBe(true)
     expect(equal(r.dol!, D.zActions(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt), [{ internal: 'Synth', seconds: 5, regen: false, undetected: true, untouchable: false, visible: 0.5, costume: false, damage: [null, null, null, null, null], taken: null, lift: null, run: null, sprint: null, size: null, slow: null, gun: false }]))).toBe(true)
@@ -551,7 +551,7 @@ describe.skipIf(!ISO)('game', () => {
     const auto = mapping.autoMap(new Model(c.glb), Skeleton.ofBase(new R.BaseCharacter(src(), c.base)))
     c.mapping = auto.mapping
     c.overrides = auto.overrides
-    c.zButton = { stealth: null, costume: { normal: {}, alt: { 0: 'alt' } }, stats: { attack_damage_3: 40, lift: 'light' }, size: 1.5, bullet: 0.4, gun: null, laser: null, requires: {} }
+    c.zButton = { stealth: null, costume: { normal: {}, alt: { 0: 'alt' } }, stats: { attack_damage_3: 40, lift: 'light' }, size: 1.5, bullet: 0.4, gun: null, laser: null, impersonate: null, requires: {} }
     const r = new Builder(src(), c).build()
     const parts = (name: string) => ngmtool.read(r.adds.get(name)!)[1][0].parts
     expect(parts('Bundles/synth.ngm')).toEqual(['Synth', 'Synth_z', 'Synth_zo'])
@@ -602,7 +602,7 @@ describe.skipIf(!ISO)('game', () => {
     expect(r.notes).toContain('damage stages at 75%, 25% health: 2 textures, 4 KB')
     expect(report(c, r)).toContain('fn_801A479C')
 
-    c.zButton = { stealth: null, costume: { normal: {}, alt: {} }, stats: null, size: null, bullet: null, gun: null, laser: null, requires: {} }
+    c.zButton = { stealth: null, costume: { normal: {}, alt: {} }, stats: null, size: null, bullet: null, gun: null, laser: null, impersonate: null, requires: {} }
     const z: D.ZCharacter = { internal: 'Synth', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, costume: true,
       damage: [null, null, null, null, null], taken: null, lift: null, run: null, sprint: null, size: null, slow: null, gun: false }
     r = new Builder(src(), c).build()
@@ -892,7 +892,7 @@ describe.skipIf(!ISO)('game', () => {
 
   it('builds two characters, the second on the first', () => {
     const a = tinted('johnnyohm')
-    const b = { ...tinted('humantorch'), internalName: 'Other', displayName: 'OTHER', zButton: { stealth: { undetected: true, untouchable: true, visible: null }, costume: null, stats: null, size: null, bullet: null, gun: null, laser: null, requires: {} } }
+    const b = { ...tinted('humantorch'), internalName: 'Other', displayName: 'OTHER', zButton: { stealth: { undetected: true, untouchable: true, visible: null }, costume: null, stats: null, size: null, bullet: null, gun: null, laser: null, impersonate: null, requires: {} } }
     b.ui = { ...b.ui, ready_voice: 'FE_SFX_TORCH' }
     b.files = new Map([...b.files, ['ui/select_ready.png', pngBytes(200, 400)], ['ui/tile.png', pngBytes(64, 32)]])
     const r = buildBatch(src(), [a, b])
@@ -1943,7 +1943,7 @@ describe.skipIf(!ISO)('gun', () => {
   const armed = (base: string, side: imperfect.GunSide = 'right', internal = 'Synth') => {
     const c = { ...tinted(base), internalName: internal, displayName: internal.toUpperCase() }
     c.aura = { ...c.aura, mode: 'base' }
-    c.zButton = { stealth: null, costume: null, stats: null, size: null, bullet: null, laser: null, requires: {}, gun: { ...imperfect.defaultGun(side), damage: 25, bullets: 3, energy: 7.5, automatic: true } }
+    c.zButton = { stealth: null, costume: null, stats: null, size: null, bullet: null, laser: null, impersonate: null, requires: {}, gun: { ...imperfect.defaultGun(side), damage: 25, bullets: 3, energy: 7.5, automatic: true } }
     c.materials[0].bind = imperfect.gunBone(base, side)
     return c
   }

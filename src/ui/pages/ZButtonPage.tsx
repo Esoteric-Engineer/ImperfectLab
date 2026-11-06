@@ -4,7 +4,7 @@ import { formatG } from '../../core/format'
 import { LASER_TICK_SECONDS, Z_SECONDS, Z_SIZE, Z_SLOW, Z_VISIBLE, type ZAction } from '../../core/game/dol'
 import { label } from '../../core/game/roster'
 import { encodePng } from '../../core/image/png'
-import { defaultGun, defaultLaser, GAMEPLAY as RANGES, LASER_DAMAGE, LASER_POSITION, LASER_RANGE, laserDefault, GUN_BULLETS, GUN_DAMAGE, GUN_ENERGY, GUN_PLACES, GUN_SIDES, gunBone, gunHolster, type GunPlace, type GunSide, LIFT, mirrorPlace, swapBone, soundRef, type ZButton, type ZCostume, Z_COSTUMES, type ZStats, zTexture } from '../../core/package/imperfect'
+import { defaultGun, defaultLaser, GAMEPLAY as RANGES, type Impersonate, IMPERSONATE_PARTS, LASER_DAMAGE, LASER_POSITION, LASER_RANGE, laserDefault, GUN_BULLETS, GUN_DAMAGE, GUN_ENERGY, GUN_PLACES, GUN_SIDES, gunBone, gunHolster, type GunPlace, type GunSide, LIFT, mirrorPlace, swapBone, soundRef, type ZButton, type ZCostume, Z_COSTUMES, type ZStats, zTexture } from '../../core/package/imperfect'
 import { decodePicture, pickFile } from '../../io/files'
 import { BoneSelect, PositionTable } from '../components/bones'
 import { ColorButton, Note, NumberInput, ToggleCard } from '../components/common'
@@ -20,6 +20,7 @@ const ACTIONS: [ZAction, string][] = [
   ['bullet', 'Bullet Time'],
   ['gun', 'Gun'],
   ['laser', 'Laser Beam'],
+  ['impersonate', 'Impersonation'],
 ]
 
 const EFFECTS: ['undetected' | 'untouchable', string][] = [
@@ -37,6 +38,7 @@ const fresh = (action: ZAction): Partial<ZButton> => {
   if (action === 'bullet') return { bullet: 0.5 }
   if (action === 'gun') return { gun: defaultGun() }
   if (action === 'laser') return { laser: defaultLaser() }
+  if (action === 'impersonate') return { impersonate: { moves: true, model: true, stats: true } }
   return { stats: {} }
 }
 
@@ -48,8 +50,8 @@ export function ZButtonPage() {
   const edited = () => store.touch('character')
   const setAction = (action: ZAction, on: boolean) => {
     if (action === 'gun' && !on && z?.gun) unbindGun(z.gun.side)
-    const next: ZButton = { ...(z ?? { stealth: null, costume: null, stats: null, size: null, bullet: null, gun: null, laser: null, requires: {} }), ...(on ? fresh(action) : { [action]: null }) }
-    c.zButton = next.stealth || next.costume || next.stats || next.size !== null || next.bullet !== null || next.gun || next.laser ? next : null
+    const next: ZButton = { ...(z ?? { stealth: null, costume: null, stats: null, size: null, bullet: null, gun: null, laser: null, impersonate: null, requires: {} }), ...(on ? fresh(action) : { [action]: null }) }
+    c.zButton = next.stealth || next.costume || next.stats || next.size !== null || next.bullet !== null || next.gun || next.laser || next.impersonate ? next : null
     edited()
   }
   return (
@@ -84,6 +86,7 @@ export function ZButtonPage() {
           {action === 'bullet' && <BulletTime />}
           {action === 'gun' && <Gun />}
           {action === 'laser' && <LaserBeam />}
+          {action === 'impersonate' && <Impersonation />}
         </ToggleCard>
       ))}
     </div>
@@ -232,6 +235,36 @@ function LaserBeam() {
         {/* remounted per bone, so the view frames the new spot */}
         <PlacementView key={l.bone} first="front" method="laserPreview" what="the beam's origin" />
       </div>
+    </>
+  )
+}
+
+const IMPERSONATE_LABELS: [keyof Impersonate, string, string][] = [
+  ['moves', 'Moves', "Their attacks, throws, projectiles, effects, sounds and abilities (flight, wall climbing, wire swing). Against another body class (male, female or brute: Storm and Elektra are female, the Thing and Venom brutes) they're fitted to your skeleton like the Moves page's taken moves, so they're approximate, and your throws stay your own. A move already under way finishes as it began, and the switch waits until you stand, walk or run."],
+  ['model', 'Model and skin', "Their model, textures and shadow, posed by your moves. Against another body class the joints are approximate. Your own effects (auras, flames) stay yours."],
+  ['stats', 'Stats', "Their Stats page values: attack damage, damage taken, run and sprint speed, energy costs and recharge, rage, lifting strength, and max health (your health bar keeps its fraction). Attack damage changes from your next move."],
+]
+
+function Impersonation() {
+  const z = store.character.zButton!
+  const imp = z.impersonate!
+  const count = IMPERSONATE_PARTS.filter((k) => imp[k]).length
+  return (
+    <>
+      <Note>While Z is held, you take on your opponent's:</Note>
+      {IMPERSONATE_LABELS.map(([key, title, text]) => (
+        <div key={key}>
+          <label className="check block">
+            <input type="checkbox" checked={imp[key]} disabled={imp[key] && count === 1}
+              onChange={(e) => { imp[key] = e.target.checked; store.touch('character') }} /> {title}
+          </label>
+          <Note>{text}</Note>
+        </div>
+      ))}
+      {imp.moves && z.gun && <Note>✖ The Gun's shots are your own moves: untick the Gun or Moves.</Note>}
+      {imp.model && z.gun && <Note>✖ The Gun is drawn on your own model: untick the Gun or Model.</Note>}
+      {imp.stats && z.stats && <Note>✖ Stat Change also sets your stats: untick one of them.</Note>}
+      {imp.model && z.costume && <Note>✖ Costume Change doesn't show on the opponent's model: untick one of them.</Note>}
     </>
   )
 }

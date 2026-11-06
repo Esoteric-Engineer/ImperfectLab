@@ -127,7 +127,7 @@ export function CharacterPage() {
       </p>
 
       <h3>Credits</h3>
-      <Note>Shown to everyone who opens or patches the file. A model under CC BY must be credited.</Note>
+      <Note>Shown to everyone who opens or patches the file. Add credits for assets used.</Note>
       <div className="form">
         <label>Author</label>
         <input value={c.credits.author} onChange={(e) => { c.credits.author = e.target.value; edited() }} />
