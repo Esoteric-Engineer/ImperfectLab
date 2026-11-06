@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import { COMMIT, RELEASES, REPO_URL, VERSION } from './core/version'
 import * as actions from './ui/actions'
+import { restoreDisc } from './ui/disc'
 import { Modal } from './ui/components/common'
 import { type Menu, MenuBar } from './ui/components/MenuBar'
 import { ArtPage } from './ui/pages/ArtPage'
@@ -65,6 +66,10 @@ function App() {
   useEffect(() => {
     document.title = s.title()
   })
+
+  useEffect(() => {
+    void restoreDisc()
+  }, [])
 
   useEffect(() => {
     const unload = (e: BeforeUnloadEvent) => {

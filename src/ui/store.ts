@@ -3,6 +3,7 @@ import type { Catalog as CutsceneCatalog, EffectFit } from '../core/build/cutsce
 import type { Catalog, MoveEffectFit } from '../core/build/moves'
 import type { Catalog as SoundCatalog } from '../core/build/sounds'
 import type { Joint, JointModel } from '../core/model/glb'
+import type { DiscDetails, RememberedDisc } from '../io/discHandle'
 import { Skeleton } from '../core/model/skeleton'
 import { type Character, copyCharacter, newCharacter, snapshotCharacter } from '../core/package/imperfect'
 import type { BaseDetails, BaseInfo, BatchCheckResult, ModelInfo } from '../worker/protocol'
@@ -55,6 +56,7 @@ export interface Game {
   key: string
   verified: boolean
   bases: BaseInfo[]
+  details: DiscDetails
 }
 
 export type Change = 'character' | 'model' | 'mapping' | 'game'
@@ -71,6 +73,8 @@ class Store {
   fileHandle: FileSystemFileHandle | null = null
   dirty = false
   game: Game | null = null
+  rememberedDisc: RememberedDisc | null = null
+  restoringDisc = false
   model: ModelView | null = null
   modelError: string | null = null
   status = ''
@@ -246,6 +250,16 @@ class Store {
     const next = [...this.batch]
     ;[next[i], next[j]] = [next[j], next[i]]
     this.changeBatch(next)
+  }
+
+  setRememberedDisc(disc: RememberedDisc | null) {
+    this.rememberedDisc = disc
+    this.emit()
+  }
+
+  setRestoringDisc(on: boolean) {
+    this.restoringDisc = on
+    this.emit()
   }
 
   setGame(game: Game | null) {

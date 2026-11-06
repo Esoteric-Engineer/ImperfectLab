@@ -142,6 +142,10 @@
     background: var(--panel);
   }
 
+  .disc-status.ready {
+    border-left-color: var(--good);
+  }
+
   .modal {
     border-top: 2px solid var(--accent);
   }
