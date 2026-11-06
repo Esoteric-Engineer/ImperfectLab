@@ -99,7 +99,7 @@ export function SoundsPage() {
 
   const voice = (
     <div className="row">
-      <label>Versus Mode selection sound effect:</label>
+      <label>Versus Mode menu selection sound effect:</label>
       <select value={c.ui.ready_voice ?? ''} onChange={(e) => { c.ui.ready_voice = e.target.value || null; store.touch('character') }}>
         <option value="">none (no sound effect)</option>
         {keys().map((k) => <option key={k} value={VOICES[k]}>{label(k)}'s</option>)}

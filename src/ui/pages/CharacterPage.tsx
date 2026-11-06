@@ -89,7 +89,7 @@ export function CharacterPage() {
               edited()
             }
           }} />
-          <Note>1-10 letters and digits. Must not be one of the game's own characters.</Note>
+          <Note>1-10 characters. Shorter names use less memory. Must not be one of the game's own characters.</Note>
         </div>
         <label>Display name</label>
         <div>
@@ -115,7 +115,7 @@ export function CharacterPage() {
           return (
             <button key={key} className={`base ${key === c.base ? 'selected' : ''}`} onClick={() => changeBase(key)}
               title={supported ? '' : `${b?.body ?? ''}: not supported yet`}>
-              {b?.icon ? <ImageView image={b.icon} side={40} checker={false} /> : <span className="icon-placeholder" />}
+              {b?.icon ? <ImageView image={b.icon} side={40} checker={false} fill /> : <span className="icon-placeholder" />}
               <span>{R.label(key)}{supported ? '' : ' (not supported yet)'}</span>
             </button>
           )
@@ -123,11 +123,11 @@ export function CharacterPage() {
       </div>
       <p className="base-info">
         {!base ? "Choose your game disc to see the base characters' details."
-          : `${base.body} body, ${sk ? `${sk.nodes.length} bones` : 'skeleton not supported yet'}; select-screen stats ${base.stats.join(', ')}${sk ? '' : '. Pick another base'}`}
+          : `${base.body.charAt(0).toUpperCase() + base.body.slice(1).toLowerCase()} body, ${sk ? `${sk.nodes.length} bones` : 'skeleton not supported yet'}${sk ? '' : '. Pick another base'}`}
       </p>
 
       <h3>Credits</h3>
-      <Note>Shown to everyone who opens or patches the file. Add credits for assets used.</Note>
+      <Note>Add credits for assets used. Shown to everyone who opens or patches the file.</Note>
       <div className="form">
         <label>Author</label>
         <input value={c.credits.author} onChange={(e) => { c.credits.author = e.target.value; edited() }} />

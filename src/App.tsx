@@ -256,7 +256,7 @@ function App() {
       {about && (
         <Modal title="About ImperfectLab" onClose={() => setAbout(false)}>
           <p><b>ImperfectLab {VERSION}</b> <span className="note">({COMMIT})</span></p>
-          <p>Custom characters for Marvel Nemesis: Rise of the Imperfects (GameCube, USA).</p>
+          <p>Custom character creator for Marvel Nemesis: Rise of the Imperfects (GameCube, USA).</p>
           <p>
             By <a href="https://esotericengineer.com" target="_blank" rel="noreferrer">EsotericEngineer</a>
             {' | '}

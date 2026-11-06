@@ -32,7 +32,7 @@ export function ProjectilesPage() {
     <div className="page">
       <h3>Projectiles</h3>
       <Note>
-        Make changes to a character's projectiles. The moves keep their animations, damage and sound.
+        Make changes to a character's projectiles. The moves keep their animations, damage, and sound, unless changed elsewhere.
       </Note>
       <ToggleCard title="Replace every projectile" checked={p.on} disabled={none && !p.on} onChange={(on) => { p.on = on; edited() }}
         note={none
@@ -64,7 +64,7 @@ export function ProjectilesPage() {
               <BoneSelect value={p.bone} onChange={(bone) => { p.bone = bone; p.position = projectileDefault(bone, p.base); edited() }} />
             </div>
             <Note>
-              Where the shots leave from, in meters from the bone. The dot in the view is the exact launch point. During a move, it will turn with the bone.
+              Where the shots leave from, in meters from the bone. The dot in the view is the exact launch point. During a move, it will turn with the bone.<br />
               {lead ? ` The shot draws a tail about ${lead} m long behind its first frame, so from the head keep the point about that far ahead of the face, or the tail shows behind it.` : ''}
             </Note>
             <div className="row">

@@ -176,7 +176,11 @@ export class Service {
         let icon: RgbaImage | null = null
         if (rec) {
           const pic = new gshtool.Picture(rec)
-          icon = new RgbaImage(pic.width, pic.height, pic.decode(rec))
+          const w = Math.min(pic.width, 52), h = Math.min(pic.height, 50) // every icon is the same size, and the content is only in the top left corner
+          const full = pic.decode(rec)
+          const data = new Uint8Array(w * h * 4)
+          for (let y = 0; y < h; y++) data.set(full.subarray(y * pic.width * 4, (y * pic.width + w) * 4), y * w * 4)
+          icon = new RgbaImage(w, h, data)
         }
         const [, models] = ngmtool.read(b.bundleFiles()[0])
         return {

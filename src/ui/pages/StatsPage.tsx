@@ -85,7 +85,7 @@ export function StatsPage() {
       </table>
 
       <h3>Gameplay</h3>
-      <Note>Leave a value unticked to keep the base character's. The CPU difficulty levels keep the base's spread. Experimental values have not been tried in the game yet.</Note>
+      <Note>Leave a value unticked to keep the base character's. The CPU difficulty levels keep the base's spread.</Note>
       <table className="gameplay">
         <thead><tr><th>Value</th><th>Base</th><th>New</th></tr></thead>
         <tbody>

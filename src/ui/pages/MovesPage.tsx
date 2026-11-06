@@ -60,8 +60,8 @@ export function MovesPage() {
       <h3>Moves</h3>
       <Note>
         Swap any of your character's moves for another character's version of the move, or for an imported clip.<br />
-        The animations are copied into this character, along with the victim's side of a throw; a match loads both fighters' animations, so every swapped move uses a little more of its memory.<br />
-        What the move does stays {label(c.base)}'s: its cost and reach, its sounds, and whether the AI uses it. Its damage is one of the character's damage values (Stats page), though the swapped animation may pick a different one, and its effects play from {label(c.base)}'s own unless you pick the other character's under Effects.
+        The animations are copied into this character, along with the victim's side of a throw. Every swapped move uses a little more of the match memory.<br />
+        What the move does stays the base character's ({label(c.base)}'s), including its cost and reach, its sounds, and whether the AI uses it. Its damage is one of the character's damage values (Stats page), though the swapped animation may pick a different one, and its effects play from {label(c.base)}'s own unless you pick the other character's under Effects.
       </Note>
       {cross.length > 0 && (
         <Warning title="Moves from another body class are approximate">
@@ -336,7 +336,7 @@ function AnimationFiles() {
       <details>
         <summary><b>How imported clips are fitted</b></summary>
         <Note>
-          The clips have to be on your model's rig (the joint names the Model page maps), or on the game's own skeleton (a base's animations, downloaded above and edited). Some rigs face one way at rest and another in their clips: Facing turns the clips (it is guessed on import from which way the attacks reach). They are fitted onto {label(c.base)}'s skeleton the way the model is, and keep {label(c.base)}'s timing cues (hits, effects, sounds), stretched to the clip's length.
+          The clips have to be on your model's rig (the joint names the Model page maps), or on the game's own skeleton (a base's animations, downloaded above and edited). Some rigs face one way at rest and another in their clips: Facing turns the clips (guessed on import from which way the attacks reach). They are fitted onto {label(c.base)}'s skeleton the way the model is, and keep {label(c.base)}'s timing cues (hits, effects, sounds), stretched to the clip's length.
         </Note>
       </details>
       <details>
@@ -569,7 +569,10 @@ function GrabRange({ cat }: { cat: Catalog }) {
           edited()
         }} /> m</span>
       </div>
-      <Note>A long-range grab (Daredevil's cable, Spider-Man's web) starts where the character stands; a close one first moves the character to the opponent, so a long range makes it slide over.</Note>
+      <Note>
+        A long-range grab (Daredevil's cable, Spider-Man's web) starts where the character stands. A close-range grab first moves the character to the opponent.<br />
+        Replacing a long-range grab with a close-range grab makes the character slide over, unless adjusted here.
+      </Note>
     </ToggleCard>
   )
 }
@@ -734,9 +737,8 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
   return (
     <>
       <OptionCard plain head={`${label(c.base)}-specific moves`} note={<>
-        Whatever is fixed to game bone 39, the club/baton, is what flies: on the Materials page, fix a prop to that bone.<br />
-        The cable is drawn from the forearm to the baton all the time.<br />
-        The holster carries the same prop on the back outside power mode: power-on reaches back for it and power-off puts it back. It needs the cable off.
+        Whatever is fixed to game bone 39, the club/baton, is what flies. On the Materials page, fix a prop to that bone.<br />
+        The cable is drawn from the forearm to the baton all the time. Setting a custom holster location requires the baton cable to be off.
         {farSwapped && <><br />Super attack far is swapped above, so the reach can't be changed.</>}
         {farStretched && <><br />Super attack far is stretched below, so the reach can't be changed.</>}
       </>}>
