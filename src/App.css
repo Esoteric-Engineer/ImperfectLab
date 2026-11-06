@@ -190,6 +190,11 @@ footer {
   margin-top: 4px;
 }
 
+.page h5 {
+  font-size: 13px;
+  margin: 14px 0 6px;
+}
+
 .note {
   color: var(--muted);
   margin: 4px 0;
@@ -286,29 +291,45 @@ button.small {
   margin: 0 0 8px;
 }
 
-.card.zaction > .note {
+.card.toggle > .note {
   margin: 2px 0 0 24px;
 }
 
-.zaction-head {
+.card.toggle.plain > .note {
+  margin-left: 0;
+}
+
+.toggle-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 20px;
   font-weight: 600;
 }
 
-.card.zaction:not(.on) .zaction-head {
+.card.toggle:not(.on) .toggle-head {
   color: var(--muted);
 }
 
-.zaction-body {
+.toggle-body {
   margin-top: 10px;
   padding-top: 8px;
   border-top: 1px solid var(--line);
 }
 
-.zaction-body > .note {
+.toggle-body > .note {
   margin: 0 0 8px;
 }
 
-.zaction-indent {
+.toggle-body > h4 {
+  margin: 12px 0 6px;
+}
+
+.toggle-body > details {
+  margin: 6px 0;
+}
+
+.toggle-indent {
   margin-left: 24px;
 }
 

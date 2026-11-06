@@ -94,6 +94,28 @@ export function Note({ children }: { children: ReactNode }) {
   return <p className="note">{children}</p>
 }
 
+export function OptionCard({ head, on = true, plain = false, note, children }: { head: ReactNode; on?: boolean; plain?: boolean; note?: ReactNode; children?: ReactNode }) {
+  return (
+    <div className={`card toggle ${on ? 'on' : ''} ${plain ? 'plain' : ''}`}>
+      <div className="toggle-head">{head}</div>
+      {note && <Note>{note}</Note>}
+      {children && <div className="toggle-body">{children}</div>}
+    </div>
+  )
+}
+
+export function ToggleCard({ title, checked, disabled, onChange, note, children }: {
+  title: ReactNode; checked: boolean; disabled?: boolean; onChange: (on: boolean) => void; note?: ReactNode; children?: ReactNode
+}) {
+  return (
+    <OptionCard on={checked} note={note} head={
+      <label className="check"><input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} /> {title}</label>
+    }>
+      {checked ? children : null}
+    </OptionCard>
+  )
+}
+
 export function Warning({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="callout-warn" role="note">

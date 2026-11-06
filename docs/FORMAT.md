@@ -18,6 +18,7 @@ A ZIP archive (deflate). Only these members may appear, and nothing else is read
 | `cutscenes/<name>.asf` | new cutscene audio ([`cutscenes`](#cutscenes); `<name>`: 1-48 of `A-Z a-z 0-9 _ -`) |
 | `cutscenes/<name>.glb` | new cutscene animation, binary glTF 2.0 ([`cutscenes`](#cutscenes)) |
 | `sounds/<name>.dsp` | sounds that replace the base's (`<name>`: 1-48 of `A-Z a-z 0-9 _ -`; [`sounds`](#sounds)) |
+| `animations/<name>.glb` | clips that moves play, binary glTF 2.0 (`<name>`: 1-48 of `A-Z a-z 0-9 _ -`; [`move_anims`](#move_anims)) |
 
 Readers must reject:
 - any other member name, an absolute path, `..`, a backslash, a directory entry, or a duplicate member;
@@ -71,6 +72,7 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
   "flames": {"parts": ["head"], "body": false, "color": null, "alt_color": "#40A0FF", "size": 1.2, "base_effect": true},
   "trails": {"parts": ["arms", "legs"], "color": "#FFFFFF60", "alt_color": "#40A0FF80", "length": 0.2},
   "eyes": {"color": "#FF2000", "alt_color": "#40A0FF", "size": 1.2, "position": [0.033, 0.129, 0.046]},
+  "projectile": {"base": "ironman", "color": "#FF2000", "alt_color": "#FF2000", "from": "bone", "bone": "head", "position": [0, 0.629, 0.046]},
   "stats": {"display": {"normal": [7, 4, 3, 6, 5, 4], "alt": [7, 4, 3, 6, 5, 4]}, "gameplay": {"damage_taken": 0.7, "lift": "medium", "wire_swing": false}},
   "ui": {"select": {"ready": {"scale": 0.8, "anchor": [210, 75], "glow": "#3CFF5A6E"}}, "fade": 36, "strip_scale": null, "ready_voice": null, "banner": true},
   "base_moves": {},
@@ -79,6 +81,8 @@ Unknown keys are an error. A reader refuses a `version` newer than it knows and 
   "move_lines": { "color": "#C0C0C0", "alt_color": null },
   "move_reach": { "SuperAttackFar": { "distance": 15 }, "WireSwing": {} },
   "move_idle": ["Run"],
+  "move_anims": { "PowerOn": { "file": "animations/cyclops.glb", "clip": "power_3" } },
+  "move_anim_files": { "animations/cyclops.glb": { "turn": -90 } },
   "cutscenes": { "finisher": "wolverine", "audio": { "finisher_1": "cutscenes/finisher_1.asf" } },
   "sounds": { "3": {"file": "sounds/sound3.dsp"}, "10": {"game": "spiderman:4"} },
   "z_button": { "stealth": { "undetected": true, "untouchable": true, "visible": 0.2 }, "costume": { "normal": { "0": "alt" }, "alt": { "0": "textures/mat0_altz.png" } }, "stats": { "attack_damage_3": 40, "damage_taken": 0.5, "lift": "heavy" }, "size": 2, "bullet": 0.5, "gun": { "side": "right", "damage": 10, "energy": 5, "bullets": 3, "automatic": true, "holster": { "place": "back_right", "position": [0.05, -0.2, 0.05], "rotation": [-90, 45, 180] }, "swap": { "position": [0.05, -0.2, 0.05], "rotation": [-90, 45, 0] }, "sound": "116:3" }, "requires": { "energy": { "seconds": 8, "regen": false } } },
@@ -147,7 +151,15 @@ Optional; left out when `parts` is empty. See-through ribbons that trail behind 
 Optional; left out when off. Iron Man's eye glow on two eye markers on the head bone:
 - `color`, `alt_color` (defaults `#FFFFFF`, `#00FF00`): `#RRGGBB` or `#RRGGBBAA`; fully transparent means no glow.
 - `size` (default `1`): 0.25-3, times Iron Man's.
-- `position` (default `[0.033, 0.129, 0.046]`): metres from the head bone. X (0-0.3) is each eye's distance from the middle; Y (forward) and Z (up) are -0.3-0.3.
+- `position` (default `[0.033, 0.129, 0.046]`): meters from the head bone. X (0-0.3) is each eye's distance from the middle; Y (forward) and Z (up) are -0.3-0.3.
+
+### `projectile`
+Optional; left out when off. Another base's shot, recolored, in place of the shots the character's moves launch ([`LIMITATIONS.md`](LIMITATIONS.md#projectile-swap)). Refused on a base none of whose moves shoot (`wolverine paradox daredevil aftershock`).
+- `base` (default `ironman`): whose shot. Only `ironman` so far.
+- `color`, `alt_color` (default `#FF2000`): `#RRGGBB` or `#RRGGBBAA`; fully transparent hides the shot, which still hits.
+- `from` (default `bone`): `own` (the base's own launch point) or `bone`.
+- `bone` (default `head`; left out when `from` is `own`): `pelvis spine chest neck head`, or `R.` or `L.` followed by `clavicle upper_arm upper_twist forearm forearm_twist hand thigh calf foot toe`.
+- `position` (left out when `from` is `own`): meters from the bone, X, Y (forward) and Z (up), each -1 to 1. Defaults to `[0, 0.629, 0.046]` on `head`, `[0, 0, 0]` on any other bone.
 
 ### `stats`
 - `display`: six integers 1-7 per costume: intel, strength, speed, durability, energy, skill. Shown on the
@@ -235,6 +247,19 @@ Not allowed on `SuperAttackFar` with `base_moves.throw_reach`. See [`LIMITATIONS
 Optional, left out when empty. A list of move ids (not `Stand`, and none in `moves`) that play the character's idle (`Stand`) animation instead of their own. A move that plays once keeps its length, events and root (its travel and turning), with the idle's pose on every other bone. A looping move (`Run`, `Walk`) plays the idle itself, at the idle's own rate instead of the move's stride. The victim's side of a throw is unchanged.
 Not allowed with `move_reach` on the same move, nor on `SuperAttackFar` with `base_moves.throw_reach`. See [`LIMITATIONS.md`](LIMITATIONS.md).
 
+### `move_anims`
+Optional, left out when empty. Move id -> a clip of an `animations/` member that the move plays instead of the base's animation:
+- `file`: the `animations/` member.
+- `clip`: the name of one of its glTF animations.
+- `states` (optional): state -> clip, the clip each of the move's states plays instead of `clip` (`Block` has `BlockStart`, `Block`, `BlockEnd`). Each key is one of the move's states.
+- `timing` (optional): `clip` to time the move's hit windows from the clip's strikes; left out, the base's timing is stretched to the clip's length.
+- `travel` (optional): `base` to keep the base move's Root travel; left out, Root takes the clip's own ground travel.
+
+The move can't be in `moves` or `move_idle`, and can't be one with a victim (a throw). It can be stretched (`move_reach`). The clip's joints are named as the model's (`model`); with no model, as the presets map them. A file whose joints are named as the game's bones drives the base's bones directly, with or without a model. An `animations/` member keeps the glTF's nodes, skin and animations; the meshes, materials and images are dropped. See [`LIMITATIONS.md`](LIMITATIONS.md).
+
+### `move_anim_files`
+Optional, left out when no file is turned. `animations/` member -> `turn`: degrees (-180 to 180) its clips are turned about the up axis, counter-clockwise seen from above, before they are fitted. A file left out takes 0.
+
 ### `cutscenes`
 Optional, and left out when the character keeps its base's cutscenes and audio.
 - `intro`, `victory`, `finisher`: the base (not the character's own) whose cutscenes of that kind the character uses. Each is optional.
@@ -254,7 +279,7 @@ Optional, and left out when no sound changes. The index of a sound in the base's
 A `sounds/` member is a standard Nintendo `.dsp` file. ImperfectLab writes mono, unlooped files at the replaced sound's rate or lower.
 
 ### `z_button`
-Optional, left out when Z does nothing (default). Holding Z runs every action given, at least one of `stealth`, `costume`, `stats`, `size`, `bullet` and `gun`.
+Optional, left out when Z does nothing (default). Holding Z runs every action given, at least one of `stealth`, `costume`, `stats`, `size`, `bullet`, `gun` and `laser`.
 - `action`: only in older files, where `stealth` is Stealth Mode. A reader takes it as `stealth`; a writer leaves it out.
 - `stealth`: optional, Stealth Mode's effects, at least one of them:
   - `undetected`: `true` when the CPU loses track of the character. Optional, `false` by default.
@@ -275,6 +300,12 @@ Optional, left out when Z does nothing (default). Holding Z runs every action gi
     - `position`: the gun's middle from the place's bone at bind, in the character's axes (X right, Y forward, Z up): three numbers from -0.6 to 0.6, in meters. `rotation`: three numbers from -180 to 180, degrees about X, Y and Z, X first.
   - `swap`: optional, left out when nothing swaps. What the gun hand holds while the gun is holstered.
   - `sound`: optional, what each shot plays from the character's sound bank: a sound event and its variant as `"<event>:<variant>"` (event 0-65535, variant 0-4294967295), as an animation event 0x17 has them. Left out, the gun is silent.
+- `laser`: optional, Laser Beam. Holding Z fires a tinted copy of Iron Man's finisher beam from a bone, level along the character's facing. Not with `gun`. Any base.
+  - `color`, `alt_color`: `#RRGGBB` (default `#FF2010`), costume 1's and 2's beam.
+  - `bone`: one of `projectile.bone`'s (default `chest`), the bone the beam leaves from.
+  - `position`: three numbers from -1 to 1, the beam's origin in meters from the bone at bind, in the character's axes (X right, Y forward, Z up). Default (0, 0.123, 0.073) on the chest and (0, 0, 0) on any other bone.
+  - `damage`: integer 1-200 (default 20), damage a second.
+  - `range`: integer 5-60 (default 30), the beam's longest reach in meters.
 - `requires`: optional, left out when empty. What the action needs.
   - `energy`: the action drains energy and can't start with none. `seconds` (1 to 60) is how long a full bar lasts. `regen` (optional, `false` by default) keeps the game's energy regeneration running while active, so the bar lasts longer.
 

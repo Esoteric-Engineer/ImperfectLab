@@ -1,12 +1,19 @@
+import { sha256 } from '@noble/hashes/sha2.js'
 import * as dsp from '../core/audio/dspadpcm'
+import { toHex } from '../core/bytes'
 import { type Batch, buildBatch, checkBatch } from '../core/build/batch'
 import * as cutscenes from '../core/build/cutscenes'
 import { Builder, glowRgba, gunPlanOf, onBackPlan, patch, type Progress, propShape, report, type Result, WIRE, write } from '../core/build/patch'
 import * as effects from '../core/build/effects'
 import * as eyes from '../core/build/eyes'
 import * as gun from '../core/build/gun'
+import { animGlb, animsOf, ClipFile, guessTurn, parseChoice, stateClips, type Timing, type Travel } from '../core/build/moveanim'
+import * as moveexport from '../core/build/moveexport'
+import * as reach from '../core/build/reach'
 import * as moves from '../core/build/moves'
 import * as portraits from '../core/build/portraits'
+import * as laser from '../core/build/laser'
+import * as projectileswap from '../core/build/projectileswap'
 import * as sounds from '../core/build/sounds'
 import * as tuning from '../core/build/tuning'
 import * as ui from '../core/build/ui'
@@ -27,7 +34,7 @@ import * as mapping from '../core/model/mapping'
 import { Skeleton } from '../core/model/skeleton'
 import * as imperfect from '../core/package/imperfect'
 import { baseMeshes, type BoneLine, costumeImage, damageImages, fittedMeshes, gameBones, holsteredTris, materialImages, type MeshData, pointMeshes, sourceBones, sourceMeshes } from '../core/preview'
-import type { BaseDetails, BaseInfo, CheckResult, ComposeArgs, DiscInfo, ImportedModel, BatchCheckResult, LayoutInfo, ModelInfo, MovePreview, PreviewResult } from './protocol'
+import type { BaseDetails, BaseInfo, CheckResult, ComposeArgs, DiscInfo, ImportedAnimations, ImportedModel, BatchCheckResult, LayoutInfo, ModelInfo, MovePreview, PreviewResult } from './protocol'
 
 const DEFAULT_SIZES: Record<string, [number, number]> = {
   tile0: [64, 32], tile1: [64, 32], hud: [64, 64], strip0: [128, 256], strip1: [32, 256], strip0_alt: [128, 256], strip1_alt: [32, 256],
@@ -90,6 +97,7 @@ export class Service {
   private batchTokens = 0
   private motionCache = new Map<string, moves.MotionFiles>()
   private motionModel: Model | null = null
+  private clipFiles = new Map<string, ClipFile>()
   decoder: ImageDecoder | null = null
 
   openDisc(disc: ImageDisc | FolderDisc): DiscInfo {
@@ -179,6 +187,10 @@ export class Service {
         return { key, label: R.label(key), body: 'male', stats: [], altStats: [], hudName: '', icon: null, skeleton: null, error: e.message }
       }
     })
+  }
+
+  moveTravels(base: string): string[] {
+    return moves.travelling(this.src(), this.base(base))
   }
 
   moveCatalog(): moves.Catalog {
@@ -422,13 +434,107 @@ export class Service {
     }
   }
 
-  movePreview(c: imperfect.Character, moveId: string, from: string | null = null): MovePreview | string {
+  projectilePreview(c: imperfect.Character): { meshes: MeshData[]; bones: BoneLine[]; focus: [[number, number, number], number] } | string {
+    const p = c.projectile
+    if (!p.on) return 'the projectile swap is off'
+    if (p.from !== 'bone') return "the projectile launches from the base's own points"
+    try {
+      const { m, sk, included, tris } = this.fitted(c)
+      const images = materialImages(m, c)
+      const bySlot = new Map(included.map((x, i) => [i, images.get(x.gltfMaterial) ?? null]))
+      const color = effects.hexAlpha(p.color) ? p.color : p.alt_color
+      const [bone, at] = projectileswap.launchPoint(sk, p).map((q) => q.map((v) => v * c.size) as [number, number, number])
+      const dot = pointMeshes([at], 0.02 * c.size, [...effects.hexRgb(color), 255])
+      const root = pointMeshes([bone], 0.008 * c.size, [255, 255, 255, 255])
+      const middle = [0, 1, 2].map((i) => (bone[i] + at[i]) / 2) as [number, number, number]
+      const half = Math.hypot(...[0, 1, 2].map((i) => at[i] - bone[i])) / 2
+      return { meshes: [...previewTextures(fittedMeshes(tris, bySlot, c.size)), dot, root], bones: gameBones(sk, c.size), focus: [middle, Math.max(0.3 * c.size, half + 0.15 * c.size)] }
+    } catch (e) {
+      if (!(e instanceof LabError)) throw e
+      return e.message
+    }
+  }
+
+  // The model with a dot at the laser's origin and a short dotted line where it fires (forward, level), in costume 1's color.
+  laserPreview(c: imperfect.Character): { meshes: MeshData[]; bones: BoneLine[]; focus: [[number, number, number], number] } | string {
+    const l = c.zButton?.laser
+    if (!l) return 'the laser beam is off'
+    try {
+      const { m, sk, included, tris } = this.fitted(c)
+      const images = materialImages(m, c)
+      const bySlot = new Map(included.map((x, i) => [i, images.get(x.gltfMaterial) ?? null]))
+      const [bone, at] = laser.origin(sk, l).map((q) => q.map((v) => v * c.size) as [number, number, number])
+      const rgba: [number, number, number, number] = [...effects.hexRgb(l.color), 255]
+      const ray = [1, 2, 3, 4, 5, 6].map((k): [number, number, number] => [at[0], at[1] + 0.06 * k * c.size, at[2]])
+      const dot = pointMeshes([at], 0.02 * c.size, rgba)
+      const line = pointMeshes(ray, 0.008 * c.size, rgba)
+      const root = pointMeshes([bone], 0.008 * c.size, [255, 255, 255, 255])
+      const middle = [0, 1, 2].map((i) => (bone[i] + at[i]) / 2) as [number, number, number]
+      const half = Math.hypot(...[0, 1, 2].map((i) => at[i] - bone[i])) / 2
+      return { meshes: [...previewTextures(fittedMeshes(tris, bySlot, c.size)), dot, line, root], bones: gameBones(sk, c.size), focus: [middle, Math.max(0.4 * c.size, half + 0.2 * c.size)] }
+    } catch (e) {
+      if (!(e instanceof LabError)) throw e
+      return e.message
+    }
+  }
+
+  private clipKey(data: Uint8Array): string {
+    return toHex(sha256(data))
+  }
+
+  // An animation file, read once per content.
+  private clipFile(data: Uint8Array): ClipFile {
+    const key = this.clipKey(data)
+    let f = this.clipFiles.get(key)
+    if (!f) {
+      f = new ClipFile(data)
+      this.clipFiles.set(key, f)
+      if (this.clipFiles.size > 4) this.clipFiles.delete(this.clipFiles.keys().next().value!)
+    }
+    return f
+  }
+
+  // An animation file to add to the project.
+  importAnimations(raw: Uint8Array, base: string | null = null, map: mapping.Mapping | null = null): ImportedAnimations {
+    const slim = animGlb(raw)
+    const file = this.clipFile(slim)
+    const sk = base ? this.skeleton(base) : null
+    let turn = 0
+    try {
+      if (sk) turn = guessTurn(file, sk, map && map.size ? map : null)
+    } catch (e) {
+      if (!(e instanceof LabError)) throw e
+    }
+    // Sketchfab and other exporters put the author and license in the asset's extras
+    const x = file.g.j.asset?.extras ?? {}
+    const text = (v: unknown) => (typeof v === 'string' ? v.slice(0, 200) : '')
+    return { slim, clips: file.clips, joints: file.joints.size, turn, credit: { by: text(x.author), license: text(x.license), url: text(x.source) } }
+  }
+
+  moveAnimations(base: string): Uint8Array {
+    return moveexport.movesGlb(this.src(), this.base(base))
+  }
+
+  changedClips(c: imperfect.Character, member: string): moveexport.Changes {
+    const data = c.files.get(member)
+    if (!data) throw new LabError(`the project has no animation file ${member}`)
+    return moveexport.changedClips(this.src(), this.base(c.base), this.clipFile(data), c.moveAnimFiles[member]?.turn ?? 0)
+  }
+
+  movePreview(c: imperfect.Character, moveId: string, from: string | null = null, timing: Timing | null = null, travel: Travel | null = null): MovePreview | string {
     const move = moves.MOVE_IDS.get(moveId)
     if (!move) return `there is no move ${moveId}`
     if (from !== null) {
-      c = { ...c, moves: { ...c.moves }, moveReach: { ...c.moveReach }, moveIdle: c.moveIdle.filter((id) => id !== moveId) }
+      c = { ...c, moves: { ...c.moves }, moveReach: { ...c.moveReach }, moveIdle: c.moveIdle.filter((id) => id !== moveId), moveAnims: { ...c.moveAnims } }
       delete c.moveReach[moveId]
-      if (from === c.base) delete c.moves[moveId]
+      delete c.moveAnims[moveId]
+      const clip = parseChoice(from)
+      if (clip) {
+        delete c.moves[moveId]
+        const data = c.files.get(clip.file)
+        const states = data ? stateClips(move.states, clip.clip, this.clipFile(data).clips.map((x) => x.name)) : undefined
+        c.moveAnims[moveId] = { ...clip, ...(states && { states }), ...(timing && { timing }), ...(travel && { travel }) }
+      } else if (from === c.base) delete c.moves[moveId]
       else c.moves[moveId] = from
     }
     const src = this.src(), base = this.base(c.base)
@@ -447,7 +553,8 @@ export class Service {
         notes.push(`The custom model can't be shown: ${e.message}`)
       }
     }
-    const key = JSON.stringify([c.base, c.internalName, c.moves, c.moveIdle, c.moveReach, c.size, c.baseMoves, imperfect.gunOf(c), [...c.mapping], [...c.overrides], c.fit, c.materials])
+    const animFiles = [...new Set(Object.values(c.moveAnims).map((p) => p.file))].map((f) => [f, c.files.has(f) ? this.clipKey(c.files.get(f)!) : null])
+    const key = JSON.stringify([c.base, c.internalName, c.moves, c.moveIdle, c.moveReach, c.moveAnims, c.moveAnimFiles, animFiles, c.size, c.baseMoves, imperfect.gunOf(c), [...c.mapping], [...c.overrides], c.fit, c.materials])
     if (this.motionModel !== this.model) {
       this.motionCache.clear()
       this.motionModel = this.model
@@ -459,7 +566,8 @@ export class Service {
       const shooter = gunPlanOf(c, baseModel, base.body, center, geometry, swapCenter)
       const fx = Object.keys(c.moveReach).length ? new effects.Effects(src.entry('Misc/game.nfx')) : null
       try {
-        mf = moves.motionFiles(src, base, c.internalName, c.moves, c.baseMoves.throw_reach, {}, null, c.moveReach, fx, c.size, c.moveIdle, onBackPlan(c, center), false, shooter)
+        const anims = animsOf(c, this.model, (d) => this.clipFile(d))
+        mf = moves.motionFiles(src, base, c.internalName, c.moves, c.baseMoves.throw_reach, {}, null, c.moveReach, fx, c.size, c.moveIdle, onBackPlan(c, center), false, shooter, null, anims)
       } catch (e) {
         if (!(e instanceof LabError)) throw e
         return e.message
@@ -471,7 +579,13 @@ export class Service {
     notes.push(...mf.notes.filter((n) => n.startsWith(`moves: ${move.label} `) || n.startsWith(`reach: ${move.label} `)).map((n) => n.slice(n.indexOf(': ') + 2)))
     const variants = moves.played(src, mf, c.internalName, move).map((p) => ({ state: p.state, slot: p.slot, fps: moves.motionFps(p.opts), rec: p.rec }))
     const baseMesh = baseMeshes(src, base).map((m) => (c.size === 1 ? m : { ...m, positions: m.positions.map((v) => v * c.size) }))
-    return { nodes: mf.model.nodes, variants, custom, base: previewTextures(baseMesh), notes }
+    let hitBones: MovePreview['hitBones'] = {}
+    try {
+      hitBones = reach.bonesOf(new Skeleton(mf.model, base.body))
+    } catch (e) {
+      if (!(e instanceof LabError)) throw e
+    }
+    return { nodes: mf.model.nodes, variants, custom, base: previewTextures(baseMesh), notes, hitBones }
   }
 
   private materialSource(c: imperfect.Character, x: imperfect.Material): RgbaImage | null {

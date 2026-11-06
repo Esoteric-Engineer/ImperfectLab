@@ -11,7 +11,8 @@ import { CLUB_MOVES, defaultDrawn } from '../build/holster'
 import { type DamageKey, KEYS as DAMAGE_KEYS } from '../build/damage'
 import { COSTS, type EnergyKey, FALLBACK, RECHARGE, type RechargeKey } from '../build/energy'
 import { BULLETS as GUN_BULLETS, DAMAGE as GUN_DAMAGE, DEFAULT_BULLETS, DEFAULT_DAMAGE, DEFAULT_ENERGY, ENERGY as GUN_ENERGY, PLACES as GUN_PLACES, type Place as GunPlace, type Sound as GunSound } from '../build/gun'
-import { LOW_ENERGY_STUN, MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
+import { animatable, LOW_ENERGY_STUN, MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
+import { type ClipInfo, clipList } from '../build/moveanim'
 import { DISTANCE, JUMP_DISTANCE, JUMPS, type Limb, LIMBS } from '../build/reach'
 import { Z_SECONDS, Z_SIZE, Z_SLOW, Z_VISIBLE } from '../game/dol'
 import { BASES } from '../game/roster'
@@ -31,7 +32,7 @@ const STAT_RANGE = [1, 7]
 
 export const UI_SLOTS = ['select_rest', 'select_ready', 'select_readyalt', 'load_wide', 'load_narrow', 'load_wide_alt',
   'load_narrow_alt', 'tile', 'tile_selected', 'hud', 'hud_rage', 'hud_alt', 'hud_alt_rage', 'banner']
-export const MEMBER = new RegExp(`^(manifest\\.json|model/model\\.glb|textures/[A-Za-z0-9_-]{1,48}\\.png|ui/(${UI_SLOTS.join('|')})\\.png|cutscenes/[A-Za-z0-9_-]{1,48}\\.(asf|glb)|sounds/[A-Za-z0-9_-]{1,48}\\.dsp)$`)
+export const MEMBER = new RegExp(`^(manifest\\.json|model/model\\.glb|textures/[A-Za-z0-9_-]{1,48}\\.png|ui/(${UI_SLOTS.join('|')})\\.png|cutscenes/[A-Za-z0-9_-]{1,48}\\.(asf|glb)|sounds/[A-Za-z0-9_-]{1,48}\\.dsp|animations/[A-Za-z0-9_-]{1,48}\\.glb)$`)
 const SOUND_FILE = /^sounds\/[A-Za-z0-9_-]{1,48}\.dsp$/
 const GAME_SOUND = /^[a-z]+:\d{1,3}$/
 export const MAX_SOUND_SECONDS = 30
@@ -216,11 +217,53 @@ export interface Eyes {
   position: [number, number, number]
 }
 
+// Another base's shot in place of every shot the character's moves launch (build/projectiles.ts).
+// Only donors checked in the game are listed.
+export const PROJECTILE_BASES = ['ironman'] as const
+export const PROJECTILE_FROM = ['own', 'bone'] as const
+export type ProjectileFrom = (typeof PROJECTILE_FROM)[number]
+export const PROJECTILE_BONES = [
+  'pelvis', 'spine', 'chest', 'neck', 'head',
+  ...['R', 'L'].flatMap((side) => ['clavicle', 'upper_arm', 'upper_twist', 'forearm', 'forearm_twist', 'hand', 'thigh', 'calf', 'foot', 'toe'].map((b) => `${side}.${b}`)),
+]
+export const PROJECTILE_POSITION: [number, number] = [-1, 1]
+export const PROJECTILE_LEAD: Record<string, number> = { ironman: 0.5 }
+export interface Projectile {
+  on: boolean
+  base: string
+  color: string
+  alt_color: string
+  from: ProjectileFrom
+  bone: string
+  position: [number, number, number]
+}
+
+export const NO_SHOTS = ['wolverine', 'paradox', 'daredevil', 'aftershock']
+
 export const MOVE_EFFECTS = ['theirs', 'none'] as const
 export type MoveEffect = (typeof MOVE_EFFECTS)[number]
 export interface MoveLines {
   color: string | null
   alt_color: string | null
+}
+// A move played from a clip of an animation file in the project (manifest `move_anims`).
+export interface MoveAnim {
+  file: string
+  clip: string
+  states?: Record<string, string>
+  timing?: 'clip'
+  travel?: 'base'
+}
+export const ANIM_FILE = /^animations\/[A-Za-z0-9_-]{1,48}\.glb$/
+// How an animation file's clips are turned to face the model's front (manifest `move_anim_files`).
+export interface MoveAnimFile {
+  turn: number
+}
+
+// The project's animation files: member, name and clips.
+export function animFiles(c: Pick<Character, 'files'>): [string, string, ClipInfo[]][] {
+  return [...c.files].filter(([m]) => ANIM_FILE.test(m)).sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([m, data]) => [m, m.slice('animations/'.length, -'.glb'.length), clipList(data)])
 }
 export interface MoveReach {
   distance?: number
@@ -247,8 +290,29 @@ export interface ZButton {
   size: number | null
   bullet: number | null
   gun: Gun | null
+  laser: Laser | null
   requires: { energy?: { seconds: number; regen: boolean } }
 }
+
+export const LASER_RANGE: [number, number] = [5, 60]
+export const LASER_DAMAGE: [number, number] = [1, 200]
+export const LASER_POSITION: [number, number] = [-1, 1]
+const LASER_COLOR = /^#[0-9A-Fa-f]{6}$/
+export interface Laser {
+  color: string
+  alt_color: string
+  bone: string
+  position: [number, number, number]
+  damage: number // per second
+  range: number // m
+}
+
+// Where Iron Man's own beam leaves from (his attachment 9/0).
+export function laserDefault(bone: string): [number, number, number] {
+  return bone === 'chest' ? [0, 0.123, 0.073] : [0, 0, 0]
+}
+
+export const defaultLaser = (): Laser => ({ color: '#FF2010', alt_color: '#FF2010', bone: 'chest', position: laserDefault('chest'), damage: 20, range: 30 })
 
 export function zTexture(z: ZButton, costume: ZCostume, m: number): string {
   return z.costume?.[costume][m] ?? (costume === 'normal' ? 'alt' : 'normal')
@@ -273,6 +337,7 @@ export interface Character {
   flames: Flames
   trails: Trails
   eyes: Eyes
+  projectile: Projectile
   stats: { normal: number[]; alt: number[] }
   gameplay: Gameplay
   baseMoves: BaseMoves
@@ -281,6 +346,8 @@ export interface Character {
   moveLines: MoveLines
   moveReach: Record<string, MoveReach>
   moveIdle: string[]
+  moveAnims: Record<string, MoveAnim>
+  moveAnimFiles: Record<string, MoveAnimFile>
   cutscenes: Cutscenes
   sounds: Record<string, SoundSource>
   zButton: ZButton | null
@@ -304,6 +371,15 @@ export function defaultTrails(): Trails {
 export const EYE_POSITION: [number, number, number] = [0.033, 0.129, 0.046]
 export function defaultEyes(): Eyes {
   return { on: false, color: '#FFFFFF', alt_color: '#00FF00', size: 1, position: [...EYE_POSITION] }
+}
+
+// A bone's starting launch spot.
+export function projectileDefault(bone: string, donor: string): [number, number, number] {
+  return bone === 'head' ? [0, Math.round((EYE_POSITION[1] + (PROJECTILE_LEAD[donor] ?? 0)) * 1000) / 1000, EYE_POSITION[2]] : [0, 0, 0]
+}
+
+export function defaultProjectile(): Projectile {
+  return { on: false, base: 'ironman', color: '#FF2000', alt_color: '#FF2000', from: 'bone', bone: 'head', position: projectileDefault('head', 'ironman') }
 }
 
 export function hasCutscenes(c: Cutscenes): boolean {
@@ -336,6 +412,7 @@ export function newCharacter(): Character {
     flames: defaultFlames(),
     trails: defaultTrails(),
     eyes: defaultEyes(),
+    projectile: defaultProjectile(),
     stats: defaultStats(),
     gameplay: {},
     baseMoves: {},
@@ -344,6 +421,8 @@ export function newCharacter(): Character {
     moveLines: { color: null, alt_color: null },
     moveReach: {},
     moveIdle: [],
+    moveAnims: {},
+    moveAnimFiles: {},
     cutscenes: { audio: {}, effects: {}, animation: {} },
     sounds: {},
     zButton: null,
@@ -403,6 +482,10 @@ export function manifest(c: Character): Json {
     flames: hasFlames(c.flames) ? c.flames : undefined,
     trails: c.trails.parts.length ? c.trails : undefined,
     eyes: c.eyes.on ? { color: c.eyes.color, alt_color: c.eyes.alt_color, size: c.eyes.size, position: c.eyes.position } : undefined,
+    projectile: c.projectile.on ? {
+      base: c.projectile.base, color: c.projectile.color, alt_color: c.projectile.alt_color, from: c.projectile.from,
+      ...(c.projectile.from === 'bone' ? { bone: c.projectile.bone, position: c.projectile.position } : {}),
+    } : undefined,
     stats: { display: c.stats, gameplay: c.gameplay },
     ui: c.ui,
     base_moves: c.baseMoves,
@@ -411,15 +494,18 @@ export function manifest(c: Character): Json {
     move_lines: c.moveLines.color !== null || c.moveLines.alt_color !== null ? c.moveLines : undefined,
     move_reach: Object.keys(c.moveReach).length ? c.moveReach : undefined,
     move_idle: c.moveIdle.length ? c.moveIdle : undefined,
+    move_anims: Object.keys(c.moveAnims).length ? c.moveAnims : undefined,
+    move_anim_files: Object.keys(c.moveAnimFiles).length ? c.moveAnimFiles : undefined,
     cutscenes: hasCutscenes(c.cutscenes) ? { ...c.cutscenes, effects: Object.keys(c.cutscenes.effects).length ? c.cutscenes.effects : undefined, animation: Object.keys(c.cutscenes.animation).length ? c.cutscenes.animation : undefined } : undefined,
     sounds: Object.keys(c.sounds).length ? c.sounds : undefined,
-    z_button: z && (z.stealth || z.costume || zStats || z.size !== null || z.bullet !== null || z.gun) ? {
+    z_button: z && (z.stealth || z.costume || zStats || z.size !== null || z.bullet !== null || z.gun || z.laser) ? {
       stealth: z.stealth ? { undetected: z.stealth.undetected || undefined, untouchable: z.stealth.untouchable || undefined, visible: z.stealth.visible ?? undefined } : undefined,
       costume: z.costume ?? undefined,
       stats: zStats,
       size: z.size ?? undefined,
       bullet: z.bullet ?? undefined,
       gun: z.gun ? { ...z.gun, sound: z.gun.sound === undefined ? undefined : soundRef(z.gun.sound) } : undefined,
+      laser: z.laser ?? undefined,
       requires: Object.keys(z.requires).length ? z.requires : undefined,
     } : undefined,
     files: Object.fromEntries([...files].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, v]) => [k, sha(v)])),
@@ -482,6 +568,7 @@ export function problems(c: Character): Problem[] {
       out.push(['warning', 'wall jump animations are picked but neither wall climbing nor wall running is on, so they never play'])
     }
   }
+  if (c.projectile.on && NO_SHOTS.includes(c.base)) out.push(['error', `${BASES[c.base][0]} launches no projectiles to replace: untick the projectile on the Projectiles page`])
   if (c.baseMoves.range_grab) {
     if (!c.moves.WirePull) out.push(['error', 'the range grab needs the ranged pickup: pick it on the Moves page'])
   } else if ((BASE_MOVES[c.base] ?? []).includes('range_grab') && RANGE_GRAB.some((id) => c.moves[id])) out.push(['warning', 'ranged pickup animations are picked but the range grab is off, so they never play'])
@@ -521,6 +608,21 @@ export function problems(c: Character): Problem[] {
     if (!CUTSCENE_SLOT.test(slot)) out.push(['error', `there is no cutscene ${slot}`])
     else if (!c.files.has(member)) out.push(['error', `the new animation for cutscene ${slot.replace('_', ' ')} is missing`])
   }
+  for (const [id, pick] of Object.entries(c.moveAnims)) {
+    const label = MOVE_IDS.get(id)?.label ?? id
+    const data = c.files.get(pick.file)
+    if (!data) out.push(['error', `the animation file of ${label} (${pick.file}) is missing`])
+    else {
+      const have = new Set(clipList(data).map((x) => x.name))
+      for (const clip of new Set([pick.clip, ...Object.values(pick.states ?? {})])) if (!have.has(clip)) out.push(['error', `${label} plays ${clip}, which ${pick.file} doesn't have`])
+    }
+    if (c.moves[id] || c.moveIdle.includes(id)) out.push(['error', `${label} plays an imported animation and another one: pick one on the Moves page`])
+  }
+  for (const member of Object.keys(c.moveAnimFiles)) if (!c.files.has(member)) out.push(['error', `the animation file ${member} is missing`])
+  const usedAnims = new Set(Object.values(c.moveAnims).map((p) => p.file))
+  for (const member of c.files.keys()) {
+    if (ANIM_FILE.test(member) && !usedAnims.has(member)) out.push(['warning', `the animation file ${member.slice('animations/'.length)} is in the project, but no move plays it: remove it on the Moves page to keep the file small`])
+  }
   for (const [slot, from] of Object.entries(c.sounds)) {
     if ('file' in from && !c.files.has(from.file)) out.push(['error', `the new sound for sound ${Number(slot) + 1} is missing`])
     if ('game' in from && !(GAME_SOUND.test(from.game) && Object.hasOwn(BASES, from.game.split(':')[0]))) out.push(['error', `sound ${Number(slot) + 1} is taken from an unknown character`])
@@ -532,6 +634,8 @@ export function problems(c: Character): Problem[] {
     const swap = swapBone(c.base, g.side)
     if (g.swap && !c.mapping.has(swap) && !c.materials.some((m) => m.include && m.bind === swap)) out.push(['error', `nothing is fixed to game bone ${swap} to swap into the gun's holster: pick its material on the Z-Button Actions page`])
   }
+  if (c.zButton?.gun && c.zButton.laser) out.push(['error', 'the Gun and the Laser Beam both fire with Z: pick one on the Z-Button Actions page'])
+  if (c.zButton?.laser && !c.zButton.requires.energy) out.push(['note', 'the laser beam never runs out: tick Drains Energy on the Z-Button Actions page to limit it'])
   if (c.zButton?.stats && !Object.keys(c.zButton.stats).length) out.push(['warning', 'Stat Change is ticked but changes nothing: tick a value on the Z-Button Actions page'])
   if (c.zButton?.size === 1) out.push(['warning', 'Change Size is ticked but changes nothing: set a size other than 1 on the Z-Button Actions page'])
   if (c.zButton?.costume) {
@@ -604,6 +708,23 @@ function readGunSound(v: unknown, what: string): GunSound {
   return [Number(m[1]), Number(m[2])]
 }
 
+function readLaser(v: unknown): Laser {
+  const d = defaultLaser()
+  const l = keys(v, ['color', 'alt_color', 'bone', 'position', 'damage', 'range'], 'z_button.laser')
+  const bone = typed<string>(l.bone ?? d.bone, 'string', 'z_button.laser.bone')
+  if (!PROJECTILE_BONES.includes(bone)) throw new LabError(`manifest: z_button.laser.bone is one of ${PROJECTILE_BONES.join(', ')}`)
+  const at = typed<unknown[]>(l.position ?? laserDefault(bone), 'array', 'z_button.laser.position')
+  if (at.length !== 3) throw new LabError('manifest: z_button.laser.position is three numbers')
+  return {
+    color: str(l.color ?? d.color, 'z_button.laser.color', 7, LASER_COLOR)!,
+    alt_color: str(l.alt_color ?? d.alt_color, 'z_button.laser.alt_color', 7, LASER_COLOR)!,
+    bone,
+    position: at.map((x) => num(x, 'z_button.laser.position', ...LASER_POSITION, false)!) as [number, number, number],
+    damage: num(l.damage ?? d.damage, 'z_button.laser.damage', ...LASER_DAMAGE, false, true)!,
+    range: num(l.range ?? d.range, 'z_button.laser.range', ...LASER_RANGE, false, true)!,
+  }
+}
+
 function readGun(v: unknown, what: string, legacy = false): Gun {
   const g = keys(v, ['side', 'damage', 'energy', 'bullets', 'automatic', 'holster', 'swap', 'sound', ...(legacy ? ['drawn'] : [])], what)
   const side = str(g.side ?? 'right', `${what}.side`, 8)! as GunSide
@@ -654,7 +775,7 @@ function upgrade(m: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Character {
-  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'trails', 'eyes', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'cutscenes', 'sounds', 'z_button', 'gun', 'files'], 'the manifest')
+  const m = keys(m0, ['format', 'version', 'game', 'generator', 'character', 'base', 'credits', 'model', 'aura', 'flames', 'trails', 'eyes', 'projectile', 'stats', 'ui', 'base_moves', 'moves', 'move_effects', 'move_lines', 'move_reach', 'move_idle', 'move_anims', 'move_anim_files', 'cutscenes', 'sounds', 'z_button', 'gun', 'files'], 'the manifest')
   if (m.format !== FORMAT) throw new LabError('not a .imperfect file')
   upgrade(m)
   if (m.game !== GAME) throw new LabError(`this file is for ${m.game}, not ${GAME}`)
@@ -767,6 +888,28 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
       position: at.map((v, i) => num(v, 'eyes.position', ...(i ? EYE_YZ : EYE_X), false)!) as [number, number, number],
     }
   }
+  const dp = defaultProjectile()
+  if (m.projectile === undefined) c.projectile = dp
+  else {
+    const pr = keys(m.projectile, ['base', 'color', 'alt_color', 'from', 'bone', 'position'], 'projectile')
+    const donor = typed<string>(pr.base ?? dp.base, 'string', 'projectile.base')
+    if (!(PROJECTILE_BASES as readonly string[]).includes(donor)) throw new LabError(`manifest: projectile.base is one of ${PROJECTILE_BASES.join(', ')}`)
+    const from = typed<string>(pr.from ?? dp.from, 'string', 'projectile.from')
+    if (!(PROJECTILE_FROM as readonly string[]).includes(from)) throw new LabError(`manifest: projectile.from is one of ${PROJECTILE_FROM.join(', ')}`)
+    const bone = typed<string>(pr.bone ?? dp.bone, 'string', 'projectile.bone')
+    if (!PROJECTILE_BONES.includes(bone)) throw new LabError(`manifest: projectile.bone is one of ${PROJECTILE_BONES.join(', ')}`)
+    const at = typed<unknown[]>(pr.position ?? projectileDefault(bone, donor), 'array', 'projectile.position')
+    if (at.length !== 3) throw new LabError('manifest: projectile.position is three numbers')
+    c.projectile = {
+      on: true,
+      base: donor,
+      color: color(pr.color ?? dp.color, 'projectile.color'),
+      alt_color: color(pr.alt_color ?? dp.alt_color, 'projectile.alt_color'),
+      from: from as ProjectileFrom,
+      bone,
+      position: at.map((v) => num(v, 'projectile.position', ...PROJECTILE_POSITION, false)!) as [number, number, number],
+    }
+  }
   const st = keys(m.stats ?? {}, ['display', 'gameplay'], 'stats')
   const disp = keys(st.display ?? defaultStats(), ['normal', 'alt'], 'stats.display')
   for (const k of ['normal', 'alt'] as const) {
@@ -875,6 +1018,41 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     if (c.moves[id]) throw new LabError(`manifest: move_idle names ${id}, which is taken from another base`)
     c.moveIdle.push(id)
   }
+  c.moveAnims = {}
+  for (const [id, v] of Object.entries(typed<Record<string, unknown>>(m.move_anims ?? {}, 'object', 'move_anims'))) {
+    const move = MOVE_IDS.get(id)
+    if (!move) throw new LabError(`manifest: unknown move ${JSON.stringify(id.slice(0, 40))} in move_anims`)
+    if (!animatable(move)) throw new LabError(`manifest: move_anims.${id} plays on the opponent too, so it can't take an imported animation`)
+    if (c.moves[id]) throw new LabError(`manifest: move_anims names ${id}, which is taken from another base`)
+    if (c.moveIdle.includes(id)) throw new LabError(`manifest: move_anims names ${id}, which plays the idle`)
+    const a = keys(v, ['file', 'clip', 'states', 'timing', 'travel'], `move_anims.${id}`)
+    const file = str(a.file, `move_anims.${id}.file`, 80, ANIM_FILE)!
+    if (!files.has(file)) throw new LabError(`manifest: move_anims.${id} names ${file}, which the file lacks`)
+    c.moveAnims[id] = { file, clip: str(a.clip, `move_anims.${id}.clip`, 200)! }
+    if (a.states !== undefined) {
+      const states: Record<string, string> = {}
+      for (const [state, clip] of Object.entries(typed<Record<string, unknown>>(a.states, 'object', `move_anims.${id}.states`))) {
+        const own = move.states.find((s) => s === state)
+        if (!own) throw new LabError(`manifest: move_anims.${id}.states names ${JSON.stringify(state.slice(0, 40))}, which isn't a state of ${id} (${move.states.join(', ')})`)
+        states[own] = str(clip, `move_anims.${id}.states.${own}`, 200)!
+      }
+      if (Object.keys(states).length) c.moveAnims[id].states = states
+    }
+    if (a.timing !== undefined) {
+      if (a.timing !== 'clip') throw new LabError(`manifest: move_anims.${id}.timing is 'clip' or left out`)
+      c.moveAnims[id].timing = 'clip'
+    }
+    if (a.travel !== undefined) {
+      if (a.travel !== 'base') throw new LabError(`manifest: move_anims.${id}.travel is 'base' or left out`)
+      c.moveAnims[id].travel = 'base'
+    }
+  }
+  c.moveAnimFiles = {}
+  for (const [member, v] of Object.entries(typed<Record<string, unknown>>(m.move_anim_files ?? {}, 'object', 'move_anim_files'))) {
+    if (!ANIM_FILE.test(member) || !files.has(member)) throw new LabError(`manifest: move_anim_files names ${JSON.stringify(member.slice(0, 80))}, which the file lacks`)
+    const a = keys(v, ['turn'], `move_anim_files.${member}`)
+    c.moveAnimFiles[member] = { turn: num(a.turn, `move_anim_files.${member}.turn`, -180, 180, false)! }
+  }
   const cs = keys(m.cutscenes ?? {}, [...CUTSCENE_KINDS, 'audio', 'effects', 'animation'], 'cutscenes')
   c.cutscenes = { audio: {}, effects: {}, animation: {} }
   for (const kind of CUTSCENE_KINDS) {
@@ -922,7 +1100,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   }
   c.zButton = null
   if (m.z_button !== undefined && m.z_button !== null) {
-    const z = keys(m.z_button, ['action', 'stealth', 'costume', 'stats', 'size', 'bullet', 'gun', 'requires'], 'z_button')
+    const z = keys(m.z_button, ['action', 'stealth', 'costume', 'stats', 'size', 'bullet', 'gun', 'laser', 'requires'], 'z_button')
     if (z.action !== undefined && z.action !== 'stealth') throw new LabError('manifest: z_button.action can only be stealth, as older files have it')
     let stealth: ZButton['stealth'] = null
     if (z.stealth !== undefined || z.action === 'stealth') {
@@ -969,9 +1147,10 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     const size = num(z.size, 'z_button.size', ...Z_SIZE)
     const bullet = num(z.bullet, 'z_button.bullet', ...Z_SLOW)
     const gun = z.gun !== undefined && z.gun !== null ? readGun(z.gun, 'z_button.gun') : null
-    if (!stealth && !costume && !stats && size === null && bullet === null && !gun) throw new LabError('manifest: z_button needs at least one of stealth, costume, stats, size, bullet and gun')
+    const laser = z.laser !== undefined && z.laser !== null ? readLaser(z.laser) : null
+    if (!stealth && !costume && !stats && size === null && bullet === null && !gun && !laser) throw new LabError('manifest: z_button needs at least one of stealth, costume, stats, size, bullet, gun and laser')
     const requires = keys(z.requires ?? {}, ['energy'], 'z_button.requires')
-    c.zButton = { stealth, costume, stats, size, bullet, gun, requires: {} }
+    c.zButton = { stealth, costume, stats, size, bullet, gun, laser, requires: {} }
     if (requires.energy !== undefined) {
       const e = keys(requires.energy, ['seconds', 'regen'], 'z_button.requires.energy')
       c.zButton.requires.energy = { seconds: num(e.seconds, 'z_button.requires.energy.seconds', ...Z_SECONDS, false)!, regen: typed<boolean>(e.regen ?? false, 'boolean', 'z_button.requires.energy.regen') }
@@ -981,7 +1160,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   if (m.gun !== undefined && m.gun !== null) {
     if (c.zButton?.gun) throw new LabError('manifest: the gun is in z_button.gun, not also gun')
     const gun = readGun(m.gun, 'gun', true)
-    c.zButton = c.zButton ? { ...c.zButton, gun } : { stealth: null, costume: null, stats: null, size: null, bullet: null, gun, requires: {} }
+    c.zButton = c.zButton ? { ...c.zButton, gun } : { stealth: null, costume: null, stats: null, size: null, bullet: null, gun, laser: null, requires: {} }
   }
   c.glb = files.get('model/model.glb') ?? null
   files.delete('model/model.glb')

@@ -179,7 +179,7 @@ describe('round trip', () => {
   it('saves and loads a gun as a Z action, which needs a part fixed to its bone', () => {
     const c = character()
     const g: imperfect.Gun = { ...imperfect.defaultGun('left'), damage: 25, energy: 12.5, bullets: 3, automatic: true }
-    c.zButton = { stealth: null, costume: null, stats: null, size: null, bullet: null, gun: g, requires: {} }
+    c.zButton = { stealth: null, costume: null, stats: null, size: null, bullet: null, gun: g, laser: null, requires: {} }
     const errors = (x: imperfect.Character) => imperfect.problems(x).filter(([l]) => l === 'error').map(([, m]) => m).join(' ')
     expect(errors(c)).toContain('bone 59')
     c.materials[0].bind = 59
@@ -210,7 +210,7 @@ describe('round trip', () => {
     const c = character()
     const holster = imperfect.gunHolster('left', 'back_left')
     const g: imperfect.Gun = { ...imperfect.defaultGun('left'), holster, swap: { position: [-0.04, -0.18, 0.06], rotation: [-90, -45, 0] } }
-    c.zButton = { stealth: null, costume: null, stats: null, size: null, bullet: null, gun: g, requires: {} }
+    c.zButton = { stealth: null, costume: null, stats: null, size: null, bullet: null, gun: g, laser: null, requires: {} }
     c.materials[0].bind = 59
     const errors = (x: imperfect.Character) => imperfect.problems(x).filter(([l]) => l === 'error').map(([, m]) => m).join(' ')
     expect(errors(c)).toContain('bone 72 to swap')
@@ -411,7 +411,7 @@ describe('round trip', () => {
   it('saves and loads the Z button actions', () => {
     const c = character()
     expect(imperfect.manifest(c).z_button).toBeUndefined()
-    const z: imperfect.ZButton = { stealth: { undetected: true, untouchable: false, visible: null }, costume: null, stats: null, size: null, bullet: null, gun: null, requires: {} }
+    const z: imperfect.ZButton = { stealth: { undetected: true, untouchable: false, visible: null }, costume: null, stats: null, size: null, bullet: null, gun: null, laser: null, requires: {} }
     c.zButton = z
     expect(JSON.parse(JSON.stringify(imperfect.manifest(c).z_button))).toEqual({ stealth: { undetected: true } })
     expect(imperfect.load(imperfect.save(c)).zButton).toEqual(z)
@@ -444,7 +444,7 @@ describe('round trip', () => {
 
     const m = imperfect.manifest(c) as Json
     const legacy = imperfect.fromManifest({ ...m, z_button: { action: 'stealth', stealth: { visible: 0.2 } } } as Json, new Map())
-    expect(legacy.zButton).toEqual({ stealth: { undetected: false, untouchable: false, visible: 0.2 }, costume: null, stats: null, size: null, bullet: null, gun: null, requires: {} })
+    expect(legacy.zButton).toEqual({ stealth: { undetected: false, untouchable: false, visible: 0.2 }, costume: null, stats: null, size: null, bullet: null, gun: null, laser: null, requires: {} })
     const bad = (z: unknown) => expect(() => imperfect.fromManifest({ ...m, z_button: z } as Json, new Map())).toThrow(/z_button/)
     bad('stealth')
     bad({})
@@ -469,6 +469,40 @@ describe('round trip', () => {
     bad({ stats: { attack_damage_1: 0 } })
     bad({ stats: { lift: 'huge' } })
     bad({ stats: { health: 10 } })
+  })
+
+  it('saves and loads the laser beam', () => {
+    const c = character()
+    const z: imperfect.ZButton = { stealth: null, costume: null, stats: null, size: null, bullet: null, gun: null, laser: imperfect.defaultLaser(), requires: {} }
+    c.zButton = z
+    expect(JSON.parse(JSON.stringify(imperfect.manifest(c).z_button))).toEqual({ laser: { color: '#FF2010', alt_color: '#FF2010', bone: 'chest', position: [0, 0.123, 0.073], damage: 20, range: 30 } })
+    expect(imperfect.load(imperfect.save(c)).zButton).toEqual(z)
+    z.laser = { color: '#00FF40', alt_color: '#4000ff', bone: 'R.hand', position: [0.05, -0.2, 1], damage: 200, range: 5 }
+    expect(imperfect.load(imperfect.save(c)).zButton).toEqual(z)
+    // a laser alone never runs out, and can't share Z with the gun
+    expect(imperfect.problems(c).some(([l, msg]) => l === 'note' && msg.includes('never runs out'))).toBe(true)
+    z.requires.energy = { seconds: 6, regen: false }
+    expect(imperfect.problems(c).some(([, msg]) => msg.includes('never runs out'))).toBe(false)
+    z.gun = imperfect.defaultGun()
+    expect(imperfect.problems(c).some(([l, msg]) => l === 'error' && msg.includes('both fire with Z'))).toBe(true)
+    z.gun = null
+
+    const m = imperfect.manifest(c) as Json
+    const read = (laser: unknown) => imperfect.fromManifest({ ...m, z_button: { laser } } as Json, new Map()).zButton!.laser
+    expect(read({})).toEqual(imperfect.defaultLaser())
+    expect(read({ bone: 'head' })).toEqual({ ...imperfect.defaultLaser(), bone: 'head', position: [0, 0, 0] })
+    const bad = (laser: unknown) => expect(() => read(laser)).toThrow(/z_button\.laser/)
+    bad('on')
+    bad({ bone: 'tail' })
+    bad({ color: '#FF201080' })
+    bad({ color: 'red' })
+    bad({ position: [0, 0] })
+    bad({ position: [0, 0, 1.5] })
+    bad({ damage: 0 })
+    bad({ damage: 2.5 })
+    bad({ range: 61 })
+    bad({ range: 4 })
+    bad({ length: 10 })
   })
 
   it('finds problems with moves', () => {
@@ -645,6 +679,28 @@ describe('round trip', () => {
     expect(imperfect.manifest(c).eyes).toBeUndefined()
   })
 
+  it('saves and loads a projectile swap, and leaves it out when off', () => {
+    const c = character()
+    expect(imperfect.manifest(c).projectile).toBeUndefined()
+    expect(imperfect.load(imperfect.save(c)).projectile).toEqual(imperfect.defaultProjectile())
+    c.projectile = { on: true, base: 'ironman', color: '#FF2000', alt_color: '#0040FF80', from: 'bone', bone: 'L.forearm', position: [0.05, -0.2, 1] }
+    expect(imperfect.manifest(c).projectile).toEqual({ base: 'ironman', color: '#FF2000', alt_color: '#0040FF80', from: 'bone', bone: 'L.forearm', position: [0.05, -0.2, 1] })
+    expect(imperfect.load(imperfect.save(c)).projectile).toEqual(c.projectile)
+    // the base's own launch points need no spot
+    c.projectile.from = 'own'
+    expect(imperfect.manifest(c).projectile).toEqual({ base: 'ironman', color: '#FF2000', alt_color: '#0040FF80', from: 'own' })
+    expect(imperfect.load(imperfect.save(c)).projectile).toEqual({ ...c.projectile, bone: 'head', position: imperfect.projectileDefault('head', 'ironman') })
+    c.projectile.on = false
+    expect(imperfect.manifest(c).projectile).toBeUndefined()
+  })
+
+  it('refuses a projectile swap on a base that launches nothing', () => {
+    const c = character()
+    c.base = 'wolverine'
+    c.projectile = { ...imperfect.defaultProjectile(), on: true }
+    expect(imperfect.problems(c).some(([kind, text]) => kind === 'error' && text.includes('launches no projectiles'))).toBe(true)
+  })
+
   it('keeps flames to the body or to parts', () => {
     const c = character()
     c.flames = { ...imperfect.defaultFlames(), parts: ['head'], body: true }
@@ -751,6 +807,15 @@ describe('hostile files', () => {
       (m) => (m.eyes = { color: 'red' }),
       (m) => (m.eyes = { on: true }),
       (m) => (m.eyes = true),
+      (m) => (m.projectile = { base: 'storm' }),
+      (m) => (m.projectile = { from: 'head' }),
+      (m) => (m.projectile = { bone: 'tail' }),
+      (m) => (m.projectile = { position: [0, 0, 5] }),
+      (m) => (m.projectile = { position: [0, 0] }),
+      (m) => (m.projectile = { position: [0, 'up', 0] }),
+      (m) => (m.projectile = { color: 'red' }),
+      (m) => (m.projectile = { on: true }),
+      (m) => (m.projectile = true),
     ]
     for (const edit of cases) rejected(withManifest(files(), edit))
   })

@@ -1,4 +1,6 @@
 import type { TintPlan } from '../core/build/effects'
+import type { ClipInfo } from '../core/build/moveanim'
+import type { Limb } from '../core/build/reach'
 import type { BatchCheck } from '../core/build/batch'
 import type { RgbaImage } from '../core/image/rgba'
 import type { Material, Pose } from '../core/package/imperfect'
@@ -71,12 +73,21 @@ export interface MoveVariant {
   rec: ngbtool.Record
 }
 
+export interface ImportedAnimations {
+  slim: Uint8Array
+  clips: ClipInfo[]
+  joints: number
+  turn: number
+  credit: { by: string; license: string; url: string }
+}
+
 export interface MovePreview {
   nodes: ngmtool.Node[]
   variants: MoveVariant[]
   custom: MeshData[] | null
   base: MeshData[]
   notes: string[]
+  hitBones: Partial<Record<Limb, number>>
 }
 
 export interface LayoutInfo {

@@ -53,6 +53,15 @@ The ribbons on the **Aura** page (`trails`, [`FORMAT.md`](FORMAT.md)):
 - **Replaces the base's eye markers.** Base effects drawn on the eyes (Storm's power-up arcs) follow the new eyes, and an Iron Man base's own glow is left out.
 - **Effect memory.** A color takes 93 bytes of the effect cache (white at size 1 is Iron Man's own and takes none).
 
+## Projectile swap
+The `projectile` swap (manifest [`projectile`](FORMAT.md#projectile)):
+
+- **Every shot, not per move.** All tuning fields the base's moves launch from (90-93) get the copy. A carried object is still thrown from the hands.
+- **The base's sound.** The shot plays the sound of the shot it replaces, as the character loads only its base's sound bank.
+- **Damage and flight are the donor's.**
+- **Memory.** About 780 bytes of effect memory per tinted copy (one when both costumes match), plus 2 KB per costume for the explosion texture only Iron Man's bundles have.
+- **Launch bone.** The offset is fixed to the bone, so on a limb it turns with the limb during a move.
+
 ## Tuning
 
 Every character with changed stats, a tint or changed cutscenes gets its own tuning file. Each one listed in `Misc/nvblist.txt` takes 12,354 bytes when the game boots, and the list itself has room for about 53 more bytes (a line costs its two names plus 2, so `PLAYER <internal name>` costs the name's length plus 8).
@@ -110,6 +119,24 @@ Moves taken from other bases (`moves`, [`FORMAT.md`](FORMAT.md)):
 - **Taken lines are plain colored strands that start at the hand, not at a prop.** The textured strand (`primitive 5`) stretches its texture once along the line rather than repeating it, so only colors are offered.
 - **A recolored line is a copy** of about 190 bytes per costume, out of the effect cache (above).
 - **The super throw range** (`super_throw_range`) needs the character's own tuning file, so a line in the tuning list (above). A long range with a close grab slides the character over to the opponent.
+
+## Imported move animations
+
+Moves that play a clip from a glTF file (`move_anims`, [`FORMAT.md`](FORMAT.md)):
+
+- **The clip has to be on the model's rig,** or on the game's own skeleton (a base's exported animations, edited). A clip from another rig (a Mixamo clip on a Biped model) is refused.
+- **On the game's skeleton, only the body bones are the clip's.** Root's turn, and the markers and props (hand markers, palms, the Root marker the camera follows), stay the base's. Clips from another base of the same body class play bone for bone; another body class is approximate.
+- **A base's exported animations are large:** about 6 MB (2.5 MB compressed) in the `.imperfect` file once imported.
+- **Assign changed clips** finds a clip only if a body bone is more than 1 cm or 2° off, or a frame count differs; a smaller edit has to be picked on its move by hand.
+- **Facing is guessed.** A file whose clips face another way than its rest pose needs a turn (`move_anim_files`); the import guesses it in steps of 90° and can guess wrong.
+- **Hit timing is the base's, stretched,** unless timed from the clip: a hit lands where the base's does in the move, not where the clip's swing does.
+- **Timed hits are found by a heuristic,** right about 84% of the time against about 32% stretched. A step forward can pass for a kick; a body blow or shoulder charge has no strike to find; a move with more hits than the clip has strikes keeps the stretched timing for the rest.
+- **Travel is the base's or the clip's, not both.** A clip that steps on its own steps on top of the base's travel, and one that stands still slides; a short clip on a long lunge travels less (at most 1.5 times the base's pace). With the clip's own, chained attacks fall short of an opponent they knock back.
+- **Projectile launches, wires and lines aren't found in the clip;** they keep the stretched timing.
+- **The fit is approximate.** Limb lengths stay the base's, so hands may sit a little off the body and feet may slide.
+- **Fingers move only where the mapping maps them.**
+- **No throws.**
+- **Space:** each clip adds about as much as the base's version of the move, and the `.imperfect` file keeps the whole animation file.
 
 ## Idle moves
 
@@ -230,6 +257,13 @@ The action picked on the **Z-Button Actions** page (`z_button`, [`FORMAT.md`](FO
 - **Pushing while in Bullet Time is stronger.** The character's body moves faster within each physics step, so it shoves the opponent and props harder than usual.
 - **A few of the character's own timeouts may run long**: those measured on the game clock outside the state timers.
 - **The world speed has a floor of 25%.** Below it, the game takes physics steps only every few frames and movement stutters.
+- **The Laser Beam is level.** `z_button.laser` fires along the character's facing and can't aim up or down. It never locks on to the opponent.
+- **The character is rooted while firing.** It stands and turns with the stick but can't walk, run, jump or attack. Jumping, being hit or knocked down, or running out of energy ends the beam.
+- **Damage comes in ticks**, five a second, as a plain punch's: a block stops a tick as it stops a punch, objects take the damage and can break. The beam stops at the first wall, fighter or object it hits.
+- **The CPU reacts only after the first tick.** Before it, a CPU doesn't see the beam coming.
+- **Width.** The beam hits a fighter its middle misses if the fighter's body touches the beam's width (0.25 m, times the character's size).
+- **One tint for the whole beam.** Every piece is painted the chosen color and keeps only its own transparency, so the beam can't be two-toned. Iron Man's own costume 2 beam is dim, so a very dark color shows little.
+- **Memory.** Each beam color takes about 2.4 KB of the effect cache (two colors when the costumes differ), counted with the aura tint's, and each costume's bundle gets about 10 KB of textures.
 
 ## Damage stages
 
