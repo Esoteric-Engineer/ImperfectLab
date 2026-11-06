@@ -72,6 +72,8 @@ const STATES = (
 ).split(' ')
 
 const throwing = (s: string) => [s, s + 'Female', s + 'Brute', s + 'Victim', s + 'VictimFemale', s + 'VictimBrute']
+// Every throw state, thrower's and victim's.
+export const throwStates = (): string[] => [...['Throw', 'SuperThrow', 'AirThrow', 'SuperAirThrow'].flatMap(throwing), 'AirThrowVictimFlyer', 'SuperAirThrowVictimFlyer']
 // States that play one after another, or are one throw against each body class, change together.
 const GROUPS: [string, string[]][] = [
   ['Throw', throwing('Throw')],

@@ -12,7 +12,8 @@
 # `slots`: two {actor, stamp ms, seconds, flags, entry, saved actor+0x308}.
 # `sizes`: two {actor, f32 size now, f32 target, f32 change per second, saved radius, saved height}.
 # `table`: {f32 seconds (0 drains nothing), u32 flags (1 keeps regen, 2 undetected, 4 untouchable, 8 costume, 16 stats, 32 size,
-# 64 bullet time, 128 gun (gun.s), 256 run and sprint speed, only with 16, 512 a costume health.s draws), f32 fade, [with 16: f32 damage[5], f32 taken, u32 lift bits;
+# 64 bullet time, 128 gun (gun.s), 256 run and sprint speed, only with 16, 512 a costume health.s draws, 1024 laser (laser.s),
+# 2048, 4096 and 8192 impersonation's moves, model and stats (impersonate.s)), f32 fade, [with 16: f32 damage[5], f32 taken, u32 lift bits;
 # -1 keeps the game's], [with 256: f32 run speed, f32 sprint speed; -1 keeps the game's], [with 32: f32 size], [with 64: f32 world speed],
 # entity name, alt entity name}, 4-aligned, ended by 16 zero bytes and "".
 	.text

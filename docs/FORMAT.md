@@ -279,7 +279,7 @@ Optional, and left out when no sound changes. The index of a sound in the base's
 A `sounds/` member is a standard Nintendo `.dsp` file. ImperfectLab writes mono, unlooped files at the replaced sound's rate or lower.
 
 ### `z_button`
-Optional, left out when Z does nothing (default). Holding Z runs every action given, at least one of `stealth`, `costume`, `stats`, `size`, `bullet`, `gun` and `laser`.
+Optional, left out when Z does nothing (default). Holding Z runs every action given, at least one of `stealth`, `costume`, `stats`, `size`, `bullet`, `gun`, `laser` and `impersonate`.
 - `action`: only in older files, where `stealth` is Stealth Mode. A reader takes it as `stealth`; a writer leaves it out.
 - `stealth`: optional, Stealth Mode's effects, at least one of them:
   - `undetected`: `true` when the CPU loses track of the character. Optional, `false` by default.
@@ -306,6 +306,10 @@ Optional, left out when Z does nothing (default). Holding Z runs every action gi
   - `position`: three numbers from -1 to 1, the beam's origin in meters from the bone at bind, in the character's axes (X right, Y forward, Z up). Default (0, 0.123, 0.073) on the chest and (0, 0, 0) on any other bone.
   - `damage`: integer 1-200 (default 20), damage a second.
   - `range`: integer 5-60 (default 30), the beam's longest reach in meters.
+- `impersonate`: optional, Impersonation. While Z is held the character takes on the other player's parts, each `true` or left out, at least one:
+  - `moves`: their moves, the projectiles and effects those fire, their abilities and their sound bank. Not with `gun`.
+  - `model`: their model and shadow, posed by the character's moves. Not with `gun` or `costume`.
+  - `stats`: their damage, damage taken, speeds, energy costs and recharge, rage, max health and lifting strength. Not with `stats`.
 - `requires`: optional, left out when empty. What the action needs.
   - `energy`: the action drains energy and can't start with none. `seconds` (1 to 60) is how long a full bar lasts. `regen` (optional, `false` by default) keeps the game's energy regeneration running while active, so the bar lasts longer.
 

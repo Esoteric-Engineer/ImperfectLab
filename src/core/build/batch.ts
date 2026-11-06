@@ -10,11 +10,12 @@ import * as mapping from '../model/mapping'
 import { Skeleton } from '../model/skeleton'
 import { type Character, gunOf, hasCutscenes, NO_SHOTS, problems as characterProblems, type Problem } from '../package/imperfect'
 import * as effects from './effects'
+import { impersonationData } from './impersonate'
 import * as moves from './moves'
 import * as laser from './laser'
 import * as projectileswap from './projectileswap'
 import { motionSetName, SLOTS } from './moves'
-import { Builder, mirrors, ownMotions, ownSounds, paintsReach, type PatchOutput, type Progress, Result, splitsCharge, throwsDamage, tuningFields, write, zCharacters, healthCharacters } from './patch'
+import { Builder, impersonates, mirrors, ownMotions, ownSounds, paintsReach, type PatchOutput, type Progress, Result, splitsCharge, throwsDamage, tuningFields, write, zCharacters, healthCharacters } from './patch'
 import * as templates from './templates'
 import { templateNames } from './templates'
 import * as tuning from './tuning'
@@ -140,6 +141,7 @@ export function buildBatch(source: GameSource, chars: Batch, progress: Progress 
   if (guns.length) r.dol = D.gun(r.dol, guns)
   const lasers = results.flatMap((x) => (x.laser ? [x.laser] : []))
   if (lasers.length) r.dol = D.laser(r.dol, lasers)
+  if (batch.some(impersonates)) r.dol = D.impersonate(r.dol, impersonationData())
   r.notes = [...notes, ...results.flatMap((x, i) => x.notes.map((n) => `${batch[i].displayName}: ${n}`))]
   return r
 }

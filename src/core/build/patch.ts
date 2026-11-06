@@ -34,6 +34,7 @@ import * as gun from './gun'
 import * as projectiles from './projectiles'
 import * as projectileswap from './projectileswap'
 import * as holster from './holster'
+import { impersonationData } from './impersonate'
 import * as laser from './laser'
 import { animsOf } from './moveanim'
 import * as moves from './moves'
@@ -149,6 +150,7 @@ export class Builder {
     if (health.length) this.r.dol = D.health(this.r.dol, health)
     if (this.r.gun) this.r.dol = D.gun(this.r.dol, [this.r.gun])
     if (this.r.laser) this.r.dol = D.laser(this.r.dol, [this.r.laser])
+    if (impersonates(c)) this.r.dol = D.impersonate(this.r.dol, impersonationData())
     return this.r
   }
 
@@ -733,6 +735,7 @@ export const stretchReturns = (c: Character) => reach.RETURNS.some((id) => c.mov
 export const mirrors = (c: Character) => c.baseMoves.throw_reach !== undefined || stretchReturns(c)
 export const splitsCharge = (c: Character) => c.gameplay.energy_regen !== undefined || c.gameplay.energy_charge !== undefined
 export const throwsDamage = (c: Character) => c.gameplay.attack_damage_throw !== undefined
+export const impersonates = (c: Character) => Boolean(c.zButton?.impersonate && Object.values(c.zButton.impersonate).some(Boolean))
 
 // Whether stretched moves' own lines are recolored, which takes the character's tuning file.
 export const paintsReach = (c: Character) => Object.keys(c.moveReach).some((id) => !reach.JUMPS.includes(id)) && (c.moveLines.color !== null || c.moveLines.alt_color !== null)
@@ -751,7 +754,7 @@ export function zCharacters(chars: Character[]): D.ZCharacter[] {
       undetected: z.stealth?.undetected ?? false, untouchable: z.stealth?.untouchable ?? false, visible: z.stealth?.visible ?? 1,
       costume: z.costume !== null, staged: z.costume !== null && damageStages(c).length > 0, damage: damage.KEYS.map((k) => st[k] ?? null), taken: st.damage_taken ?? null, lift: st.lift ?? null,
       run: st.run_speed ?? null, sprint: st.sprint_speed ?? null,
-      size: z.size, slow: z.bullet, gun: z.gun !== null, laser: Boolean(z.laser),
+      size: z.size, slow: z.bullet, gun: z.gun !== null, laser: Boolean(z.laser), impersonate: z.impersonate,
     }]
   })
 }
@@ -832,11 +835,12 @@ export function report(characters: Character | Character[], result: Result): str
   if (chars.some(throwsDamage)) lines.push('main.dol: fn_800E1788 reads tuning field 217 for an animation\'s damage event with param 5 (the baton throw)')
   if (chars.some(ownSounds)) lines.push('main.dol: fn_80114420 loads a new character\'s own sound bank, and one bank per type ID')
   if (chars.some((c) => c.zButton)) {
-    const names: [keyof NonNullable<Character['zButton']>, string][] = [['stealth', 'Stealth Mode'], ['costume', 'Costume Change'], ['stats', 'Stat Change'], ['size', 'Change Size'], ['bullet', 'Bullet Time'], ['laser', 'Laser Beam']]
+    const names: [keyof NonNullable<Character['zButton']>, string][] = [['stealth', 'Stealth Mode'], ['costume', 'Costume Change'], ['stats', 'Stat Change'], ['size', 'Change Size'], ['bullet', 'Bullet Time'], ['laser', 'Laser Beam'], ['impersonate', 'Impersonation']]
     const used = names.filter(([k]) => chars.some((c) => c.zButton?.[k])).map(([, label]) => label)
     lines.push(`main.dol: Z is bound for every human player; fn_80137494, fn_80148B50 and fn_80132838 are rewritten to run ${used.join(', ')}, hooked from fn_800FB944, fn_80085F4C, fn_800E07A4, fn_80150200, fn_80461948, fn_8014F8BC, fn_801A479C, fn_801AF790, fn_80094E04, fn_80074814, fn_800748A4, fn_80061A10, fn_800BD2D0 and fn_800BD3A8; fn_800B1884 and fn_80086C80 are rewritten in place`)
   }
   if (chars.some((c) => c.zButton?.laser)) lines.push('main.dol: a new text section fires the Z laser beam, hooked from fn_80074954 and fn_800CC1D4, and the dyngeom effects\' length getter (fn_803F85C8 in the vtable at 0x8050F168)')
+  if (chars.some(impersonates)) lines.push('main.dol: a new text section runs Z\'s Impersonation, hooked from fn_800FB944 (in place of the Z actions\' hook), fn_800B1884, fn_800B18EC, fn_800ACD20, fn_8010CDCC, fn_80097614, fn_80097CE8, fn_8019C75C, fn_8019D128, fn_8019CEA0, fn_80024D78 and fn_8001A7BC')
   if (chars.some((c) => damageStages(c).length)) lines.push('main.dol: a new text section changes each fighter\'s costume textures with its health, hooked from fn_801A479C')
   const cache = result.dol ? D.readEffectCache(result.dol) : null
   if (cache && cache !== nfxtool.CACHE_SIZE) lines.push(`main.dol: effect cache ${nfxtool.CACHE_SIZE} -> ${cache} bytes`)
