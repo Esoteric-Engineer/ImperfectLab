@@ -8,6 +8,7 @@ import { LabError } from '../src/core/errors'
 import * as D from '../src/core/game/dol'
 import * as R from '../src/core/game/roster'
 import * as abktool from '../src/core/mnroi/abktool'
+import uses from '../src/core/game/sound-uses.json'
 import names from '../src/core/game/sounds.json'
 import { Model } from '../src/core/model/glb'
 import * as mapping from '../src/core/model/mapping'
@@ -120,10 +121,24 @@ describe('sound names', () => {
     }
   })
 
-  it('gives null for a sound without a name', () => {
-    expect(sounds.soundName('wolverine', 999)).toBeNull()
-    expect(sounds.soundName('nobody', 0)).toBeNull()
-    expect(sounds.soundName('constructor', 0)).toBeNull()
+  it('lists uses by base and number from 1', () => {
+    for (const [base, sounds] of Object.entries(uses)) {
+      expect(R.BASES).toHaveProperty(base)
+      for (const [n, use] of Object.entries(sounds)) {
+        expect(n).toMatch(/^[1-9]\d*$/)
+        expect(use).toMatch(/\S/)
+      }
+    }
+  })
+
+  it('gives null for a sound without a name or use', () => {
+    for (const f of [sounds.soundName, sounds.soundUse]) {
+      expect(f('wolverine', 999)).toBeNull()
+      expect(f('nobody', 0)).toBeNull()
+      expect(f('constructor', 0)).toBeNull()
+    }
+    expect(sounds.soundUse('wolverine', 0)).toBeNull()
+    expect([sounds.soundName('daredevil', 51), sounds.soundUse('daredevil', 51)]).toEqual(['grunt_1', 'hurt_small_1'])
   })
 })
 
@@ -174,6 +189,7 @@ describe.skipIf(!ISO)('sound banks on the disc', () => {
     expect(cat.wolverine).toMatchObject({ bank: 'SFX_Wolv1', bytes: 694700 })
     expect(cat.wolverine.sounds.length).toBe(80)
     for (const [base, b] of Object.entries(cat)) expect(Object.keys((names as Record<string, object>)[base])).toEqual(b.sounds.map((_, i) => String(i + 1)))
+    for (const [base, used] of Object.entries(uses)) for (const n of Object.keys(used)) expect(Number(n)).toBeLessThanOrEqual(cat[base].sounds.length)
     expect(Math.max(...Object.values(cat).map((b) => b.bytes))).toBe(sounds.MAX_BANK)
     const [pcm, rate] = sounds.pcm(src(), 'wolverine', 0)
     expect([pcm.length, rate]).toEqual([8808, abktool.DEFAULT_RATE])

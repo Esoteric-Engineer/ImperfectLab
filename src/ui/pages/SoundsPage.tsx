@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import * as dsp from '../../core/audio/dspadpcm'
-import { type BankInfo, type Catalog, gameRef, MAX_BANK, type Sound, soundName } from '../../core/build/sounds'
+import { type BankInfo, type Catalog, gameRef, MAX_BANK, type Sound, soundName, soundUse } from '../../core/build/sounds'
 import { keys, label, VOICES } from '../../core/game/roster'
 import { type Character, MAX_SOUND_SECONDS, type SoundSource } from '../../core/package/imperfect'
 import { pickFile } from '../../io/files'
@@ -14,6 +14,7 @@ const AUDIO = 'audio/*,.wav,.mp3,.ogg,.m4a,.flac'
 const RATES = [16000, 11025]
 
 const seconds = (s: Sound) => `${(s.samples / s.rate).toFixed(2)} s`
+const soundLabel = (base: string, i: number) => [soundName(base, i), soundUse(base, i)].filter(Boolean).join(' · ')
 const kb = (n: number) => `${Math.round(n / 1024).toLocaleString('en-US')} KB`
 const align = (n: number) => Math.ceil(n / 0x20) * 0x20
 
@@ -154,9 +155,9 @@ export function SoundsPage() {
       {voice}
       <h4>Sound Effects</h4>
       <Note>
-        Replace any sound effects with another character's sound effects, or custom.<br />
-        Uploads are converted to the game's own mono format. Silence at either end is cut. Uploads can be up to {MAX_SOUND_SECONDS} seconds each.<br />
-        The game does not ship any names for the sounds, so a few of them have been named by hand by EsotericEngineer. Want to contribute names? <a href="https://github.com/Esoteric-Engineer/ImperfectLab/fork" target='_blank'>Create a fork and open a PR.</a>
+        Replace any sound effects with another character's sound effects, or custom. Uploads can be up to {MAX_SOUND_SECONDS} seconds each.<br />
+        The game does not ship any names for its sounds. Each name here is the kind of sound the game's sound bank files it under (footsteps, grunts, hits...).<br />
+        <b>Used for</b> is what a sound has been identified as by listening, which only a few have so far. Know what a sound is used for? <a href="https://github.com/Esoteric-Engineer/ImperfectLab/fork" target='_blank'>Create a fork and open a PR.</a>
       </Note>
       <Warning title={`Matches against ${label(c.base)} share one set of sounds`}>
         <p>
@@ -188,7 +189,7 @@ export function SoundsPage() {
             </Warning>
           )}
           <table className="gameplay">
-            <thead><tr><th>#</th><th>{label(c.base)}'s sound</th><th>Replace with</th><th>New sound</th></tr></thead>
+            <thead><tr><th>#</th><th>{label(c.base)}'s sound</th><th>Used for</th><th>Replace with</th><th>New sound</th></tr></thead>
             <tbody>{mine.sounds.map((s, i) => <SoundRow key={i} cat={cat} index={i} sound={s} busy={busy === i} upload={upload} />)}</tbody>
           </table>
         </>
@@ -215,6 +216,7 @@ function SoundRow({ cat, index, sound, busy, upload }: {
         {soundName(c.base, index) && <>{soundName(c.base, index)} </>}
         <span className="muted">{seconds(sound)}, {sound.rate} Hz{sound.loop ? ', loops' : ''}{sound.stereo ? ', stereo' : ''}</span>
       </td>
+      <td>{soundUse(c.base, index)}</td>
       <td>
         <select value={mode} disabled={busy} onChange={(e) => {
           const v = e.target.value
@@ -237,7 +239,7 @@ function SoundRow({ cat, index, sound, busy, upload }: {
               {Object.keys(cat).map((k) => <option key={k} value={k}>{label(k)}</option>)}
             </select>
             {' '}<select value={other} onChange={(e) => setGame(cat, index, base, Number(e.target.value))}>
-              {(cat[base]?.sounds ?? []).map((s, i) => <option key={i} value={i}>{i + 1}: {soundName(base, i) ? `${soundName(base, i)} (${seconds(s)})` : seconds(s)}</option>)}
+              {(cat[base]?.sounds ?? []).map((s, i) => <option key={i} value={i}>{i + 1}: {soundLabel(base, i) ? `${soundLabel(base, i)} (${seconds(s)})` : seconds(s)}</option>)}
             </select>
           </>
         )}
@@ -252,7 +254,7 @@ function SoundRow({ cat, index, sound, busy, upload }: {
       </td>
       <td>
         {mode === 'game' && (cat[base]?.sounds[other]
-          ? <><button className="small" title="Play" onClick={() => preview(base, other)}>▶</button> {soundName(base, other) && <>{soundName(base, other)} </>}<span className="muted">{seconds(cat[base].sounds[other])}</span></>
+          ? <><button className="small" title="Play" onClick={() => preview(base, other)}>▶</button> {soundLabel(base, other) && <>{soundLabel(base, other)} </>}<span className="muted">{seconds(cat[base].sounds[other])}</span></>
           : <span className="muted">{label(base)} has no sound {other + 1}</span>)}
         {file && <><button className="small" title="Play" onClick={() => previewFile(body)}>▶</button> <span className="muted">{(file.samples / file.rate).toFixed(2)} s, {file.rate} Hz{sound.loop ? ', loops' : ''}</span></>}
       </td>

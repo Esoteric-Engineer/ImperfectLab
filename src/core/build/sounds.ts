@@ -6,6 +6,7 @@ import { BASES } from '../game/roster'
 import type { GameSource } from '../game/source'
 import * as abktool from '../mnroi/abktool'
 import type { Character, SoundSource } from '../package/imperfect'
+import uses from '../game/sound-uses.json'
 import names from '../game/sounds.json'
 
 // SFX_Roekel.abk, the largest character bank. A Roekel mirror match loads two, so a bank this size fits any match.
@@ -14,12 +15,14 @@ export const MAX_BANK = 969672
 export const bankName = (base: string) => D.gameSoundBank(BASES[base][3])
 export const bankPath = (name: string) => `Sounds/${name}.abk`
 
-// Custom sound names (game doesn't ship any) pulled from sounds.json. THESE ARE NOT OFFICIAL NAMES.
-const NAMES: Record<string, Record<string, string>> = names
+type Names = Record<string, Record<string, string>>
+const NAMES: Names = names //sounds.json: EA's actual labels for each sound
+const USES: Names = uses // sound-uses.json: above labels aren't very descriptive, so these are more descriptive names
 
-export function soundName(base: string, index: number): string | null {
-  return (Object.hasOwn(NAMES, base) && NAMES[base][String(index + 1)]) || null
-}
+const lookup = (table: Names, base: string, index: number) => (Object.hasOwn(table, base) && Object.hasOwn(table[base], String(index + 1)) && table[base][String(index + 1)]) || null
+
+export const soundName = (base: string, index: number): string | null => lookup(NAMES, base, index)
+export const soundUse = (base: string, index: number): string | null => lookup(USES, base, index)
 
 export interface Sound {
   rate: number
