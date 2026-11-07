@@ -175,7 +175,7 @@ export function SoundsPage() {
               <option value={0}>each sound's own rate</option>
               {RATES.map((r) => <option key={r} value={r}>{r} Hz (smaller)</option>)}
             </select></label>
-            <label>Preview volume <input type="range" min={0} max={100} step={5} value={Math.round(volume * 100)} aria-label="Preview volume"
+            <label className="row tight">Preview volume <input type="range" min={0} max={100} step={5} value={Math.round(volume * 100)} aria-label="Preview volume"
               onChange={(e) => setVolume(Number(e.target.value) / 100)} /> {Math.round(volume * 100)}%</label>
             {changed > 0 && <button onClick={resetAll}>Set all back to {label(c.base)}'s</button>}
           </div>
