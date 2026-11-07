@@ -553,7 +553,7 @@ export class Builder {
     const fx = Object.keys(c.moveReach).length ? new effects.Effects(this.src.entry('Misc/game.nfx')) : null
     const shooter = this.gunPlan()
     const anims = animsOf(c, c.glb ? (this.model ?? new Model(c.glb)) : null)
-    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, this.onBack(), throwsDamage(c), shooter, boneShots(c) ? projectiles.LAUNCH_INDEX : null, anims)
+    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, this.onBack(), throwsDamage(c), shooter, boneShots(c) ? projectiles.LAUNCH_INDEX : null, anims, noShots(c))
     if (shooter) this.r.gun = this.gunEntry(shooter)
     for (const [k, v] of m.files) this.r.adds.set(k, v)
     if (thrown !== undefined) this.note(`baton throw: reaches ${thrown} m (${this.base.label}'s about 8)`)
@@ -698,10 +698,12 @@ export class Builder {
 
 // Whether the character gets its own motion set and animation bundles (Builder.motions).
 export function ownMotions(c: Character): boolean {
-  return gunOf(c) !== null || c.baseMoves.throw_reach !== undefined || c.baseMoves.holster !== undefined || throwsDamage(c) || Object.keys(c.moves).length > 0 || Object.keys(c.moveAnims).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1 || boneShots(c)
+  return gunOf(c) !== null || c.baseMoves.throw_reach !== undefined || c.baseMoves.holster !== undefined || throwsDamage(c) || Object.keys(c.moves).length > 0 || Object.keys(c.moveAnims).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1 || boneShots(c) || c.projectile.remove
 }
 
 export const boneShots = (c: Character): boolean => c.projectile.on && c.projectile.from === 'bone'
+export const noShots = (c: Character): moves.NoShots | null =>
+  c.projectile.remove ? { melee: c.projectile.melee, keep: [...new Set([...Object.keys(c.moves), ...Object.keys(c.moveAnims), ...c.moveIdle, ...Object.keys(c.moveReach)])] } : null
 export const laserOf = (c: Character) => c.zButton?.laser ?? null
 
 export const gunSide = (c: Character): holster.Side => (gunOf(c)?.side === 'left' ? 'L' : 'R')

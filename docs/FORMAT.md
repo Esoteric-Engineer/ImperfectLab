@@ -161,6 +161,9 @@ Optional; left out when off. Another base's shot, recolored, in place of the sho
 - `bone` (default `head`; left out when `from` is `own`): `pelvis spine chest neck head`, or `R.` or `L.` followed by `clavicle upper_arm upper_twist forearm forearm_twist hand thigh calf foot toe`.
 - `position` (left out when `from` is `own`): meters from the bone, X, Y (forward) and Z (up), each -1 to 1. Defaults to `[0, 0.629, 0.046]` on `head`, `[0, 0, 0]` on any other bone.
 
+Or, to take the shots out instead ([`LIMITATIONS.md`](LIMITATIONS.md#removed-projectiles)), `{ "remove": true }` with no other key but:
+- `melee` (default `false`): `true` plays the base's attack far in place of the ground moves that shot.
+
 ### `stats`
 - `display`: six integers 1-7 per costume: intel, strength, speed, durability, energy, skill. Shown on the
   select screen only.

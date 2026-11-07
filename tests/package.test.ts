@@ -705,7 +705,7 @@ describe('round trip', () => {
     const c = character()
     expect(imperfect.manifest(c).projectile).toBeUndefined()
     expect(imperfect.load(imperfect.save(c)).projectile).toEqual(imperfect.defaultProjectile())
-    c.projectile = { on: true, base: 'ironman', color: '#FF2000', alt_color: '#0040FF80', from: 'bone', bone: 'L.forearm', position: [0.05, -0.2, 1] }
+    c.projectile = { on: true, base: 'ironman', color: '#FF2000', alt_color: '#0040FF80', from: 'bone', bone: 'L.forearm', position: [0.05, -0.2, 1], remove: false, melee: false }
     expect(imperfect.manifest(c).projectile).toEqual({ base: 'ironman', color: '#FF2000', alt_color: '#0040FF80', from: 'bone', bone: 'L.forearm', position: [0.05, -0.2, 1] })
     expect(imperfect.load(imperfect.save(c)).projectile).toEqual(c.projectile)
     // the base's own launch points need no spot
@@ -714,6 +714,26 @@ describe('round trip', () => {
     expect(imperfect.load(imperfect.save(c)).projectile).toEqual({ ...c.projectile, bone: 'head', position: imperfect.projectileDefault('head', 'ironman') })
     c.projectile.on = false
     expect(imperfect.manifest(c).projectile).toBeUndefined()
+  })
+
+  it('saves and loads removed projectiles', () => {
+    const c = character()
+    c.projectile = { ...imperfect.defaultProjectile(), remove: true }
+    expect(imperfect.manifest(c).projectile).toEqual({ remove: true })
+    expect(imperfect.load(imperfect.save(c)).projectile).toEqual(c.projectile)
+    c.projectile.melee = true
+    expect(imperfect.manifest(c).projectile).toEqual({ remove: true, melee: true })
+    expect(imperfect.load(imperfect.save(c)).projectile).toEqual(c.projectile)
+  })
+
+  it('refuses removed projectiles on a base that launches nothing, or with a swap', () => {
+    const c = character()
+    c.base = 'wolverine'
+    c.projectile = { ...imperfect.defaultProjectile(), remove: true }
+    expect(imperfect.problems(c).some(([kind, text]) => kind === 'error' && text.includes('no projectiles to remove'))).toBe(true)
+    const d = character()
+    d.projectile = { ...imperfect.defaultProjectile(), on: true, remove: true }
+    expect(imperfect.problems(d).some(([kind, text]) => kind === 'error' && text.includes('both replaced and removed'))).toBe(true)
   })
 
   it('refuses a projectile swap on a base that launches nothing', () => {
@@ -837,6 +857,9 @@ describe('hostile files', () => {
       (m) => (m.projectile = { position: [0, 'up', 0] }),
       (m) => (m.projectile = { color: 'red' }),
       (m) => (m.projectile = { on: true }),
+      (m) => (m.projectile = { remove: false }),
+      (m) => (m.projectile = { remove: true, melee: 'yes' }),
+      (m) => (m.projectile = { remove: true, color: '#FF0000' }),
       (m) => (m.projectile = true),
     ]
     for (const edit of cases) rejected(withManifest(files(), edit))

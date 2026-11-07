@@ -2115,7 +2115,7 @@ describe.skipIf(!ISO)('projectile swap', () => {
   const beams = (base: string, from: imperfect.ProjectileFrom = 'bone', bone = 'head', position = imperfect.projectileDefault(bone, 'ironman')) => {
     const c = tinted(base)
     c.aura = { ...c.aura, mode: 'base' }
-    c.projectile = { on: true, base: 'ironman', color: '#FF2000', alt_color: '#0040FF', from, bone, position }
+    c.projectile = { on: true, base: 'ironman', color: '#FF2000', alt_color: '#0040FF', from, bone, position, remove: false, melee: false }
     return c
   }
   const launchMarkers = (ngm: Uint8Array) => ngmtool.read(ngm)[1][0].attachments
@@ -2214,5 +2214,84 @@ describe.skipIf(!ISO)('projectile swap', () => {
     expect(imperfect.problems(beams('wolverine')).some(([kind, text]) => kind === 'error' && text.includes('launches no projectiles'))).toBe(true)
     expect(() => new Builder(src(), beams('wolverine')).build()).toThrow(LabError)
     for (const key of R.keys()) expect(imperfect.NO_SHOTS.includes(key), key).toBe(!projectiles.filled(new tuning.Tuning(src(), new R.BaseCharacter(src(), key))).some(Boolean))
+  })
+})
+
+describe.skipIf(!ISO)('projectile removal', () => {
+  const src = () => gameSource()
+  const removed = (base: string, melee = false) => {
+    const c = tinted(base)
+    c.aura = { ...c.aura, mode: 'base' }
+    c.projectile = { ...imperfect.defaultProjectile(), remove: true, melee }
+    return c
+  }
+  const played = (r: { adds: Map<string, Uint8Array> }) => {
+    const recs = new Map(ngbtool.parse(r.adds.get('Bundles/synth.ngb')!).map((x) => [x.name.toLowerCase(), x]))
+    const now = moves.resolved(src(), nmstool.parse(r.adds.get('Motions/Synth.nms')!), () => true)
+    return (state: string) => {
+      const m = now.get(state.toLowerCase())!
+      return { anim: m.anim, rec: recs.get(m.anim.toLowerCase())! }
+    }
+  }
+  const shots = (rec: ngbtool.Record) => rec.events.filter(([, t]) => t === projectiles.FIRE).length
+  const baseAnim = (key: string, state: string) => {
+    const base = new R.BaseCharacter(src(), key)
+    return moves.resolved(src(), nmstool.parse(src().entry(`Motions/${moves.motionSetOf(base)}`)), () => true).get(state.toLowerCase())!.anim
+  }
+
+  it("takes the shots out of Johnny Ohm's moves and keeps the throws'", () => {
+    const r = new Builder(src(), removed('johnnyohm')).build()
+    const at = played(r)
+    for (const state of ['SuperAttack3', 'SuperAttackStomp', 'SuperRiseAttack', 'SuperJumpAttack', 'SuperJumpAttackDesc', 'DodgeExitSuperAttack', 'RangedAttack', 'SuperRangedAttack', 'SuperAirRangedAttack']) {
+      expect(shots(at(state).rec), state).toBe(0)
+      expect(at(state).rec.events.some(([, t]) => t === projectiles.PICK || t === projectiles.SPAWN), state).toBe(false)
+    }
+    for (const state of ['CarryTossSmall', 'CarryTossLarge', 'WieldThrow', 'FlyCarryTossSmall']) expect(shots(at(state).rec), state).toBe(1)
+    expect(at('SuperAttack1').anim).toBe(baseAnim('johnnyohm', 'SuperAttack1'))
+    expect(at('SuperAttack3').anim).not.toBe(baseAnim('johnnyohm', 'SuperAttack3'))
+    expect(r.notes.some((n) => n.startsWith('projectile: removed from '))).toBe(true)
+  })
+
+  it("keeps Iron Man's finisher shots", () => {
+    const at = played(new Builder(src(), removed('ironman')).build())
+    expect(shots(at('FinishingMove').rec)).toBe(2)
+    expect(shots(at('RangedAttack').rec)).toBe(0)
+  })
+
+  it('plays attack far in place of ground moves that shot', () => {
+    const r = new Builder(src(), removed('johnnyohm', true)).build()
+    const at = played(r)
+    const far = at('AttackFar').anim
+    expect(far).toBe(baseAnim('johnnyohm', 'AttackFar'))
+    for (const state of ['SuperAttack3', 'SuperAttackStomp', 'SuperRiseAttack', 'DodgeExitSuperAttack', 'RangedAttack', 'SuperRangedAttack']) expect(at(state).anim, state).toBe(far)
+    for (const state of ['SuperAttack1', 'SuperAttack2']) expect(at(state).anim, state).toBe(baseAnim('johnnyohm', state))
+    for (const state of ['SuperJumpAttack', 'SuperAirRangedAttack']) {
+      expect(at(state).anim, state).not.toBe(far)
+      expect(shots(at(state).rec), state).toBe(0)
+    }
+    expect(r.notes.some((n) => n.startsWith('projectile: ') && n.includes('Super attack 3') && n.endsWith('play attack far instead'))).toBe(true)
+  })
+
+  it('leaves moves changed on the Moves page to the user', () => {
+    const c = removed('johnnyohm', true)
+    c.moveIdle = ['SuperAttack3']
+    const at = played(new Builder(src(), c).build())
+    expect(at('SuperAttack3').anim).not.toBe(at('AttackFar').anim)
+    expect(shots(at('SuperAttack3').rec)).toBe(0)
+    expect(at('RangedAttack').anim).toBe(at('AttackFar').anim)
+  })
+
+  it("keeps a gun's shots", () => {
+    const armed = (remove: boolean) => {
+      const c = removed('johnnyohm')
+      c.projectile.remove = remove
+      c.zButton = { stealth: null, costume: null, stats: null, size: null, bullet: null, laser: null, impersonate: null, requires: {}, gun: { ...imperfect.defaultGun('right'), damage: 25, bullets: 3, energy: 7.5, automatic: true } }
+      c.materials[0].bind = imperfect.gunBone('johnnyohm', 'right')
+      const recs = ngbtool.parse(new Builder(src(), c).build().adds.get('Bundles/synth.ngb')!)
+      return recs.filter((x) => /^gun_/i.test(x.name)).map((x) => [x.name, shots(x)])
+    }
+    const kept = armed(true)
+    expect(kept.some(([, n]) => (n as number) > 0)).toBe(true)
+    expect(kept).toEqual(armed(false))
   })
 })

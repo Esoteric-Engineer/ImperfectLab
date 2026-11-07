@@ -626,10 +626,19 @@ export interface MotionFiles {
   model: ngmtool.Model
 }
 
+export interface NoShots {
+  melee: boolean
+  keep: string[]
+}
+
+// Ground moves that may play Attack far once their shot is gone.
+export const MELEE_SWAP = ['SuperAttack1', 'SuperAttack2', 'SuperAttack3', 'SuperAttack4', 'SuperAttackFar', 'SuperAttackStomp', 'SuperLowAttack',
+  'SuperRiseAttack', 'RangedAttack', 'SuperRangedAttack', 'DodgeExitSuperAttack']
+
 export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: string, moves: Record<string, string>, throwReach?: number,
   choice: Record<string, MoveEffect> = {}, plan: EffectPlan | null = null, stretches: Record<string, MoveReach> = {}, fx: Effects | null = null,
   size = 1, idle: string[] = [], onBack: holster.Plan | null = null, throwDamage = false, shooter: gun.Plan | null = null,
-  spawn: number | null = null, anims: MoveAnims | null = null): MotionFiles {
+  spawn: number | null = null, anims: MoveAnims | null = null, noShots: NoShots | null = null): MotionFiles {
   const set = motionSetOf(base), stem = stemOf(set), name = internal.toLowerCase()
   const own = nmstool.parse(src.entry(`Motions/${set}`))
   const bundles = loadBundles(src, stem)
@@ -877,6 +886,45 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       const how = p.kind === 'wire' ? "out to the wire's end" : p.kind === 'jump' ? `${formatG(r.distance)} m longer` : `${formatG(r.distance)} m ${p.kind === 'line' ? to : 'ahead'}`
       notes.push(`reach: ${move.label} stretches the ${r.limbs.map((l) => reach.LIMB_LABELS[l]).join(' and ')} ${how}${r.returns ? ', coming back from where it hits' : ''}${r.hold ? ', held while airborne' : ''}`)
     }
+  }
+  if (noShots) {
+    const recOf = (anim: string) => [...bundles.values()].flat().find((r) => r.name.toLowerCase() === anim.toLowerCase())
+    const fires = (anim: string) => recOf(anim)?.events.some(([, t]) => t === projectiles.FIRE) ?? false
+    if (noShots.melee) {
+      const now = resolved(src, own, holds(bundles))
+      const far = now.get('attackfar')
+      if (!far) throw new LabError(`${base.label} has no attack far to play in place of its shots`)
+      const swapped: string[] = []
+      for (const id of MELEE_SWAP.filter((id) => !noShots.keep.includes(id))) {
+        const m = now.get(id.toLowerCase())
+        if (!m || !fires(m.anim)) continue
+        own.set({ state: m.state, anim: far.anim, opts: far.opts })
+        displaced.add(m.anim.toLowerCase())
+        swapped.push(MOVE_IDS.get(id)!.label)
+      }
+      if (swapped.length) notes.push(`projectile: ${swapped.join(', ')} play${swapped.length === 1 ? 's' : ''} attack far instead`)
+    }
+    // carried objects are thrown with 0x04 too; FinishingMove isn't in MOVE_OF
+    const byAnim = new Map<string, nmstool.Motion[]>()
+    for (const m of resolved(src, own, holds(bundles)).values()) {
+      const category = MOVE_IDS.get(MOVE_OF.get(m.state.toLowerCase()) ?? '')?.category
+      if (!category || category === 'Carrying and weapons' || category === 'Throws' || !fires(m.anim)) continue
+      byAnim.set(m.anim.toLowerCase(), [...(byAnim.get(m.anim.toLowerCase()) ?? []), m])
+    }
+    for (const [anim, states] of byAnim) {
+      const found = SLOTS.flatMap((slot): [string, ngbtool.Record][] => {
+        const rec = bundles.get(slot)?.find((r) => r.name.toLowerCase() === anim)
+        return rec ? [[slot, projectiles.strip(rec)]] : []
+      })
+      const named = ownName(found[0][1])
+      for (const [slot, rec] of found) {
+        const into = bundles.get(slot)!
+        if (!into.some((r) => r.name.toLowerCase() === named.toLowerCase())) into.push({ ...rec, name: named })
+      }
+      for (const m of states) own.set({ ...m, anim: named })
+      displaced.add(anim)
+    }
+    notes.push(`projectile: removed from ${byAnim.size} animation${byAnim.size === 1 ? '' : 's'}`)
   }
   // Every shot launches from marker spawn; the gun's own shots, added below, keep the muzzle.
   if (spawn !== null) {

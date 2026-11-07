@@ -62,6 +62,16 @@ The `projectile` swap (manifest [`projectile`](FORMAT.md#projectile)):
 - **Memory.** About 780 bytes of effect memory per tinted copy (one when both costumes match), plus 2 KB per costume for the explosion texture only Iron Man's bundles have.
 - **Launch bone.** The offset is fixed to the bone, so on a limb it turns with the limb during a move.
 
+## Removed projectiles
+`projectile.remove` (manifest [`projectile`](FORMAT.md#projectile)):
+
+- **Shots only.** Each move that launches one loses its launch event (`0x04`), but its animation, charge-up effects, sounds and energy cost stay. Carried objects are still thrown.
+- **The CPU still tries to use the moves as ranged attacks.**
+- **Attack far in their place** (`melee`): the ground moves that shot play the base's attack far instead. Its event `0x1B` picks attack far's damage value, so a super attack hits as hard as attack far, and costs its super energy all the same. The lunge goes as far as attack far's does, so a ranged attack started from far away misses.
+- **Air and wall moves keep their animation** without the shot (super jump attack, air ranged, swing, wire and wall attacks), as a ground lunge doesn't fit them.
+- **Moves changed on the Moves page** (taken, imported, idle or stretched) keep their animation, without the shot.
+- **Space.** Each animation that loses its shot is copied without it, as for swapped moves. A move that plays attack far adds nothing.
+
 ## Tuning
 
 Every character with changed stats, a tint or changed cutscenes gets its own tuning file. Each one listed in `Misc/nvblist.txt` takes 12,354 bytes when the game boots, and the list itself has room for about 53 more bytes (a line costs its two names plus 2, so `PLAYER <internal name>` costs the name's length plus 8).
