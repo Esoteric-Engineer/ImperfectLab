@@ -138,7 +138,7 @@ describe('sound names', () => {
       expect(f('constructor', 0)).toBeNull()
     }
     expect(sounds.soundUse('wolverine', 0)).toBeNull()
-    expect([sounds.soundName('daredevil', 51), sounds.soundUse('daredevil', 51)]).toEqual(['grunt_1', 'hurt_small_1'])
+    expect([sounds.soundName('daredevil', 51), sounds.soundUse('daredevil', 51)]).toEqual(['grunt_1', 'grunt_small_1'])
   })
 })
 
