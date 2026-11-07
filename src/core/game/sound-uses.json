@@ -1,0 +1,13 @@
+{
+  "daredevil": {
+    "43": "baton_retract",
+    "44": "baton_extend",
+    "46": "baton_spin_1",
+    "47": "baton_spin_2",
+    "48": "baton_spin_3",
+    "52": "grunt_small_1"
+  },
+  "biohazard": {
+    "6": "(never used in-game)"
+  }
+}

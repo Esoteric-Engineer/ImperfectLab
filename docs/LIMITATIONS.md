@@ -241,7 +241,8 @@ Sounds replaced on the **Sounds** page (`sounds`, [`FORMAT.md`](FORMAT.md)):
 - **A match against the base shares one set of sounds.** A bank's modules carry global AEMS IDs, and a copy keeps its base's, so the base's bank and the copy can't both be loaded. `fn_80114420` loads one bank per type ID, the first player's: in a match against the base, or against another character built on it, both fighters use the first player's sounds.
 - **Memory.** A match loads both players' banks. A bank may be no larger than `SFX_Roekel.abk` (969,672 bytes), the largest character bank, since a Roekel mirror match loads two of those. Uploads are mono DSP ADPCM, about 12 KB a second at 22 kHz, so the room for new sound, beyond what the replaced sounds took, runs from none on Roekel to about 40 seconds on Daredevil.
 - **Rates.** A sound with no rate in its bank header plays at 24,000 Hz (`fn_80258188`, the bank parser, sets it before reading the header).
-- **Names.** The game has none, only each sound's place in its bank. The names the **Sounds** page shows are our own, from `src/core/game/sounds.json` (base -> the sound's number as the page lists it -> name); a sound with an empty name shows only its number.
+- **Names.** The game has none, only each sound's place in its bank. The names on the **Sounds** page are our own, from `src/core/game/sounds.json` (base -> sound number -> name); an empty name shows only the number. They come from each bank's AEMS modules, whose roles (`CHAFX_step`, `CHAFX_Grunts`, ...) and mixer buses point at pools of the bank's sounds. A sound is named for the modules that can play it. Which game event plays which module is undecoded, so a name says what kind of sound it is, not which move plays it.
+- **Used for.** `src/core/game/sound-uses.json` (same shape, only the sounds listed) holds what a sound has been identified as by listening; the page shows it in its own column.
 
 ## Z button
 

@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from 'react'
 import { LabError } from '../core/errors'
 
 // Below this the start and end of an upload count as silence and are cut.
@@ -29,7 +30,44 @@ export async function decodeSound(file: Blob, rate: number, maxSeconds: number, 
 }
 
 let ctx: AudioContext | null = null
+let gain: GainNode | null = null
 let playing: AudioBufferSourceNode | null = null
+
+// Preview volume
+const VOLUME_KEY = 'imperfectlab.volume'
+const volumeListeners = new Set<() => void>()
+
+function storedVolume(): number {
+  try {
+    const v = Number(localStorage.getItem(VOLUME_KEY) ?? NaN)
+    if (Number.isFinite(v)) return Math.max(0, Math.min(1, v))
+  } catch { /* storage unavailable */ }
+  return 0.5
+}
+
+let volume = storedVolume()
+
+export const getVolume = () => volume
+
+export function setVolume(v: number) {
+  v = Math.max(0, Math.min(1, v))
+  if (v === volume) return
+  volume = v
+  try {
+    localStorage.setItem(VOLUME_KEY, String(v))
+  } catch { /* storage unavailable */ }
+  if (gain) gain.gain.value = v
+  volumeListeners.forEach((l) => l())
+}
+
+function onVolumeChange(fn: () => void) {
+  volumeListeners.add(fn)
+  return () => void volumeListeners.delete(fn)
+}
+
+export function useVolume(): number {
+  return useSyncExternalStore(onVolumeChange, getVolume)
+}
 
 export function stop() {
   playing?.stop()
@@ -38,6 +76,11 @@ export function stop() {
 
 export function play(channels: Int16Array[], rate: number) {
   ctx ??= new AudioContext()
+  if (!gain) {
+    gain = ctx.createGain()
+    gain.gain.value = volume
+    gain.connect(ctx.destination)
+  }
   stop()
   const buf = ctx.createBuffer(channels.length, channels[0].length, rate)
   channels.forEach((pcm, c) => {
@@ -46,7 +89,7 @@ export function play(channels: Int16Array[], rate: number) {
   })
   const node = ctx.createBufferSource()
   node.buffer = buf
-  node.connect(ctx.destination)
+  node.connect(gain)
   node.start()
   playing = node
 }
