@@ -173,7 +173,7 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(() => D.zActions(dol, many)).toThrow(/no room/)
   })
 
-  it("adds the gun's code in a text section of its own and hooks the posing, motions, presses, events, stops and projectile pick", () => {
+  it("adds the gun's code in a text section of its own and hooks the posing, motions, presses, events, stops, rage and projectile pick", () => {
     const dol = D.zActions(gameSource().dol, [{ internal: 'Synth', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, costume: false,
       damage: [null, null, null, null, null], taken: null, lift: null, run: null, sprint: null, size: null, slow: null, gun: true }])
     const guns: D.GunCharacter[] = [
@@ -193,7 +193,7 @@ describe.skipIf(!ISO)('main.dol', () => {
       const target = (from: number) => (from + ((((u32be(out, D.fileOffset(out, from)) << 6) >> 6) & ~3))) >>> 0
       expect(target(0x801a4a08)).toBe(lo)
       expect(u32be(out, D.fileOffset(out, 0x801a4a08)) & 1).toBe(1)
-      for (const [site, to] of [[0x80097ce8, D.GUN_PLAY], [0x800cc0bc, D.GUN_PRESSED], [0x8009b04c, D.GUN_MOTION], [0x800cdf84, D.GUN_EVENT], [0x8009aec8, D.GUN_STOP]]) {
+      for (const [site, to] of [[0x80097ce8, D.GUN_PLAY], [0x800cc0bc, D.GUN_PRESSED], [0x8009b04c, D.GUN_MOTION], [0x800cdf84, D.GUN_EVENT], [0x8009aec8, D.GUN_STOP], [0x80086a2c, D.GUN_RAGE]]) {
         expect(target(site)).toBe(lo + to)
         expect(u32be(out, D.fileOffset(out, site)) & 1).toBe(0)
       }
@@ -215,7 +215,7 @@ describe.skipIf(!ISO)('main.dol', () => {
       expect(f32be(out, first + D.GUN_ENTRY_SIZE + 0x6c)).toBeCloseTo(1 / (1000 * D.GUN_DRAW), 9)
       expect(latin1(out, first + 0xa0, first + 0xe0)).toBe('plr_synth' + '\0'.repeat(23) + 'plr_altSynth' + '\0'.repeat(20))
       const changed = [...out.subarray(0, before.length)].flatMap((b, i) => (b !== before[i] ? [i] : []))
-      const sites = [[0x801a4a08, 4], [0x80097ce8, 4], [0x800cc0bc, 4], [0x8009b04c, 4], [0x800cdf84, 4], [0x8009aec8, 4], [0x800e1efc, 0x2c]].map(([va, n]) => [D.fileOffset(out, va), D.fileOffset(out, va) + n])
+      const sites = [[0x801a4a08, 4], [0x80097ce8, 4], [0x800cc0bc, 4], [0x8009b04c, 4], [0x800cdf84, 4], [0x8009aec8, 4], [0x80086a2c, 4], [0x800e1efc, 0x2c]].map(([va, n]) => [D.fileOffset(out, va), D.fileOffset(out, va) + n])
       expect(changed.every((i) => i < 0x100 || sites.some(([a, b]) => i >= a && i < b) || [0x177bc4, 0x177bc8, 0x177bfc, 0x177c00].some((r) => i >= r && i < r + 4))).toBe(true)
       expect(() => D.gun(out, guns)).toThrow(LabError)
     }

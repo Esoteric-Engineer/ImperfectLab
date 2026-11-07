@@ -115,7 +115,8 @@ A gun (`z_button.gun`, [`FORMAT.md`](FORMAT.md)).
 - **The muzzle and barrel are guessed from the model** (the long side of the gun's outline, out of the end farther from the hand), so a gun of an unusual shape can come out aimed off.
 - **Only the base's own sounds.** Each shot plays one of the sound events the base's animations play (`sound`), or none. A match loads only each fighter's own sound bank, so other characters' sounds aren't available, and an uploaded sound can't be added: how an event picks its samples from the bank is compiled code that hasn't been decoded. A sample replaced on the **Sounds** page changes every move that plays it, the gun's shot included.
 - **Outside a match** the character's own animations carry the gun in its holster, which adds about 85 KB of keys on Wolverine.
-- **Storage.** Up to 4 characters can have a gun in one patch. `gun.s` and its table move the start of the arena 0x1720 bytes later (0x120 more per extra character). The bullet's tuning field needs the character's own tuning file, so it takes a line in the tuning list (above), and the gun 253 bytes of the effect cache.
+- **No rage while the gun is out.** From the draw until it is back in the holster, the character gains no rage, from its own hits or from hits it takes; rage still drains as usual. A bullet that lands after the gun is fully holstered still counts.
+- **Storage.** Up to 4 characters can have a gun in one patch. `gun.s` and its table move the start of the arena 0x17e0 bytes later (0x120 more per extra character). The bullet's tuning field needs the character's own tuning file, so it takes a line in the tuning list (above), and the gun 253 bytes of the effect cache.
 
 ## Swapped moves
 

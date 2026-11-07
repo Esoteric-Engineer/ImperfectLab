@@ -17,7 +17,7 @@
 # masks[16] of the upper arm, forearm and hand with what hangs from them (the gun bone left out), char[32] entity name,
 # char[32] alt entity name, f32 swap K[4][3], f32 swap bone's bind position[3], pad[4]}.
 	.text
-	.globl gun_pose, gun_play, gun_pressed, gun_pick, gun_motion, gun_event, gun_stop
+	.globl gun_pose, gun_play, gun_pressed, gun_pick, gun_motion, gun_event, gun_stop, gun_rage
 	.set GROUND, 0x14e          # action1
 	.set RUNSHOT, 0x150         # action3: the ground shot aimed over the run
 	.set WALKSHOT, 0x151        # action4: and over the walk
@@ -681,6 +681,36 @@ gun_motion:
 	mtlr r0
 	addi r1, r1, 0x10
 	blr
+
+# fn_80086A2C (add f1 to actor r3's rage), in place of its first instruction: no gain while the gun is out of its holster.
+gun_rage:
+	stwu r1, -0x20(r1)
+	mflr r0
+	stw r0, 0x24(r1)
+	stw r3, 0x8(r1)
+	stfs f1, 0xc(r1)
+	lwz r0, 0xc(r1)
+	cmpwi r0, 0
+	ble 5f
+	bl refresh
+	lwz r4, 0x8(r1)
+	bl gun_of
+	cmpwi r9, 0
+	beq 5f
+	lwz r0, 12(r11)
+	cmpwi r0, 0
+	ble 5f
+	lwz r0, 0x24(r1)
+	mtlr r0
+	addi r1, r1, 0x20
+	blr
+5:	lwz r3, 0x8(r1)
+	lfs f1, 0xc(r1)
+	lwz r0, 0x24(r1)
+	mtlr r0
+	addi r1, r1, 0x20
+	stwu r1, -0x10(r1)
+	jump 0x80086A30
 
 # cr0 eq when motion r3 is a ground shot, standing or on the move.
 is_ground:
