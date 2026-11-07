@@ -6,7 +6,7 @@ export interface ImageData8 {
   data: Uint8ClampedArray | Uint8Array
 }
 
-export function ImageView({ image, side, zoom, checker = true, className }: { image: ImageData8 | null; side?: number; zoom?: number; checker?: boolean; className?: string }) {
+export function ImageView({ image, side, zoom, checker = true, fill = false, className }: { image: ImageData8 | null; side?: number; zoom?: number; checker?: boolean; fill?: boolean; className?: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     const canvas = ref.current
@@ -23,7 +23,7 @@ export function ImageView({ image, side, zoom, checker = true, className }: { im
     w *= zoom
     h *= zoom
   } else if (side) {
-    const k = Math.min(1, (side - 4) / Math.max(w, h))
+    const k = fill ? (side - 2) / Math.max(w, h) : Math.min(1, (side - 4) / Math.max(w, h))
     w = Math.max(1, Math.round(w * k))
     h = Math.max(1, Math.round(h * k))
   }

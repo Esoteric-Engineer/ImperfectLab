@@ -4,7 +4,7 @@ import { encodePng } from '../../core/image/png'
 import type { RgbaImage } from '../../core/image/rgba'
 import { copyCharacter, DAMAGE_HEALTH, damageMember, damageUpload, gunBone, gunOf, type Material, swapBone, type ZCostume, Z_COSTUMES } from '../../core/package/imperfect'
 import { decodePicture, download, pickFile } from '../../io/files'
-import { ImageView, Note, NumberInput } from '../components/common'
+import { ImageView, Note, NumberInput, ToggleCard } from '../components/common'
 import { engine } from '../engine'
 import { artName, fileName } from '../format'
 import { store, useStore } from '../store'
@@ -43,14 +43,14 @@ async function downloadAll() {
       const name = `${matName(m)} - ${what}.png`
       if (body) entries[name in entries ? `${matName(m)} (mat${m.gltfMaterial}) - ${what}.png` : name] = body
     }
-    ;(await texturePngs(null)).forEach(([own, alt, stages], i) => {
-      const m = c.materials[i]
-      add(m, COSTUMES[0], own)
-      add(m, COSTUMES[1], alt)
-      Z_COSTUMES.forEach((co, k) => stages[k]?.forEach((body, j) => {
-        if (m.damage[co][j] !== 'prev') add(m, `${COSTUMES[k]} - damage ${j + 1}`, body)
-      }))
-    })
+      ; (await texturePngs(null)).forEach(([own, alt, stages], i) => {
+        const m = c.materials[i]
+        add(m, COSTUMES[0], own)
+        add(m, COSTUMES[1], alt)
+        Z_COSTUMES.forEach((co, k) => stages[k]?.forEach((body, j) => {
+          if (m.damage[co][j] !== 'prev') add(m, `${COSTUMES[k]} - damage ${j + 1}`, body)
+        }))
+      })
     if (!Object.keys(entries).length) return store.fail('None of the textures could be read.')
     download(zipSync(entries, { level: 0 }), `${artName(c)} - textures.zip`, 'application/zip')
   } catch (e) {
@@ -117,22 +117,25 @@ function DamageStages() {
     }
     return `${COSTUME_LABELS[co]}: ${count} texture${count === 1 ? '' : 's'}, ${Math.round(bytes / 1024)} KB`
   })
+  const enabled = c.damageStages.filter((st) => st.enabled).length
   return (
-    <div className="card">
-      <h4>Damage stages</h4>
-      <Note>Materials can change texture as health runs down.</Note>
+    <ToggleCard title="Damage stages" checked={enabled > 0} note="Materials can change texture as health runs down."
+      onChange={(on) => {
+        c.damageStages = c.damageStages.map((st, j) => ({ ...st, enabled: on && j === 0 }))
+        edited()
+      }}>
       <div className="form">
         {c.damageStages.map((st, k) => (
           <div key={k} className="row tight" style={{ gridColumn: '1 / -1' }}>
-            <label className="check"><input type="checkbox" checked={st.enabled} onChange={(e) => set(k, { enabled: e.target.checked })} /> Stage {k + 1}</label>
+            <label className="check"><input type="checkbox" checked={st.enabled} disabled={st.enabled && enabled === 1} onChange={(e) => set(k, { enabled: e.target.checked })} /> Stage {k + 1}</label>
             at or below
             <NumberInput className="short" min={DAMAGE_HEALTH[0]} max={DAMAGE_HEALTH[1]} disabled={!st.enabled} value={st.health}
               onChange={(v) => set(k, { health: Math.round(v) })} />% health
           </div>
         ))}
       </div>
-      {c.damageStages.some((st) => st.enabled) && <Note>New textures take in-match memory. {memory.join('; ')}.</Note>}
-    </div>
+      <Note>New textures take in-match memory. {memory.join('; ')}.</Note>
+    </ToggleCard>
   )
 }
 
@@ -282,13 +285,13 @@ function MaterialCard({ index, thumbs }: { index: number; thumbs: Thumbs }) {
             <button className="small" onClick={() => choose('alt')}>Choose...</button>
           </div>
           <label>Fixed to</label>
-          <div>
+          <div className="row tight">
             <select value={m.bind ?? ''} onChange={(e) => { m.bind = e.target.value === '' ? null : Number(e.target.value); edited() }}>
               <option value="">(follows its skin weights)</option>
               {(sk?.nodes ?? []).map((n) => <option key={n.index} value={n.index}>{n.index} {n.name}</option>)}
               {m.bind !== null && sk && m.bind >= sk.nodes.length && <option value={m.bind}>{m.bind} {m.bind === gunAt ? 'Gun' : m.bind === swapAt ? 'Gun swap' : '(not on this base)'}</option>}
             </select>
-            <Note>Normally a material follows the skin weights. Fix it to one game bone for a prop (Daredevil's club is bone 39), and model it where that bone is.</Note>
+            <span className="note" title="Normally a material follows the skin weights. Fix it to one game bone for a prop, and model it where that bone is.">Normally follows skin weights. Set to a bone for a prop (Daredevil's club is 39)</span>
           </div>
         </div>
       </div>

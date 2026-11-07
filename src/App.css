@@ -287,6 +287,47 @@ button.small {
   margin: 10px 0;
 }
 
+.cutscene .row {
+  margin: 6px 0;
+}
+
+.cutscene-table td:nth-child(1),
+.cutscene-table th:nth-child(1) {
+  width: 30%;
+}
+
+.cutscene-table td:nth-child(2),
+.cutscene-table th:nth-child(2) {
+  width: 30%;
+}
+
+.cutscene table + table {
+  margin-top: 14px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+details.help {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 12px;
+  margin: 8px 0;
+}
+
+details.help > summary {
+  cursor: pointer;
+}
+
+details.help[open] > summary {
+  margin-bottom: 6px;
+}
+
 .disc-status {
   display: flex;
   flex-direction: column;
@@ -606,6 +647,10 @@ pre.log {
 .bases .base.selected {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.bases .thumb {
+  box-sizing: border-box;
 }
 
 .icon-placeholder {

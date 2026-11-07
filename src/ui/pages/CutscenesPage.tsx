@@ -44,12 +44,13 @@ export function CutscenesPage() {
     <div className="page">
       <h3>Cutscenes</h3>
       <Note>
-        Use another character's intro, victory, or finisher, replace their audio, and re-animate them in Blender.<br /><br />
-        A cutscene taken from another character starts {label(c.base)}'s effects at its cues, which may not suit it.<br />
-        Use the <b>Effects</b> choice to play the other character's instead, as far as {label(c.base)} has room for them (the page says how many fit), or None. Projectiles and sounds stay {label(c.base)}'s.<br /><br />
+        Use another character's intro, victory, or finisher, replace their audio, or re-animate them in Blender.<br /><br />
+        A cutscene taken from another character starts {label(c.base)}'s effects at its cues. Use the <b>Effects</b> choice to play the other character's instead. Projectiles stay {label(c.base)}'s.
+        <br /><br />
         New audio replaces the whole track (voice, music and sounds), for both costumes. It always lasts exactly as long as the audio it replaces, since the cutscene keeps time with its audio: a shorter file is padded with silence, a longer one cut.
+        
       </Note>
-      <details>
+      <details className="help">
         <summary><b>Memory, disc space and other limits</b></summary>
         <ul>
           <li>
@@ -60,11 +61,11 @@ export function CutscenesPage() {
             <b>Changing custcenes or audio never affects match memory.</b> The game plays a cutscene from the disc a piece at a time and streams its audio, so a bigger cutscene or new audio is never loaded whole.
           </li>
           <li>
-            <b>Effects.</b> A custom character has room for only a few effects besides its own; each <b>Effects</b> choice says how many fit. Projectiles and sounds in a cutscene are always the custom character's, and an aura tint does not recolor the other character's effects.
+            <b>Effects.</b> A custom character has room for only a few effects besides its own; each <b>Effects</b> choice says how many fit. Projectiles in a cutscene are always the base character's, and an aura tint does not recolor the other character's effects.
           </li>
         </ul>
       </details>
-      <details>
+      <details className="help">
         <summary><b>Animating a cutscene in Blender</b></summary>
         <ol>
           <li>Download a cutscene from this page as <code>.glb</code>.</li>
@@ -140,7 +141,7 @@ function Kind({ cat, kind }: { cat: Catalog; kind: CutsceneKind }) {
   }
 
   return (
-    <>
+    <div className="card cutscene">
       <h4>{LABELS[kind]}</h4>
       <div className="row">
         <span>Taken from</span>
@@ -171,7 +172,7 @@ function Kind({ cat, kind }: { cat: Catalog; kind: CutsceneKind }) {
           <EffectWarning kind={kind} from={from} />
         </>
       )}
-      <table className="gameplay">
+      <table className="grid fixed cutscene-table">
         <thead><tr><th>Audio</th><th>{label(from)}'s</th><th>New</th></tr></thead>
         <tbody>
           {slots.map((s) => <AudioRow key={s.key} kind={kind} slot={s} />)}
@@ -184,7 +185,7 @@ function Kind({ cat, kind }: { cat: Catalog; kind: CutsceneKind }) {
           ))}
         </tbody>
       </table>
-      <table className="gameplay">
+      <table className="grid fixed cutscene-table">
         <thead><tr><th>Animation</th><th>{label(from)}'s</th><th>New</th></tr></thead>
         <tbody>
           {anims.map((s) => <AnimationRow key={s.key} kind={kind} slot={s} />)}
@@ -197,7 +198,7 @@ function Kind({ cat, kind }: { cat: Catalog; kind: CutsceneKind }) {
           ))}
         </tbody>
       </table>
-    </>
+    </div>
   )
 }
 
@@ -238,17 +239,19 @@ function AnimationRow({ kind, slot }: { kind: CutsceneKind; slot: AnimationSlot 
   return (
     <tr>
       <td title={slot.cut}>{slot.label}</td>
-      <td><button title="Download as .glb, to open in Blender" onClick={original}>⤓ .glb</button></td>
+      <td><div className="actions"><button title="Download as .glb, to open in Blender" onClick={original}>⤓ .glb</button></div></td>
       <td>
-        {body ? (
-          <>
-            <button title="Download as .glb" onClick={() => glb(body, `${c.internalName}_${slot.key}.glb`)}>⤓</button>{' '}
-            <button onClick={upload}>Replace...</button>{' '}
-            <button onClick={() => { removeAnimation(c, slot.key); store.touch('character') }}>Remove</button>
-          </>
-        ) : (
-          <button onClick={upload}>Upload...</button>
-        )}
+        <div className="actions">
+          {body ? (
+            <>
+              <button title="Download as .glb" onClick={() => glb(body, `${c.internalName}_${slot.key}.glb`)}>⤓</button>
+              <button onClick={upload}>Replace...</button>
+              <button onClick={() => { removeAnimation(c, slot.key); store.touch('character') }}>Remove</button>
+            </>
+          ) : (
+            <button onClick={upload}>Upload...</button>
+          )}
+        </div>
       </td>
     </tr>
   )
@@ -259,13 +262,13 @@ const allOf = (n: number) => (n === 1 ? 'its one effect' : n === 2 ? 'both its e
 
 function EffectRoom({ kind }: { kind: CutsceneKind }) {
   const c = store.character
-  if (c.cutscenes.effects[kind] === 'none') return <span className="muted">the cutscene itself starts no effects ({label(c.base)}'s always-on glows still show)</span>
+  if (c.cutscenes.effects[kind] === 'none') return <span className="muted">the cutscene itself starts no effects (any of {label(c.base)}'s always-on effects still show)</span>
   const fit = store.effectFit()?.[kind]
   if (!fit) return null
   const base = label(c.base), from = label(source(kind))
   if (!fit.total) return <span className="muted">{from}'s and {base}'s are the same here</span>
   if (fit.chosen) return fit.fit === fit.total ? <span className="muted">{allOf(fit.total)} play</span> : null
-  return <span className="muted">with {from}'s, {fit.fit === fit.total ? `${allOf(fit.total)} would play` : `only ${fit.fit} of its ${effectCount(fit.total)} would play`}</span>
+  return <span className="muted">with {from}'s, {fit.fit === fit.total ? `${allOf(fit.total)} would play` : `only ${fit.fit} of its ${effectCount(fit.total)} would play (not enough space to play all of them)`}</span>
 }
 
 function EffectWarning({ kind, from }: { kind: CutsceneKind; from: string }) {
@@ -318,25 +321,29 @@ function AudioRow({ kind, slot }: { kind: CutsceneKind; slot: AudioSlot }) {
     <tr>
       <td title={slot.stream}>{slot.label}</td>
       <td>
-        <button title="Play" onClick={() => sound('cutscenePcm', [source(kind), kind, slot.key])}>▶</button>{' '}
-        <button title="Download as .wav" onClick={() => sound('cutscenePcm', [source(kind), kind, slot.key], slot.stream.replace(/\.asf$/i, '.wav'))}>⤓</button>{' '}
-        <span className="muted">{seconds(slot.seconds)}</span>
+        <div className="actions">
+          <button title="Play" onClick={() => sound('cutscenePcm', [source(kind), kind, slot.key])}>▶</button>
+          <button title="Download as .wav" onClick={() => sound('cutscenePcm', [source(kind), kind, slot.key], slot.stream.replace(/\.asf$/i, '.wav'))}>⤓</button>
+          <span className="muted">{seconds(slot.seconds)}</span>
+        </div>
       </td>
       <td>
-        {body ? (
-          <>
-            <button title="Play" onClick={() => sound('decodeCutsceneAudio', [body])}>▶</button>{' '}
-            <button title="Download as .wav" onClick={() => sound('decodeCutsceneAudio', [body], `${c.internalName}_${slot.key}.wav`)}>⤓</button>{' '}
-            <button onClick={upload}>Replace...</button>{' '}
-            <button onClick={() => { removeAudio(c, slot.key); store.touch('character') }}>Remove</button>
-          </>
-        ) : !slot.samples ? (
-          <span className="muted">not on this disc</span>
-        ) : slot.seconds > MAX_AUDIO_SECONDS ? (
-          <span className="muted">longer than {MAX_AUDIO_SECONDS} s, too long to replace</span>
-        ) : (
-          <button onClick={upload}>Upload...</button>
-        )}
+        <div className="actions">
+          {body ? (
+            <>
+              <button title="Play" onClick={() => sound('decodeCutsceneAudio', [body])}>▶</button>
+              <button title="Download as .wav" onClick={() => sound('decodeCutsceneAudio', [body], `${c.internalName}_${slot.key}.wav`)}>⤓</button>
+              <button onClick={upload}>Replace...</button>
+              <button onClick={() => { removeAudio(c, slot.key); store.touch('character') }}>Remove</button>
+            </>
+          ) : !slot.samples ? (
+            <span className="muted">not on this disc</span>
+          ) : slot.seconds > MAX_AUDIO_SECONDS ? (
+            <span className="muted">longer than {MAX_AUDIO_SECONDS} s, too long to replace</span>
+          ) : (
+            <button onClick={upload}>Upload...</button>
+          )}
+        </div>
       </td>
     </tr>
   )

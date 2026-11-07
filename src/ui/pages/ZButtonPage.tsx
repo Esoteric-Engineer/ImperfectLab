@@ -58,7 +58,7 @@ export function ZButtonPage() {
     <div className="page">
       <h3>Z-Button Actions</h3>
       <Note>The Z button is never used in normal gameplay, and can be assigned to custom actions for ImperfectLab characters.<br />
-      Pick what Z does in a match, and what it needs. Holding Z runs every ticked action at once. CPU players will never use these abilities.
+      Pick what Z does in a match, and what it needs. CPU players will never use these abilities.
       </Note>
       <h4>Requirements</h4>
       <ToggleCard title="Drains Energy" checked={!!energy} disabled={!z} onChange={(on) => {
@@ -193,9 +193,9 @@ function Size() {
         <NumberInput className="short" step={0.05} min={Z_SIZE[0]} max={Z_SIZE[1]} value={z.size!} onChange={(v) => {
           z.size = v
           store.touch('character')
-        }} />x
+        }} />x times the character's size while Z is held.
       </div>
-      <Note>Times the character's size while Z is held, on top of the Model page's size.</Note>
+      <Note>Stacks on top of the size set on the Model page.</Note>
     </>
   )
 }
@@ -210,7 +210,7 @@ function LaserBeam() {
   }
   return (
     <>
-      <Note>While Z is held, the character stands and fires Iron Man's finisher beam straight ahead. The beam stops at the first thing it hits, and whatever it hits takes damage {Math.round(1 / LASER_TICK_SECONDS)} times a second.</Note>
+      <Note>While Z is held, the character fires Iron Man's finisher beam straight ahead. The beam stops at the first thing it hits, dealing damage {Math.round(1 / LASER_TICK_SECONDS)} times a second.</Note>
       {c.zButton!.gun && <Note>✖ The Gun also fires with Z: untick one of them.</Note>}
       <div className="form">
         <label>Costume 1 color</label>
@@ -224,7 +224,7 @@ function LaserBeam() {
         <label>Bone</label>
         <BoneSelect value={l.bone} onChange={(bone) => { l.bone = bone; l.position = laserDefault(bone); edited() }} />
       </div>
-      <Note>Every part of the beam draws in its costume's color. The beam leaves from this spot, in meters from the bone; the dot in the view is the exact point. It always fires level, whichever way the bone turns during a move.</Note>
+      <Note>The beam leaves from this spot, in meters from the bone. The dot in the view is the exact point. It always fires level, regardless of which way the bone turns during a move.</Note>
       <div className="row">
         <div>
           <PositionTable value={l.position} range={LASER_POSITION} onChange={setAxis} />
@@ -240,7 +240,7 @@ function LaserBeam() {
 }
 
 const IMPERSONATE_LABELS: [keyof Impersonate, string, string][] = [
-  ['moves', 'Moves', "Their attacks, throws, projectiles, effects, sounds and abilities (flight, wall climbing, wire swing). Against another body class (male, female or brute: Storm and Elektra are female, the Thing and Venom brutes) they're fitted to your skeleton like the Moves page's taken moves, so they're approximate, and your throws stay your own. A move already under way finishes as it began, and the switch waits until you stand, walk or run."],
+  ['moves', 'Moves', "Their attacks, throws, projectiles, effects, sounds and abilities (flight, wall climbing, wire swing). Against another body class (male, female or brute), moves are approximately fitted to your skeleton. Throws are not changed. A move already under way finishes as it began, and the switch waits until you stand, walk or run."],
   ['model', 'Model and skin', "Their model, textures and shadow, posed by your moves. Against another body class the joints are approximate. Your own effects (auras, flames) stay yours."],
   ['stats', 'Stats', "Their Stats page values: attack damage, damage taken, run and sprint speed, energy costs and recharge, rage, lifting strength, and max health (your health bar keeps its fraction). Attack damage changes from your next move."],
 ]
@@ -277,7 +277,7 @@ function BulletTime() {
         <input type="range" min={100 * Z_SLOW[0]} max={100 * Z_SLOW[1]} step={5} value={Math.round(100 * z.bullet!)} aria-label="World speed"
           onChange={(e) => { z.bullet = Number(e.target.value) / 100; store.touch('character') }} /> {Math.round(100 * z.bullet!)}% world speed
       </div>
-      <Note>While Z is held, everything else (opponents, CPU players, projectiles and thrown objects) moves at this speed, and you move at full speed.</Note>
+      <Note>While Z is held, everything except your character moves at this speed (human and CPU players, projectiles, and thrown objects).</Note>
     </>
   )
 }
@@ -426,7 +426,7 @@ function Gun() {
           </tr>
           <tr>
             <td>Damage per bullet</td>
-            <td><NumberInput min={GUN_DAMAGE[0]} max={GUN_DAMAGE[1]} step={1} value={g.damage} onChange={(v) => set({ damage: Math.round(v) })} /> <span className="muted">Elektra's sai: {gun.DEFAULT_DAMAGE}</span></td>
+            <td><NumberInput min={GUN_DAMAGE[0]} max={GUN_DAMAGE[1]} step={1} value={g.damage} onChange={(v) => set({ damage: Math.round(v) })} /> damage <span className="muted">(Elektra's sai hits for {gun.DEFAULT_DAMAGE})</span></td>
           </tr>
           <tr>
             <td>Energy per shot</td>

@@ -9,7 +9,7 @@ export const THEMES = [
 ]
 
 const DEFAULT = 'dark'
-const KEY = 'imperfectlab.theme.v2' // v2 since 'nemesis' changed meaning. index.html migrates the old key.
+const KEY = 'imperfectlab.theme.v2' // v2 since 'nemesis' changed meaning. public/theme-init.js migrates the old key.
 const listeners = new Set<() => void>()
 
 function stored(): string {

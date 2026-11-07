@@ -330,7 +330,7 @@ function ModelTree({ selected, onSelect }: { selected: string | null; onSelect: 
   walk(null, 0)
   return (
     <div className="tree">
-      <div className="tree-row header"><span className="name">Your model's joint</span><span>Vertices</span><span>Moves with</span><span>Override</span></div>
+      <div className="tree-row header"><span className="name">Imported model's joint</span><span>Vertices</span><span>Moves with</span><span>Override</span></div>
       {order.map(([name, depth]) => {
         const node = eff?.get(name) ?? null
         const direct = c.overrides.has(name) || mapped.has(name)

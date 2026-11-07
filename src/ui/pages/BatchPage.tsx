@@ -153,7 +153,7 @@ export function BatchPage() {
     <div className="page">
       <h3>Multi-Character Patch</h3>
       <Note>
-        Puts up to {MAX_BATCH} characters into the game at once, as the 19th to the 27th fighters: the third row of the select screen.
+        Puts up to {MAX_BATCH} characters into the game at once, as the 19th to the 27th fighters on the third row of the select screen.
         Choose a .imperfect file for each, in the order they should appear. Everything is checked against your disc before anything is written.
       </Note>
       <Note>
@@ -199,7 +199,7 @@ export function BatchPage() {
         ) : !busy && <div className="row"><button onClick={runCheck}>Check</button></div>}
 
       <h3>Patch the game</h3>
-      <Note>Writes a new disc image with every character above. Your disc is only read. It must be an unmodified dump: patch a fresh copy each time, not an image that was already patched.</Note>
+      <Note>Writes a new disc image with every character above. Your disc is only read. It must be an <b>unmodified</b> dump, not an image that was already patched.</Note>
       <div className="form">
         <label>Your disc:</label>
         <span>{g ? g.name : 'choose it in the Game step'}</span>
