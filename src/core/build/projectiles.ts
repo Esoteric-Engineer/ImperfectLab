@@ -48,3 +48,7 @@ export function respawn(rec: ngbtool.Record, index: number): ngbtool.Record {
   const same = events.length === rec.events.length && events.every((e, i) => e[2] === rec.events[i][2])
   return same ? rec : { ...rec, events }
 }
+export function strip(rec: ngbtool.Record): ngbtool.Record {
+  if (!rec.events.some(([, t]) => t === FIRE)) return rec
+  return { ...rec, events: rec.events.filter(([, t]) => t !== FIRE && t !== PICK && t !== SPAWN) }
+}

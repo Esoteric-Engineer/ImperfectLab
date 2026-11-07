@@ -62,6 +62,16 @@ The `projectile` swap (manifest [`projectile`](FORMAT.md#projectile)):
 - **Memory.** About 780 bytes of effect memory per tinted copy (one when both costumes match), plus 2 KB per costume for the explosion texture only Iron Man's bundles have.
 - **Launch bone.** The offset is fixed to the bone, so on a limb it turns with the limb during a move.
 
+## Removed projectiles
+`projectile.remove` (manifest [`projectile`](FORMAT.md#projectile)):
+
+- **Shots only.** Each move that launches one loses its launch event (`0x04`), but its animation, charge-up effects, sounds and energy cost stay. Carried objects are still thrown.
+- **The CPU still tries to use the moves as ranged attacks.**
+- **Attack far in their place** (`melee`): the ground moves that shot play the base's attack far instead. Its event `0x1B` picks attack far's damage value, so a super attack hits as hard as attack far, and costs its super energy all the same. The lunge goes as far as attack far's does, so a ranged attack started from far away misses.
+- **Air and wall moves keep their animation** without the shot (super jump attack, air ranged, swing, wire and wall attacks), as a ground lunge doesn't fit them.
+- **Moves changed on the Moves page** (taken, imported, idle or stretched) keep their animation, without the shot.
+- **Space.** Each animation that loses its shot is copied without it, as for swapped moves. A move that plays attack far adds nothing.
+
 ## Tuning
 
 Every character with changed stats, a tint or changed cutscenes gets its own tuning file. Each one listed in `Misc/nvblist.txt` takes 12,354 bytes when the game boots, and the list itself has room for about 53 more bytes (a line costs its two names plus 2, so `PLAYER <internal name>` costs the name's length plus 8).
@@ -105,7 +115,8 @@ A gun (`z_button.gun`, [`FORMAT.md`](FORMAT.md)).
 - **The muzzle and barrel are guessed from the model** (the long side of the gun's outline, out of the end farther from the hand), so a gun of an unusual shape can come out aimed off.
 - **Only the base's own sounds.** Each shot plays one of the sound events the base's animations play (`sound`), or none. A match loads only each fighter's own sound bank, so other characters' sounds aren't available, and an uploaded sound can't be added: how an event picks its samples from the bank is compiled code that hasn't been decoded. A sample replaced on the **Sounds** page changes every move that plays it, the gun's shot included.
 - **Outside a match** the character's own animations carry the gun in its holster, which adds about 85 KB of keys on Wolverine.
-- **Storage.** Up to 4 characters can have a gun in one patch. `gun.s` and its table move the start of the arena 0x1720 bytes later (0x120 more per extra character). The bullet's tuning field needs the character's own tuning file, so it takes a line in the tuning list (above), and the gun 253 bytes of the effect cache.
+- **No rage while the gun is out.** From the draw until it is back in the holster, the character gains no rage, from its own hits or from hits it takes; rage still drains as usual. A bullet that lands after the gun is fully holstered still counts.
+- **Storage.** Up to 4 characters can have a gun in one patch. `gun.s` and its table move the start of the arena 0x17e0 bytes later (0x120 more per extra character). The bullet's tuning field needs the character's own tuning file, so it takes a line in the tuning list (above), and the gun 253 bytes of the effect cache.
 
 ## Swapped moves
 

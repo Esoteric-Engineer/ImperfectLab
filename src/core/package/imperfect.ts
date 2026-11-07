@@ -236,6 +236,8 @@ export interface Projectile {
   from: ProjectileFrom
   bone: string
   position: [number, number, number]
+  remove: boolean
+  melee: boolean
 }
 
 export const NO_SHOTS = ['wolverine', 'paradox', 'daredevil', 'aftershock']
@@ -383,7 +385,7 @@ export function projectileDefault(bone: string, donor: string): [number, number,
 }
 
 export function defaultProjectile(): Projectile {
-  return { on: false, base: 'ironman', color: '#FF2000', alt_color: '#FF2000', from: 'bone', bone: 'head', position: projectileDefault('head', 'ironman') }
+  return { on: false, base: 'ironman', color: '#FF2000', alt_color: '#FF2000', from: 'bone', bone: 'head', position: projectileDefault('head', 'ironman'), remove: false, melee: false }
 }
 
 export function hasCutscenes(c: Cutscenes): boolean {
@@ -490,7 +492,7 @@ export function manifest(c: Character): Json {
     projectile: c.projectile.on ? {
       base: c.projectile.base, color: c.projectile.color, alt_color: c.projectile.alt_color, from: c.projectile.from,
       ...(c.projectile.from === 'bone' ? { bone: c.projectile.bone, position: c.projectile.position } : {}),
-    } : undefined,
+    } : c.projectile.remove ? { remove: true, ...(c.projectile.melee ? { melee: true } : {}) } : undefined,
     stats: { display: c.stats, gameplay: c.gameplay },
     ui: c.ui,
     base_moves: c.baseMoves,
@@ -575,6 +577,8 @@ export function problems(c: Character): Problem[] {
     }
   }
   if (c.projectile.on && NO_SHOTS.includes(c.base)) out.push(['error', `${BASES[c.base][0]} launches no projectiles to replace: untick the projectile on the Projectiles page`])
+  if (c.projectile.remove && NO_SHOTS.includes(c.base)) out.push(['error', `${BASES[c.base][0]} launches no projectiles to remove: untick the removal on the Projectiles page`])
+  if (c.projectile.on && c.projectile.remove) out.push(['error', 'projectiles are both replaced and removed: untick one on the Projectiles page'])
   if (c.baseMoves.range_grab) {
     if (!c.moves.WirePull) out.push(['error', 'the range grab needs the ranged pickup: pick it on the Moves page'])
   } else if ((BASE_MOVES[c.base] ?? []).includes('range_grab') && RANGE_GRAB.some((id) => c.moves[id])) out.push(['warning', 'ranged pickup animations are picked but the range grab is off, so they never play'])
@@ -902,7 +906,11 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   }
   const dp = defaultProjectile()
   if (m.projectile === undefined) c.projectile = dp
-  else {
+  else if ((m.projectile as Record<string, unknown> | null)?.remove !== undefined) {
+    const pr = keys(m.projectile, ['remove', 'melee'], 'projectile')
+    if (typed<boolean>(pr.remove, 'boolean', 'projectile.remove') !== true) throw new LabError('manifest: projectile.remove is true or left out')
+    c.projectile = { ...dp, remove: true, melee: typed<boolean>(pr.melee ?? false, 'boolean', 'projectile.melee') }
+  } else {
     const pr = keys(m.projectile, ['base', 'color', 'alt_color', 'from', 'bone', 'position'], 'projectile')
     const donor = typed<string>(pr.base ?? dp.base, 'string', 'projectile.base')
     if (!(PROJECTILE_BASES as readonly string[]).includes(donor)) throw new LabError(`manifest: projectile.base is one of ${PROJECTILE_BASES.join(', ')}`)
@@ -920,6 +928,8 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
       from: from as ProjectileFrom,
       bone,
       position: at.map((v) => num(v, 'projectile.position', ...PROJECTILE_POSITION, false)!) as [number, number, number],
+      remove: false,
+      melee: false,
     }
   }
   const st = keys(m.stats ?? {}, ['display', 'gameplay'], 'stats')

@@ -3,7 +3,7 @@ import * as dsp from '../core/audio/dspadpcm'
 import { toHex } from '../core/bytes'
 import { type Batch, buildBatch, checkBatch } from '../core/build/batch'
 import * as cutscenes from '../core/build/cutscenes'
-import { Builder, glowRgba, gunPlanOf, onBackPlan, patch, type Progress, propShape, report, type Result, WIRE, write } from '../core/build/patch'
+import { Builder, glowRgba, gunPlanOf, noShots, onBackPlan, patch, type Progress, propShape, report, type Result, WIRE, write } from '../core/build/patch'
 import * as effects from '../core/build/effects'
 import * as eyes from '../core/build/eyes'
 import * as gun from '../core/build/gun'
@@ -559,7 +559,7 @@ export class Service {
       }
     }
     const animFiles = [...new Set(Object.values(c.moveAnims).map((p) => p.file))].map((f) => [f, c.files.has(f) ? this.clipKey(c.files.get(f)!) : null])
-    const key = JSON.stringify([c.base, c.internalName, c.moves, c.moveIdle, c.moveReach, c.moveAnims, c.moveAnimFiles, animFiles, c.size, c.baseMoves, imperfect.gunOf(c), [...c.mapping], [...c.overrides], c.fit, c.materials])
+    const key = JSON.stringify([c.base, c.internalName, c.moves, c.moveIdle, c.moveReach, c.moveAnims, c.moveAnimFiles, animFiles, c.size, c.baseMoves, imperfect.gunOf(c), c.projectile.remove, c.projectile.melee, [...c.mapping], [...c.overrides], c.fit, c.materials])
     if (this.motionModel !== this.model) {
       this.motionCache.clear()
       this.motionModel = this.model
@@ -572,7 +572,7 @@ export class Service {
       const fx = Object.keys(c.moveReach).length ? new effects.Effects(src.entry('Misc/game.nfx')) : null
       try {
         const anims = animsOf(c, this.model, (d) => this.clipFile(d))
-        mf = moves.motionFiles(src, base, c.internalName, c.moves, c.baseMoves.throw_reach, {}, null, c.moveReach, fx, c.size, c.moveIdle, onBackPlan(c, center), false, shooter, null, anims)
+        mf = moves.motionFiles(src, base, c.internalName, c.moves, c.baseMoves.throw_reach, {}, null, c.moveReach, fx, c.size, c.moveIdle, onBackPlan(c, center), false, shooter, null, anims, noShots(c))
       } catch (e) {
         if (!(e instanceof LabError)) throw e
         return e.message

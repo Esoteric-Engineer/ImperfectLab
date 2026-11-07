@@ -34,7 +34,7 @@ export function ProjectilesPage() {
       <Note>
         Make changes to a character's projectiles. The moves keep their animations, damage, and sound, unless changed elsewhere.
       </Note>
-      <ToggleCard title="Replace every projectile" checked={p.on} disabled={none && !p.on} onChange={(on) => { p.on = on; edited() }}
+      <ToggleCard title="Replace every projectile" checked={p.on} disabled={none && !p.on} onChange={(on) => { p.on = on; if (on) p.remove = false; edited() }}
         note={none
           ? `${base?.label ?? 'This base'} has no moves that launch a projectile, so there is nothing to swap.`
           : 'Every move that launches a shot launches the chosen projectile instead.'}>
@@ -81,6 +81,19 @@ export function ProjectilesPage() {
           </>
         )}
         <Note>The projectile adds {bytes} bytes to the game's effect memory.</Note>
+      </ToggleCard>
+      <ToggleCard title="Remove every projectile" checked={p.remove} disabled={none && !p.remove} onChange={(on) => { p.remove = on; if (on) p.on = false; edited() }}
+        note={none
+          ? `${base?.label ?? 'This base'} has no moves that launch a projectile, so there is nothing to remove.`
+          : 'Moves that launch a shot play without it. Carried objects are still thrown, and the finisher keeps its shots.'}>
+        <label className="check block">
+          <input type="checkbox" checked={p.melee} onChange={(e) => { p.melee = e.target.checked; edited() }} /> Play "Attack far" in place of ground moves that shot
+        </label>
+        <Note>
+          Super attacks, the super stomp, rise and low attacks, ranged attacks and the dodge exit super attack play the "Attack far" lunge instead, and hit with its damage.<br />
+          Super moves still cost their energy. Air and wall moves keep their animation without the shot, and so does any move changed on the Moves page.
+          The shot's charge-up effects and sounds stay.
+        </Note>
       </ToggleCard>
     </div>
   )
