@@ -327,7 +327,7 @@ export class Builder {
         const empty = trails.markers(render, sk, copy, c.trails.parts)
         if (empty.length) this.note(`motion trails: no part of the model follows the ${empty.join(', ')} bone, so its trail ends at the bone itself`)
       }
-      const [data] = bundle.buildNgm(ngm, render, renames, c.size, extraNodes)
+      const [data] = bundle.buildNgm(ngm, render, renames, c.size, extraNodes, this.shot?.models[alt ? 1 : 0] ?? [])
       const otherNames = new Set(models.slice(1).map((m) => m.name.toLowerCase()))
       const missing = [...renames.keys()].filter((old) => !otherNames.has(old))
       if (missing.length) this.note(`the base bundle has no model named ${missing.join(', ')}`)
@@ -424,8 +424,9 @@ export class Builder {
       extra.push(...shot.templates)
       power = new Map([...(power ?? []), ...shot.fields.map((fid): [number, string[]] => [fid, shot.values])])
       const colors = c.projectile.color.toUpperCase() === c.projectile.alt_color.toUpperCase() ? c.projectile.color : `${c.projectile.color} and ${c.projectile.alt_color}`
-      const borrowed = [...new Set(shot.borrow.flat().map(([, t]) => t))]
-      this.note(`projectile: ${shot.label} tinted ${colors} in place of ${this.base.label}'s, in tuning field${shot.fields.length === 1 ? '' : 's'} ${shot.fields.join(', ')}, from ${boneShots(c) ? `the ${c.projectile.bone} bone at (${c.projectile.position.map((v) => formatG(v)).join(', ')})` : `${this.base.label}'s own launch points`}${borrowed.length ? `; ${borrowed.join(', ')} borrowed from ${shot.donor.label}'s textures` : ''}`)
+      const borrowed = [...new Set(shot.borrow.flat().map(([b, t]) => `${t} (${b})`))]
+      const copied = [...new Set(shot.models.flat().map((m) => m.name))]
+      this.note(`projectile: ${shot.label} tinted ${colors} in place of ${this.base.label}'s, in tuning field${shot.fields.length === 1 ? '' : 's'} ${shot.fields.join(', ')}, from ${boneShots(c) ? `the ${c.projectile.bone} bone at (${c.projectile.position.map((v) => formatG(v)).join(', ')})` : `${this.base.label}'s own launch points`}${borrowed.length ? `; textures ${borrowed.join(', ')} borrowed` : ''}${copied.length ? `; ${copied.join(', ')} copied from ${shot.donor.label}'s models` : ''}`)
     }
     if (beam) {
       const names = laser.build(fx, beam, c.internalName)

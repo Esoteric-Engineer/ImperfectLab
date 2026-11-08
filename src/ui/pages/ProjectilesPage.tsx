@@ -6,7 +6,7 @@ import { store, useStore } from '../store'
 import { PlacementView } from './MovesPage'
 
 const FROM_TEXTS: Record<ProjectileFrom, string> = {
-  own: "Where the base's own shots leave from (usually the hands)",
+  own: "Where the base's own shots leave from",
   bone: 'A chosen spot on the body',
 }
 
@@ -20,6 +20,7 @@ export function ProjectilesPage() {
   const none = NO_SHOTS.includes(c.base)
   const bytes = projectileswap.bytes(p)
   const lead = projectileswap.lead(p)
+  const models = projectileswap.MODELED.includes(p.base)
   const setAxis = (k: number, v: number) => {
     p.position = p.position.map((x, i) => (i === k ? Math.round(v * 1000) / 1000 : x)) as typeof p.position
     edited()
@@ -32,12 +33,12 @@ export function ProjectilesPage() {
     <div className="page">
       <h3>Projectiles</h3>
       <Note>
-        Make changes to a character's projectiles. The moves keep their animations, damage, and sound, unless changed elsewhere.
+        Make changes to a character's projectiles. The moves keep their animations and sound, unless changed elsewhere.
       </Note>
       <ToggleCard title="Replace every projectile" checked={p.on} disabled={none && !p.on} onChange={(on) => { p.on = on; if (on) p.remove = false; edited() }}
         note={none
           ? `${base?.label ?? 'This base'} has no moves that launch a projectile, so there is nothing to swap.`
-          : 'Every move that launches a shot launches the chosen projectile instead.'}>
+          : "Every move that launches a shot launches the chosen projectile instead. It hits as hard as it does for its own character, explosion included."}>
         <div className="form">
           <label>Projectile</label>
           <select value={p.base} onChange={(ev) => { p.base = ev.target.value; edited() }}>
@@ -50,6 +51,7 @@ export function ProjectilesPage() {
         </div>
         <Note>
           The color sets the shot's hue and keeps its brightness, as the aura tint does. A fully transparent color (0%) hides the shot but it still hits.
+          {models ? ' The thrown model keeps its own colors, and is hidden with the shot.' : ''}
         </Note>
         <h4>Launched From</h4>
         {PROJECTILE_FROM.map((from) => (
