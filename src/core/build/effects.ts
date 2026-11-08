@@ -22,6 +22,7 @@ const HEX_KEYS = ['startcolor', 'endcolor', 'startcolor2', 'endcolor2']
 const PARTICLES = ['partsys', 'partsysdam', 'billboard', 'billboardomni', 'partcylinder', 'partsubfx']
 const ACTIONS = ['damage', 'ctrldamage', 'spawner']
 const CONTROLLER = nfxtool.TYPES.indexOf('controller')
+const SPAWNS = 'template'
 export const CACHE_MAX = 0x50000
 const CACHE_MARGIN = 0x800
 
@@ -231,6 +232,10 @@ export function paint(_type: number, body: string[], color: string): string[] {
   })
 }
 
+export function spawnedBy(b: nfxtool.Block): string[] {
+  return b.lines.slice(1).map(nfxtool.tokens).filter((t) => t.length >= 2 && t[0].toLowerCase() === SPAWNS).map((t) => t[1].toLowerCase())
+}
+
 function hasColor(b: nfxtool.Block): boolean {
   return b.lines.slice(1).some((line) => {
     const t = nfxtool.tokens(line)
@@ -273,12 +278,12 @@ export class Effects {
   }
 
   // The blocks of tree(roots) a tint changes.
-  changed(roots: (string | null)[]): nfxtool.Block[] {
+  changed(roots: (string | null)[], spawned: Map<string, string> = new Map()): nfxtool.Block[] {
     const blocks = this.tree(roots)
     const low = (b: nfxtool.Block) => b.name.toLowerCase()
     const refs = (b: nfxtool.Block) => b.lines.slice(1).map(nfxtool.tokens)
       .filter((t) => t.length >= 2 && REFERENCES.includes(t[0].toLowerCase())).map((t) => t[1].toLowerCase())
-    const out = new Set(blocks.filter((b) => PARTICLES.includes(nfxtool.TYPES[b.type]) || hasColor(b)).map(low))
+    const out = new Set(blocks.filter((b) => PARTICLES.includes(nfxtool.TYPES[b.type]) || hasColor(b) || spawnedBy(b).some((n) => spawned.has(n))).map(low))
     for (let grew = true; grew;) {
       grew = false
       for (const b of blocks) {
@@ -357,13 +362,14 @@ export class Effects {
     for (const c of copies) if (!this.by.has(c.name.toLowerCase())) this.by.set(c.name.toLowerCase(), c)
   }
 
-  tinted(roots: (string | null)[], color: string, prefix: string, how = recolor): Map<string, string> {
-    if (how === recolor && hexAlpha(color) === 0) return this.hide(roots, prefix)
-    return this.copied(this.changed(roots), prefix, new Map(), (type, body) => how(type, body, color))
+  // spawned: template names a copy's spawner blocks launch instead (lowercase old to new).
+  tinted(roots: (string | null)[], color: string, prefix: string, how = recolor, spawned: Map<string, string> = new Map()): Map<string, string> {
+    if (how === recolor && hexAlpha(color) === 0) return this.hide(roots, prefix, spawned)
+    return this.copied(this.changed(roots, spawned), prefix, new Map(), (type, body) => how(type, body, color), spawned)
   }
 
-  hide(roots: (string | null)[], prefix: string): Map<string, string> {
-    const blocks = this.changed(roots)
+  hide(roots: (string | null)[], prefix: string, spawned: Map<string, string> = new Map()): Map<string, string> {
+    const blocks = this.changed(roots, spawned)
     const low = (b: nfxtool.Block) => b.name.toLowerCase()
     const refs = (b: nfxtool.Block) => b.lines.slice(1).map(nfxtool.tokens)
       .filter((t) => t.length >= 2 && REFERENCES.includes(t[0].toLowerCase()) && this.has(t[1])).map((t) => t[1].toLowerCase())
@@ -377,15 +383,15 @@ export class Effects {
         }
       }
     }
-    if (!drawn.size) return this.copied(blocks, prefix, new Map(), (_type, body) => body)
+    if (!drawn.size) return this.copied(blocks, prefix, new Map(), (_type, body) => body, spawned)
     const [none] = this.fresh(prefix)
     this.append([new nfxtool.Block(CONTROLLER, none, [`controller ${none}`, 'end'], true)])
     const names = new Map(blocks.filter((b) => drawn.has(low(b))).map((b) => [low(b), none]))
-    return this.copied(blocks.filter((b) => !drawn.has(low(b))), prefix, names, (_type, body) => body)
+    return this.copied(blocks.filter((b) => !drawn.has(low(b))), prefix, names, (_type, body) => body, spawned)
   }
 
   // Copies blocks under fresh names, their references following names.
-  private copied(blocks: nfxtool.Block[], prefix: string, names: Map<string, string>, how: (type: number, body: string[]) => string[]): Map<string, string> {
+  private copied(blocks: nfxtool.Block[], prefix: string, names: Map<string, string>, how: (type: number, body: string[]) => string[], spawned: Map<string, string> = new Map()): Map<string, string> {
     const taken = new Set([...names.values()].map((n) => n.toLowerCase()))
     let k = 0, next: string
     for (const b of blocks) {
@@ -398,6 +404,7 @@ export class Effects {
       const body = b.lines.slice(1, b.lines.length - (b.ended ? 1 : 0)).map((line) => {
         const t = nfxtool.tokens(line)
         const key = t.length ? t[0].toLowerCase() : ''
+        if (key === SPAWNS && t.length >= 2 && spawned.has(t[1].toLowerCase())) return `${t[0]} ${spawned.get(t[1].toLowerCase())}`
         return REFERENCES.includes(key) && t.length >= 2 && names.has(t[1].toLowerCase()) ? `${t[0]} ${names.get(t[1].toLowerCase())}` : line
       })
       const name = names.get(b.name.toLowerCase())!

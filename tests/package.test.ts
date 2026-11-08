@@ -716,6 +716,15 @@ describe('round trip', () => {
     expect(imperfect.manifest(c).projectile).toBeUndefined()
   })
 
+  it("saves another base's projectile", () => {
+    const c = character()
+    for (const base of ['elektra', 'defcon']) {
+      c.projectile = { ...imperfect.defaultProjectile(), on: true, base }
+      expect(imperfect.manifest(c).projectile).toMatchObject({ base, from: 'bone', bone: 'head' })
+      expect(imperfect.load(imperfect.save(c)).projectile).toEqual(c.projectile)
+    }
+  })
+
   it('saves and loads removed projectiles', () => {
     const c = character()
     c.projectile = { ...imperfect.defaultProjectile(), remove: true }
@@ -849,7 +858,7 @@ describe('hostile files', () => {
       (m) => (m.eyes = { color: 'red' }),
       (m) => (m.eyes = { on: true }),
       (m) => (m.eyes = true),
-      (m) => (m.projectile = { base: 'storm' }),
+      (m) => (m.projectile = { base: 'wolverine' }),
       (m) => (m.projectile = { from: 'head' }),
       (m) => (m.projectile = { bone: 'tail' }),
       (m) => (m.projectile = { position: [0, 0, 5] }),

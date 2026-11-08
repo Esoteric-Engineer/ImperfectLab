@@ -2210,6 +2210,63 @@ describe.skipIf(!ISO)('projectile swap', () => {
     }
   })
 
+  it("fires every donor's shot, with the models and textures it draws", () => {
+    const sk = Skeleton.ofBase(new R.BaseCharacter(src(), 'magneto'))
+    const own = (alt: boolean) => ngmtool.read(new R.BaseCharacter(src(), 'magneto').bundleFiles(alt)[0])[1].map((m) => m.name.toLowerCase())
+    for (const donor of imperfect.PROJECTILE_BASES) {
+      const c = beams('magneto')
+      c.projectile = { ...c.projectile, base: donor, position: imperfect.projectileDefault('head', donor) }
+      const r = new Builder(src(), c).build()
+      const T = new R.Templates(r.sets.get('Misc/Global.not')!)
+      const n = tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, 90)
+      expect(T.has(n[0] as string), donor).toBe(true)
+      for (const [costume, alt] of [['', false], ['_alt', true]] as [string, boolean][]) {
+        const models = ngmtool.read(r.adds.get(`Bundles/synth${costume}.ngm`)!)[1].map((m) => m.name.toLowerCase())
+        const added = models.slice(1).filter((m) => !own(alt).includes(m) && !/_(phys|shadow)\.nod$/.test(m))
+        const drawn = R.text(T.get(n[alt ? 5 : 0] as string).get(R.P_MODEL))
+        expect(added, `${donor}${costume}`).toEqual(drawn ? [drawn.toLowerCase()] : [])
+        expect(projectileswap.MODELED.includes(donor), donor).toBe(Boolean(drawn))
+        const textures = latin1(r.adds.get(`Bundles/synth${costume}.ngt`)!).toLowerCase().split(/\s+/)
+        if (donor === 'megalith' || donor === 'roekel') expect(textures, `${donor}${costume}`).toContain('plasmabomb')
+        expect(launchMarkers(r.adds.get(`Bundles/synth${costume}.ngm`)!).map(([b]) => b), `${donor}${costume}`).toEqual([sk.node('head')])
+      }
+    }
+  })
+
+  it("hides Elektra's star with a fully transparent color", () => {
+    const c = beams('magneto')
+    c.projectile = { ...c.projectile, base: 'elektra', alt_color: '#0040FF00' }
+    const r = new Builder(src(), c).build()
+    const T = new R.Templates(r.sets.get('Misc/Global.not')!)
+    const n = tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, 90)
+    expect(R.text(T.get(n[0] as string).get(R.P_MODEL))).toBe('Elektra_shiruken.nod')
+    expect(T.get(n[5] as string).get(R.P_MODEL)).toBeNull()
+    expect(ngmtool.read(r.adds.get('Bundles/synth_alt.ngm')!)[1].some((m) => /shiruken/i.test(m.name))).toBe(false)
+  })
+
+  it("lays DefCon's tinted mines from the chosen bone", () => {
+    const c = beams('magneto', 'bone')
+    c.projectile.base = 'defcon'
+    const r = new Builder(src(), c).build()
+    const T = new R.Templates(r.sets.get('Misc/Global.not')!)
+    const fx = new effects.Effects(r.sets.get('Misc/game.nfx')!)
+    const n = tunedValues(r.adds.get('Misc/PLAYER_Synth.nvb')!, 90)
+    for (const [name, hue] of [[n[0] as string, 'red'], [n[5] as string, 'blue']]) {
+      const shot = T.get(name)
+      const mines = fx.tree([R.text(shot.get(R.P_EFFECT1))]).flatMap((b) => effects.spawnedBy(b))
+      expect(mines.length, name).toBe(1)
+      expect(mines[0]).not.toMatch(/dc1Crystal/i)
+      const mine = T.get(mines[0])
+      expect(mine.get(0x70)).toBeNull()
+      expect(shot.get(0x70)![0]).toBe(244)
+      const glow = fx.tree([R.text(mine.get(R.P_EFFECT1))])[0]
+      const [, red, g, bl] = nfxtool.scanFloats(nfxtool.tokens(glow.lines.find((l) => /^startcol /.test(l))!)[1], 4)
+      expect(hue === 'red' ? red > g && red > bl : bl > g && bl > red, `${name} ${red},${g},${bl}`).toBe(true)
+      expect(R.text(T.get(R.text(mine.get(0x23))!).get(R.P_EFFECT1))).not.toMatch(/dc1CrystalMineExp/i)
+    }
+    for (const costume of ['', '_alt']) expect(launchMarkers(r.adds.get(`Bundles/synth${costume}.ngm`)!).length).toBe(1)
+  })
+
   it('refuses a base that launches nothing', () => {
     expect(imperfect.problems(beams('wolverine')).some(([kind, text]) => kind === 'error' && text.includes('launches no projectiles'))).toBe(true)
     expect(() => new Builder(src(), beams('wolverine')).build()).toThrow(LabError)

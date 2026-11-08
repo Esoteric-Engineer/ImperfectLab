@@ -52,8 +52,14 @@ export function namer(T: R.Templates, internal: string): (old: string) => string
   }
 }
 
-export function retarget(T: R.Templates, name: string, effects: Map<string, string>, newName: (old: string) => string): [string, nottool.Template[]] | null {
-  const ts = chain(T, name)
+export function chains(T: R.Templates, names: string[]): nottool.Template[] {
+  const out = new Map<string, nottool.Template>()
+  for (const n of names) for (const t of chain(T, n)) if (!out.has(t.name.toLowerCase())) out.set(t.name.toLowerCase(), t)
+  return [...out.values()]
+}
+
+export function retarget(T: R.Templates, name: string, effects: Map<string, string>, newName: (old: string) => string, more: string[] = []): [string, nottool.Template[]] | null {
+  const ts = chains(T, [name, ...more])
   const names = (t: nottool.Template) => t.props.map(([, v]) => (R.text(v) ?? '').toLowerCase())
   if (!ts.some((t) => names(t).some((s) => effects.has(s)))) return null
   const renamed = new Map(ts.map((t) => [t.name.toLowerCase(), newName(t.name)]))

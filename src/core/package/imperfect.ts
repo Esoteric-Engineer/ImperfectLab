@@ -218,8 +218,7 @@ export interface Eyes {
 }
 
 // Another base's shot in place of every shot the character's moves launch (build/projectiles.ts).
-// Only donors checked in the game are listed.
-export const PROJECTILE_BASES = ['ironman'] as const
+export const PROJECTILE_BASES = ['thing', 'elektra', 'johnnyohm', 'spiderman', 'storm', 'venom', 'heatwave', 'humantorch', 'ironman', 'megalith', 'magneto', 'biohazard', 'defcon', 'roekel'] as const
 export const PROJECTILE_FROM = ['own', 'bone'] as const
 export type ProjectileFrom = (typeof PROJECTILE_FROM)[number]
 export const PROJECTILE_BONES = [

@@ -179,7 +179,8 @@ export function scaleModel(model: ngmtool.Model, s: number): ngmtool.Model {
 }
 
 // extra: nodes appended to the render model, which the base's other models with as many nodes get too.
-export function buildNgm(baseNgm: Uint8Array, render: ngmtool.Model, renames: Map<string, string>, size = 1, extra: ngmtool.Node[] = []): [Uint8Array, ngmtool.Model[]] {
+// added: models put in as they are, unscaled (a swapped projectile's).
+export function buildNgm(baseNgm: Uint8Array, render: ngmtool.Model, renames: Map<string, string>, size = 1, extra: ngmtool.Node[] = [], added: ngmtool.Model[] = []): [Uint8Array, ngmtool.Model[]] {
   const [head, models] = ngmtool.read(baseNgm)
   let out = [render]
   for (const m0 of models.slice(1)) {
@@ -192,6 +193,7 @@ export function buildNgm(baseNgm: Uint8Array, render: ngmtool.Model, renames: Ma
     out.push(m)
   }
   if (size !== 1) out = out.map((m) => scaleModel(m, size))
+  out.push(...added)
   const h = [...head]
   let meshes = 0
   for (const m of out) meshes += m.meshes.length
