@@ -1019,10 +1019,51 @@ table.credits input {
   align-items: flex-start;
 }
 
-.material .thumbs {
+.material-body {
+  flex-wrap: wrap;
+}
+
+.material-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  margin-bottom: 8px;
+}
+
+.material-head h4 {
+  margin: 0;
+}
+
+.material-head .head-include {
+  margin-left: auto;
+}
+
+.material .costume {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 4px;
+  width: 128px;
+}
+
+.material .costume select {
+  min-width: 0;
+}
+
+.material-settings {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.material-settings .form {
+  margin-top: 0;
+}
+
+.material-settings .advanced summary {
+  cursor: pointer;
+  color: var(--muted);
+  margin-bottom: 6px;
 }
 
 .material .thumb-head {
