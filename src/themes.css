@@ -116,6 +116,7 @@
   .menu-trigger,
   .page h3,
   .modal h2,
+  .credits-name,
   .tabs button,
   aside button {
     font-family: var(--nemesis-font);
@@ -375,7 +376,8 @@
 
   header .brand,
   .page h3,
-  .modal h2 {
+  .modal h2,
+  .credits-name {
     font-family: Teko, Rajdhani, Bahnschrift, 'Arial Narrow', system-ui, sans-serif;
     text-transform: uppercase;
     letter-spacing: 0.08em;
