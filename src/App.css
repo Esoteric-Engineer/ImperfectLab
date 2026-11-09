@@ -603,10 +603,26 @@ pre.log, pre.message {
   text-shadow: 0 0 1px #000, 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 
-.credits-view pre.credits-section {
-  margin-top: 14px;
+.credits-view pre.credits-section,
+.credits-view ul.credits-section {
+  margin: 14px 0 0;
   padding-top: 10px;
   border-top: 1px solid var(--line);
+}
+
+.credits-list {
+  list-style: disc;
+  padding-left: 18px;
+  font-family: ui-monospace, monospace;
+  font-size: 12.5px;
+}
+
+.credits-list li {
+  overflow-wrap: anywhere;
+}
+
+.credits-list li + li {
+  margin-top: 6px;
 }
 
 pre.log {
