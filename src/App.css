@@ -882,6 +882,32 @@ table.credits input {
   min-height: 360px;
 }
 
+.materials-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+  gap: 16px;
+  align-items: start;
+}
+
+.material-preview {
+  position: sticky;
+  top: 10px;
+}
+
+.material-preview .holster-view {
+  max-width: none;
+}
+
+@media (max-width: 1000px) {
+  .materials-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .material-preview {
+    position: static;
+  }
+}
+
 .move-preview {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);

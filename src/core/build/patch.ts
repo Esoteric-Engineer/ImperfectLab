@@ -229,7 +229,7 @@ export class Builder {
     }))
   }
 
-  buildModel(): (string | [string, string])[] {
+  buildModel(): shaders.ShaderMaterial[] {
     const c = this.c, base = this.base
     const model = this.model ?? new Model(c.glb!)
     const side = gunOf(c) ? gunSide(c) : null
@@ -252,10 +252,11 @@ export class Builder {
     const nsa = shaders.blocks(this.src.entry('Materials/Shaders/shaders.nsa'))
     this.texture2 = 'ge_charlight'
     this.bundleAdds = new Map()
-    const allMaterials: (string | [string, string])[] = []
+    const allMaterials: shaders.ShaderMaterial[] = []
     const stats = new bundle.Stats()
     const first = (v: string | undefined) => shaders.firstWord(v).toLowerCase()
     const stages = damageStages(c)
+    const envMaps = shaders.ENV_MAPS.filter((e) => included.some((m) => m.finish?.envmap === e.name))
     for (const [costume, alt] of [['', false], ['_alt', true]] as [string, boolean][]) {
       const [ngm, ngt, tpl] = base.bundleFiles(alt)
       const [, models] = ngmtool.read(ngm)
@@ -277,9 +278,11 @@ export class Builder {
         }
       }
       const names = latin1(ngt).split(/\s+/).filter(Boolean)
-      const keep = names.filter((n) => !replaced.has(n.toLowerCase()) || keptByOthers.has(n.toLowerCase()) || n.toLowerCase() === this.texture2.toLowerCase())
+      const has = (texture: string) => names.some((n) => n.toLowerCase() === texture.toLowerCase())
+      const keep = names.filter((n) => !replaced.has(n.toLowerCase()) || keptByOthers.has(n.toLowerCase()) || n.toLowerCase() === this.texture2.toLowerCase() ||
+        envMaps.some((e) => e.name.toLowerCase() === n.toLowerCase()))
       const extra: [string, gxtex.TplImage][] = []
-      if (!names.some((n) => n.toLowerCase() === this.texture2.toLowerCase())) extra.push(this.borrowTexture('johnnyohm', "Johnny Ohm's", this.texture2))
+      if (!has(this.texture2)) extra.push(this.borrowTexture('johnnyohm', "Johnny Ohm's", this.texture2))
       if (((alt ? c.flames.alt_color : c.flames.color) !== null && flames.hasAny(c.flames)) || this.greyTint[alt ? 1 : 0]) {
         extra.push(this.borrowTexture(flames.GREY_BUNDLE, "Human Torch's costume 2", flames.GREY_SPRITE))
       }
@@ -288,18 +291,25 @@ export class Builder {
           if (!extra.some(([n]) => n.toLowerCase() === to.toLowerCase())) extra.push([to, laser.grey(this.borrowTexture(laser.TEXTURE_BUNDLE, "Iron Man's costume 2", from)[1])])
         }
       }
+      for (const e of envMaps) {
+        if (has(e.name) || extra.some(([n]) => n.toLowerCase() === e.name.toLowerCase())) continue
+        const borrowed = this.borrowTexture(e.bundle, e.donor, e.name)
+        extra.push(borrowed)
+        this.note(`metallic finish${alt ? ' (costume 2)' : ''}: ${e.name} from ${e.donor} bundle, ${Math.round(borrowed[1].size() / 1024)} KB`)
+      }
       for (const [bundleName, texture] of this.shot?.borrow[alt ? 1 : 0] ?? []) {
-        if (!names.some((n) => n.toLowerCase() === texture.toLowerCase()) && !extra.some(([n]) => n.toLowerCase() === texture.toLowerCase())) {
+        if (!has(texture) && !extra.some(([n]) => n.toLowerCase() === texture.toLowerCase())) {
           extra.push(this.borrowTexture(bundleName, `${this.shot!.donor.label}'s`, texture))
         }
       }
       const mats = included.map((m) => c.internalName + costume + m.suffix)
-      allMaterials.push(...mats)
+      const shade = (name: string, texture: string, i: number): shaders.ShaderMaterial => ({ name, texture, finish: included[i].finish })
+      allMaterials.push(...mats.map((name, i) => shade(name, name, i)))
       const zs = c.zButton?.costume ? this.zImages(imgs, alt) : []
       const kept = zs.length || stages.length ? included.map((m) => c.internalName + (alt ? '_altzo' : '_zo') + m.suffix) : []
       const staged = stages.length ? this.stageImages(imgs, alt, stages) : []
-      allMaterials.push(...zs.map(([name, im], i): [string, string] => [name, im ? name : mats[i]]), ...kept.map((name, i): [string, string] => [name, mats[i]]),
-        ...staged.flat().map(([name, , drawn]): [string, string] => [name, drawn]))
+      allMaterials.push(...zs.map(([name, im], i) => shade(name, im ? name : mats[i], i)), ...kept.map((name, i) => shade(name, mats[i], i)),
+        ...staged.flatMap((block) => block.map(([name, , drawn], i) => shade(name, drawn, i))))
       const nm = templates.modelNames(c.internalName, costume)
       const plr = alt ? base.alt : base.plr
       const renames = new Map<string, string>()
@@ -361,7 +371,7 @@ export class Builder {
         this.note(`model: ${render.meshes.length} parts, ${st.vertices.length} positions, ${st.refs.length} vertices, ${render.indices.length / 3} triangles; scale ${f.S.toFixed(3)}${c.size !== 1 ? `; size ${formatG(c.size)}x the base's` : ''}; .ngm ${data.length} bytes, .tpl ${tplOut.length} bytes`)
       }
     }
-    const named = allMaterials.map((m) => (typeof m === 'string' ? m : m[0]).toLowerCase())
+    const named = allMaterials.map((m) => m.name.toLowerCase())
     const twice = named.find((n, i) => named.indexOf(n) !== i)
     if (twice) throw new LabError(`two materials would both be named ${twice}: change a material's suffix on the Materials page`)
     if (stats.clampedUvs) this.note(`warning: ${stats.clampedUvs} UVs were outside the range the game stores and were clamped`)

@@ -1,4 +1,4 @@
-// A small WebGL2 viewport: textured meshes in the game's frame, bone lines and a weight heat map.
+// A small WebGL2 viewport: textured meshes in the game's frame, bone lines, a weight heat map and sphere-mapped metallic finishes.
 import type { BoneLine, MeshData } from '../../core/preview'
 import { onThemeChange, themeColor } from '../theme'
 
@@ -27,7 +27,10 @@ in vec3 v_nrm;
 in vec2 v_uv;
 in float v_heat;
 uniform sampler2D tex;
+uniform sampler2D env;
 uniform int has_tex;
+uniform int has_env;
+uniform float env_strength;
 uniform int show_heat;
 uniform float alpha;
 out vec4 frag;
@@ -35,6 +38,10 @@ void main() {
   vec4 base = has_tex == 1 ? texture(tex, v_uv) : vec4(0.72, 0.72, 0.76, 1.0);
   float light = 0.35 + 0.65 * abs(normalize(v_nrm).z);
   vec3 c = base.rgb * light;
+  if (has_env == 1) {
+    vec3 n = normalize(v_nrm);
+    c = min(c + texture(env, vec2(0.5 + 0.5 * n.x, 0.5 - 0.5 * n.y)).rgb * env_strength, 1.0);
+  }
   if (show_heat == 1) {
     vec3 hot = mix(vec3(0.15, 0.35, 1.0), vec3(1.0, 0.2, 0.05), v_heat);
     c = v_heat > 0.0 ? mix(c * 0.5, hot, 0.85) : c * 0.55;
@@ -99,6 +106,8 @@ interface Gpu {
   data: Float32Array
   count: number
   texture: WebGLTexture | null
+  env: WebGLTexture | null
+  envStrength: number
   alpha: number
 }
 
@@ -119,6 +128,7 @@ export class Viewport {
   private poseDirty = false
   private linesDirty = false
   private gpu: Gpu[] = []
+  private envTextures: WebGLTexture[] = []
   private lineGpu: Gpu | null = null
   private meshProg: WebGLProgram | null = null
   private lineProg: WebGLProgram | null = null
@@ -252,6 +262,8 @@ export class Viewport {
       gl.deleteVertexArray(g.vao)
       if (g.texture) gl.deleteTexture(g.texture)
     }
+    for (const t of this.envTextures) gl.deleteTexture(t)
+    this.envTextures = []
     this.gpu = []
     this.lineGpu = null
   }
@@ -296,13 +308,14 @@ export class Viewport {
       gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 24, off)
     }
     gl.bindVertexArray(null)
-    this.lineGpu = { vao, buf, data, count: 2 * this.lines.length, texture: null, alpha: 1 }
+    this.lineGpu = { vao, buf, data, count: 2 * this.lines.length, texture: null, env: null, envStrength: 0, alpha: 1 }
   }
 
   private upload() {
     const gl = this.gl!
     this.release()
     const hl = this.highlight
+    const envs = new Map<MeshData['image'], WebGLTexture>()
     for (const m of this.meshes) {
       const n = m.positions.length / 3
       const data = new Float32Array(n * 9)
@@ -325,23 +338,35 @@ export class Viewport {
         gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 36, off)
       }
       gl.bindVertexArray(null)
-      let texture: WebGLTexture | null = null
-      if (m.image) {
-        texture = gl.createTexture()
-        gl.bindTexture(gl.TEXTURE_2D, texture)
-        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
-        const px = new Uint8Array(m.image.data.buffer, m.image.data.byteOffset, m.image.width * m.image.height * 4)
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, m.image.width, m.image.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, px)
-        gl.generateMipmap(gl.TEXTURE_2D)
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT)
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT)
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+      const texture = m.image ? this.texture(m.image, gl.REPEAT) : null
+      let env: WebGLTexture | null = null
+      if (m.env) {
+        if (!envs.has(m.env)) {
+          const t = this.texture(m.env, gl.CLAMP_TO_EDGE)
+          envs.set(m.env, t)
+          this.envTextures.push(t)
+        }
+        env = envs.get(m.env)!
       }
-      this.gpu.push({ vao, buf, data, count: n, texture, alpha: m.alpha })
+      this.gpu.push({ vao, buf, data, count: n, texture, env, envStrength: m.envStrength, alpha: m.alpha })
     }
     this.uploadLines()
     this.dirty = false
+  }
+
+  private texture(im: NonNullable<MeshData['image']>, wrap: number): WebGLTexture {
+    const gl = this.gl!
+    const t = gl.createTexture()!
+    gl.bindTexture(gl.TEXTURE_2D, t)
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
+    const px = new Uint8Array(im.data.buffer, im.data.byteOffset, im.width * im.height * 4)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, im.width, im.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, px)
+    gl.generateMipmap(gl.TEXTURE_2D)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    return t
   }
 
   update() {
@@ -380,6 +405,7 @@ export class Viewport {
     gl.uniformMatrix4fv(u('mvp'), false, mvp)
     gl.uniformMatrix4fv(u('view'), false, view)
     gl.uniform1i(u('tex'), 0)
+    gl.uniform1i(u('env'), 1)
     gl.uniform1i(u('show_heat'), this.highlight !== null ? 1 : 0)
     for (const g of [...this.gpu].sort((a, b) => b.alpha - a.alpha)) {
       if (g.alpha < 1.0) {
@@ -388,6 +414,10 @@ export class Viewport {
       }
       gl.uniform1f(u('alpha'), g.alpha)
       gl.uniform1i(u('has_tex'), g.texture ? 1 : 0)
+      gl.uniform1i(u('has_env'), g.env ? 1 : 0)
+      gl.uniform1f(u('env_strength'), g.envStrength)
+      gl.activeTexture(gl.TEXTURE1)
+      gl.bindTexture(gl.TEXTURE_2D, g.env)
       gl.activeTexture(gl.TEXTURE0)
       gl.bindTexture(gl.TEXTURE_2D, g.texture)
       gl.bindVertexArray(g.vao)

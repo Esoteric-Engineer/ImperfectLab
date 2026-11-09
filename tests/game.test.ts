@@ -620,6 +620,46 @@ describe.skipIf(!ISO)('game', () => {
     expect(() => new Builder(src(), c).build()).toThrow(/lower health than the one before/)
   })
 
+  it('builds metallic finishes, keeping or borrowing their sphere maps', () => {
+    const c = imperfect.newCharacter()
+    c.internalName = 'Synth'
+    c.displayName = 'SYNTH'
+    c.base = 'wolverine'
+    c.glb = makeGlb()
+    const mat = (i: number, name: string, suffix: string, finish: imperfect.Material['finish']): imperfect.Material =>
+      ({ ...imperfect.newMaterial(i, name, true, suffix, [64, 64]), texture: 'textures/skin.png', finish })
+    c.materials = [
+      { ...mat(0, 'skin', '', { envmap: 'GE_env_WinkOnyx', intensity: 0.8 }), damage: { normal: ['hue:30', 'prev', 'prev'], alt: ['prev', 'prev', 'prev'] } },
+      mat(1, 'armor', '_a', { envmap: 'GE_env_Iron', intensity: 0.4 }),
+      mat(2, 'cape', '_c', null),
+    ]
+    c.files = new Map([['textures/skin.png', pngBytes()], ['ui/hud.png', pngBytes(64, 64)]])
+    c.damageStages = [{ enabled: true, health: 75 }, { enabled: false, health: 50 }, { enabled: false, health: 25 }]
+    c.zButton = { stealth: null, costume: { normal: {}, alt: {} }, stats: null, size: null, bullet: null, gun: null, laser: null, impersonate: null, requires: {} }
+    const auto = mapping.autoMap(new Model(c.glb), Skeleton.ofBase(new R.BaseCharacter(src(), c.base)))
+    c.mapping = auto.mapping
+    c.overrides = auto.overrides
+    const r = new Builder(src(), c).build()
+    const nsa = shaders.blocks(r.sets.get('Materials/Shaders/shaders.nsa')!)
+    const look = (name: string) => [nsa.get(name)!.get('shader'), nsa.get(name)!.get('envmap'), nsa.get(name)!.get('intensity')]
+    for (const name of ['synth', 'synth_alt', 'synth_z', 'synth_altz', 'synth_zo', 'synth_altzo', 'synth_d1']) {
+      expect(look(name), name).toEqual(['glossenvcharlight', 'GE_env_WinkOnyx', '0.80'])
+    }
+    for (const name of ['synth_a', 'synth_alt_a', 'synth_z_a', 'synth_altzo_a', 'synth_d1_a']) expect(look(name), name).toEqual(['glossenvcharlight', 'GE_env_Iron', '0.40'])
+    for (const name of ['synth_c', 'synth_alt_c', 'synth_zo_c']) expect(look(name), name).toEqual(['charlight', undefined, '1.0'])
+    expect(nsa.get('synth_d1')!.get('texture')).toBe('Synth_d1')
+    expect(nsa.get('synth_d1')!.get('texture2')).toBe('ge_charlight')
+    for (const b of ['synth', 'synth_alt']) {
+      const names = latin1(r.adds.get(`Bundles/${b}.ngt`)!).split(/\s+/).map((n) => n.toLowerCase())
+      expect(names.filter((n) => n === 'ge_env_winkonyx').length, b).toBe(1)
+      expect(names.filter((n) => n === 'ge_env_iron').length, b).toBe(1)
+    }
+    expect(r.notes).toContain("metallic finish: GE_env_Iron from Megalith's bundle, 32 KB")
+    expect(r.notes).toContain("metallic finish (costume 2): GE_env_Iron from Megalith's bundle, 32 KB")
+    expect(r.notes.some((n) => n.includes('GE_env_WinkOnyx'))).toBe(false)
+    for (const e of shaders.ENV_MAPS) expect(new Builder(src(), c).borrowTexture(e.bundle, e.donor, e.name)[0]).toBe(e.name)
+  })
+
   it('points every field naming a tinted effect at its copy', () => {
     const r = new Builder(src(), tinted('johnnyohm')).build()
     const nvb = nvbtool.parseNvb(r.adds.get('Misc/PLAYER_Synth.nvb')!)

@@ -1,22 +1,50 @@
-// Materials/Shaders/shaders.nsa: one charlight block per new material, as the other characters have.
+// Materials/Shaders/shaders.nsa: one charlight (or metallic glossenvcharlight) block per new material, as the other characters have.
 import { concat, encodeLatin1, indexOfBytes, latin1 } from '../bytes'
 import { LabError } from '../errors'
 
-const BLOCK = (m: string, texture: string, texture2: string) =>
-  `\n${m}\n{\n\tshader charlight\n\tspecularity\t3.0\n\tshininess\t1.0\n\tintensity\t1.0\n\ttexture ${texture}\n\ttexture2 ${texture2}\n}\n`
+export interface Finish {
+  envmap: string
+  intensity: number
+}
+
+export interface ShaderMaterial {
+  name: string
+  texture: string
+  finish: Finish | null
+}
+
+export const ENV_MAPS: { name: string; label: string; bundle: string; donor: string }[] = [
+  { name: 'GE_env_WinkOnyx', label: "Liquid mirror (Wink's onyx)", bundle: 'wolverine', donor: "Wolverine's" },
+  { name: 'GE_env_polishedMetal', label: 'Polished chrome', bundle: 'elektra', donor: "Elektra's" },
+  { name: 'GE_env_Iron', label: 'Soft steel (Megalith)', bundle: 'megalith', donor: "Megalith's" },
+  { name: 'GE_env_Ironman_look', label: 'Warm metal (Iron Man)', bundle: 'ironman', donor: "Iron Man's" },
+  { name: 'GE_env_polishedMetalSpidey', label: 'Blue sky chrome (Spider-Man)', bundle: 'spiderman', donor: "Spider-Man's" },
+  { name: 'GE_env_WinkOnyxGold', label: 'Gold onyx', bundle: 'spiderman_b2', donor: "Spider-Man's story level" },
+  { name: 'GE_env_WinkOnyxBlue', label: 'Blue onyx', bundle: 'nycstreets_mp', donor: 'the New York streets arena' },
+  { name: 'GE_env_WinkOnyx_green', label: 'Green onyx (Biohazard)', bundle: 'biohazard', donor: "Biohazard's" },
+]
+
+export const FINISH_STRENGTH: [number, number] = [0, 1]
+
+export function envMap(name: string) {
+  return ENV_MAPS.find((e) => e.name.toLowerCase() === name.toLowerCase()) ?? null
+}
+
+const BLOCK = (m: string, texture: string, texture2: string, finish: Finish | null) =>
+  finish
+    ? `\n${m}\n{\n\tshader glossenvcharlight\n\tspecularity\t3.0\n\tshininess\t1.0\n\tintensity\t${finish.intensity.toFixed(2)}\n\ttexture ${texture}\n\tenvmap ${finish.envmap}\n\ttexture2 ${texture2}\n}\n`
+    : `\n${m}\n{\n\tshader charlight\n\tspecularity\t3.0\n\tshininess\t1.0\n\tintensity\t1.0\n\ttexture ${texture}\n\ttexture2 ${texture2}\n}\n`
 
 const ADDITIVE = (m: string) => `\n${m}\n{\n\tshader add\n\ttexture ${m}\n}\n`
 
-// `materials`: names, or [name, texture] for one that draws another's texture.
-export function build(data: Uint8Array, materials: (string | [string, string])[], texture2 = 'ge_charlight', additive: string[] = []): Uint8Array {
-  const named = materials.map((m): [string, string] => (typeof m === 'string' ? [m, m] : m))
+export function build(data: Uint8Array, materials: ShaderMaterial[], texture2 = 'ge_charlight', additive: string[] = []): Uint8Array {
   const low = encodeLatin1(latin1(data).toLowerCase())
-  for (const [m] of named) {
-    if (indexOfBytes(low, encodeLatin1('\n' + m.toLowerCase() + '\r\n')) >= 0) throw new LabError(`shaders.nsa already has a material ${m}`)
+  for (const { name } of materials) {
+    if (indexOfBytes(low, encodeLatin1('\n' + name.toLowerCase() + '\r\n')) >= 0) throw new LabError(`shaders.nsa already has a material ${name}`)
   }
   if (!(data.length >= 2 && data[data.length - 2] === 13 && data[data.length - 1] === 10)) data = concat([data, encodeLatin1('\r\n')])
   const have = blocks(data)
-  const text = named.map(([m, texture]) => BLOCK(m, texture, texture2)).join('') + additive.filter((m) => !have.has(m.toLowerCase())).map(ADDITIVE).join('')
+  const text = materials.map((m) => BLOCK(m.name, m.texture, texture2, m.finish)).join('') + additive.filter((m) => !have.has(m.toLowerCase())).map(ADDITIVE).join('')
   return concat([data, encodeLatin1(text.replaceAll('\n', '\r\n'))])
 }
 

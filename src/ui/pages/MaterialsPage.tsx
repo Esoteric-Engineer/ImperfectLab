@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { zipSync } from 'fflate'
+import { ENV_MAPS, FINISH_STRENGTH } from '../../core/build/shaders'
 import { encodePng } from '../../core/image/png'
 import type { RgbaImage } from '../../core/image/rgba'
 import { copyCharacter, DAMAGE_HEALTH, damageMember, damageUpload, gunBone, gunOf, type Material, swapBone, type ZCostume, Z_COSTUMES } from '../../core/package/imperfect'
@@ -8,9 +9,11 @@ import { ImageView, Note, NumberInput, ToggleCard } from '../components/common'
 import { engine } from '../engine'
 import { artName, fileName } from '../format'
 import { store, useStore } from '../store'
+import { PlacementView } from './MovesPage'
 
 const SIZES = [8, 16, 32, 64, 128, 256, 512, 1024]
 const PICTURES = '.png,.jpg,.jpeg,.webp,.bmp,.gif'
+const DEFAULT_STRENGTH = 0.6
 const COSTUMES = ['costume1', 'costume2']
 const COSTUME_LABELS: Record<ZCostume, string> = { normal: 'Costume 1', alt: 'Costume 2' }
 type Thumbs = [RgbaImage | null, RgbaImage | null, (RgbaImage | null)[][]]
@@ -83,8 +86,28 @@ export function MaterialsPage() {
         <Note>Saves every material as a zip of PNG files.</Note>
       </div>}
       {!c.materials.length && <div className="card"><h4>No model yet</h4><Note>Import a model in the Model step first.</Note></div>}
-      {c.materials.length > 0 && <DamageStages />}
-      {c.materials.map((_, i) => <MaterialCard key={i} index={i} thumbs={thumbs[i] ?? NO_THUMBS} />)}
+      {c.materials.length > 0 && <div className="materials-layout">
+        <div>
+          <DamageStages />
+          {c.materials.map((_, i) => <MaterialCard key={i} index={i} thumbs={thumbs[i] ?? NO_THUMBS} />)}
+        </div>
+        <MaterialPreview />
+      </div>}
+    </div>
+  )
+}
+
+function MaterialPreview() {
+  const [alt, setAlt] = useState(false)
+  return (
+    <div className="card material-preview">
+      <h4>Preview</h4>
+      <select value={alt ? 1 : 0} onChange={(e) => setAlt(e.target.value === '1')}>
+        <option value={0}>Costume 1</option>
+        <option value={1}>Costume 2</option>
+      </select>
+      <PlacementView first="front" method="materialPreview" args={[alt]} what="the materials" />
+      <Note>Metallic finish representation is not perfectly accurate. In-game lighting greatly affects finish.</Note>
     </div>
   )
 }
@@ -283,6 +306,23 @@ function MaterialCard({ index, thumbs }: { index: number; thumbs: Thumbs }) {
                 edited()
               }} />°
             <button className="small" onClick={() => choose('alt')}>Choose...</button>
+          </div>
+          <label>Finish</label>
+          <div className="row tight">
+            <select value={m.finish?.envmap ?? ''} onChange={(e) => {
+              m.finish = e.target.value === '' ? null : { envmap: e.target.value, intensity: m.finish?.intensity ?? DEFAULT_STRENGTH }
+              edited()
+            }}>
+              <option value="">None</option>
+              {ENV_MAPS.map((e) => <option key={e.name} value={e.name}>Metallic: {e.label}</option>)}
+            </select>
+            <span>at strength</span>
+            <NumberInput className="short" min={FINISH_STRENGTH[0]} max={FINISH_STRENGTH[1]} step={0.05} disabled={!m.finish} value={m.finish?.intensity ?? DEFAULT_STRENGTH}
+              onChange={(v) => {
+                if (!m.finish) return
+                m.finish = { ...m.finish, intensity: Math.round(v * 100) / 100 }
+                edited()
+              }} />
           </div>
           <label>Fixed to</label>
           <div className="row tight">

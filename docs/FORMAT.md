@@ -117,6 +117,9 @@ Game bone numbers in `model` belong to the base's body class (male, female or br
   - `damage`: optional, `normal` and `alt`, each three entries (one per damage stage): `"prev"` (the previous enabled
     stage's texture, or the costume's own before the first), `"hue:<degrees>"` (the costume's own texture, hue-shifted) or a
     `textures/` member. A costume left out is all `"prev"`.
+  - `finish`: optional, `{envmap, intensity}`: a metallic finish. The material uses the game's `glossenvcharlight` shader with one of the game's sphere maps,
+    `envmap` (`GE_env_WinkOnyx`, `GE_env_polishedMetal`, `GE_env_Iron`, `GE_env_Ironman_look`, `GE_env_polishedMetalSpidey`, `GE_env_WinkOnyxGold`, `GE_env_WinkOnyxBlue` or `GE_env_WinkOnyx_green`), added at `intensity` (0-1).
+    Also covers the material's Z costume and damage stages. Absent means plain `charlight`.
 - `damage_stages`: optional, three `{enabled, health}`. An enabled stage shows from `health` (an integer 1-99, % of max
   health) down; the enabled stages' `health` must fall. Absent means all off at 75, 50 and 25.
 

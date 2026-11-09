@@ -22,6 +22,8 @@ export interface MeshData {
   uvs: Float32Array
   image: RgbaImage | null
   alpha: number
+  env: RgbaImage | null
+  envStrength: number
   keys: (string | number)[]
   influences: Float32Array
   influenceKeys: Int32Array
@@ -60,10 +62,10 @@ class MeshBuilder {
     }
   }
 
-  done(image: RgbaImage | null, alpha = 1.0): MeshData {
+  done(image: RgbaImage | null, alpha = 1.0, env: RgbaImage | null = null, envStrength = 0): MeshData {
     return {
       positions: Float32Array.from(this.pos), normals: Float32Array.from(this.nrm), uvs: Float32Array.from(this.uv),
-      image, alpha, keys: this.keys, influences: Float32Array.from(this.infW), influenceKeys: Int32Array.from(this.infKeys),
+      image, alpha, env, envStrength, keys: this.keys, influences: Float32Array.from(this.infW), influenceKeys: Int32Array.from(this.infKeys),
     }
   }
 }
@@ -114,12 +116,26 @@ export function sourceMeshes(model: Model, c: Character, flip = false): MeshData
   })
 }
 
-export function fittedMeshes(trisByMat: Map<number, Tri[]>, images: Map<number, RgbaImage | null>, size = 1): MeshData[] {
+export function fittedMeshes(trisByMat: Map<number, Tri[]>, images: Map<number, RgbaImage | null>, size = 1, finishes = new Map<number, [RgbaImage, number]>()): MeshData[] {
   return [...trisByMat.keys()].sort((a, b) => a - b).map((slot) => {
     const b = new MeshBuilder()
     for (const t of trisByMat.get(slot)!) for (const [p, n, u, w] of t) b.vertex([p[0] * size, p[1] * size, p[2] * size], n, u, w)
-    return b.done(images.get(slot) ?? null)
+    const [env, strength] = finishes.get(slot) ?? [null, 0]
+    return b.done(images.get(slot) ?? null, 1.0, env, strength)
   })
+}
+
+function rgba(im: gxtex.TplImage): RgbaImage {
+  return new RgbaImage(im.width, im.height, gxtex.decode(im.format, im.base(), im.width, im.height))
+}
+
+export function envImage(source: GameSource, name: string): RgbaImage {
+  const e = shaders.envMap(name)
+  if (!e) throw new LabError(`unknown sphere map ${name}`)
+  const names = latin1(source.entry(`Bundles/${e.bundle}.ngt`)).split(/\s+/).filter(Boolean).map((n) => n.toLowerCase())
+  const at = names.indexOf(e.name.toLowerCase())
+  if (at < 0) throw new LabError(`${e.donor} bundle has no texture ${e.name}`)
+  return rgba(gxtex.readTpl(source.entry(`Bundles/${e.bundle}.tpl`))[0][at])
 }
 
 // A small solid diamond at each point, for markers such as the glowing eyes.
@@ -166,10 +182,7 @@ export function baseMeshes(source: GameSource, base: BaseCharacter, alpha = 1.0)
     if (!cache.has(name)) {
       cache.set(name, null)
       const i = names.indexOf(name)
-      if (i >= 0 && i < tplImages.length) {
-        const im = tplImages[i]
-        cache.set(name, new RgbaImage(im.width, im.height, gxtex.decode(im.format, im.base(), im.width, im.height)))
-      }
+      if (i >= 0 && i < tplImages.length) cache.set(name, rgba(tplImages[i]))
     }
     return cache.get(name)!
   }

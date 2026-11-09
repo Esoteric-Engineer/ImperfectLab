@@ -117,6 +117,26 @@ describe('round trip', () => {
     expect(imperfect.problems(c)).toContainEqual(['warning', 'damage stages are ticked but no material changes texture at them: pick textures on the Materials page'])
   })
 
+  it('saves and loads a material finish, and leaves it out when there is none', () => {
+    const c = character()
+    expect((imperfect.manifest(c) as Json).model.materials[0].finish).toBeUndefined()
+    expect(imperfect.load(imperfect.save(c)).materials[0].finish).toBeNull()
+    c.materials[0].finish = { envmap: 'GE_env_Iron', intensity: 0.65 }
+    const d = imperfect.load(imperfect.save(c))
+    expect(d.materials[0].finish).toEqual({ envmap: 'GE_env_Iron', intensity: 0.65 })
+    expect(imperfect.save(d)).toEqual(imperfect.save(c))
+
+    const m = imperfect.manifest(c) as Json
+    const withFinish = (finish: unknown) => () => imperfect.fromManifest({ ...m, model: { ...m.model, materials: [{ ...m.model.materials[0], finish }] } }, new Map(c.files))
+    expect(withFinish({ envmap: 'ge_env_winkonyx', intensity: 0.5 })().materials[0].finish).toEqual({ envmap: 'GE_env_WinkOnyx', intensity: 0.5 })
+    expect(withFinish(null)().materials[0].finish).toBeNull()
+    expect(withFinish({ envmap: 'GE_env_SpiderShine', intensity: 0.5 })).toThrow(/unknown finish envmap/)
+    expect(withFinish({ envmap: 'GE_env_Iron', intensity: 1.5 })).toThrow(/from 0 to 1/)
+    expect(withFinish({ envmap: 'GE_env_Iron' })).toThrow(/must be a number/)
+    expect(withFinish({ intensity: 0.5 })).toThrow(/wrong type/)
+    expect(withFinish({ envmap: 'GE_env_Iron', intensity: 0.5, alpha: 1 })).toThrow(/unknown key/)
+  })
+
   it('loads a file with more than 64 members', () => {
     const c = character()
     for (let i = 0; i < 100; i++) c.files.set(`textures/extra${i}.png`, pngBytes())
