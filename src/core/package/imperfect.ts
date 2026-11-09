@@ -61,7 +61,7 @@ export const GAMEPLAY: Record<string, [number, number, boolean]> = {
   ...Object.fromEntries(COSTS.map((c): [string, [number, number, boolean]] => [c.key, [FALLBACK.includes(c.key) ? 0.1 : 0, 100, false]])),
   ...Object.fromEntries(RECHARGE.map((r): [string, [number, number, boolean]] => [r.key, [0, 100, false]])),
 }
-export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable', 'range_grab', 'holster', 'no_throw'] }
+export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable', 'range_grab', 'holster', 'no_throw', 'air_throw', 'air_throw_reach'] }
 export const NO_THROW = ['in_hand', 'attack_far'] as const
 export type NoThrow = (typeof NO_THROW)[number]
 export type WallKey = 'wall_climb' | 'wall_run'
@@ -199,6 +199,8 @@ export interface BaseMoves {
   range_grab?: boolean
   holster?: Holster
   no_throw?: NoThrow
+  air_throw?: boolean
+  air_throw_reach?: number
 }
 
 export interface Flames {
@@ -529,6 +531,22 @@ export function manifest(c: Character): Json {
 
 export type Problem = ['error' | 'warning' | 'note', string]
 
+export const airThrows = (c: Character) => Boolean(c.baseMoves.air_throw)
+// a throw flying further than the base's
+export const longThrows = (c: Character) => c.baseMoves.throw_reach !== undefined || (airThrows(c) && c.baseMoves.air_throw_reach !== undefined)
+export const throwReachName = (c: Character) => (c.baseMoves.throw_reach !== undefined ? 'the baton throw reach' : 'the air throw reach')
+// a stretch that moves the club's long hit segment to an arm
+export const longHitStretch = (c: Character) => (c.moveReach.SuperAttackFar ? 'super attack far' : c.moveReach.SuperRiseAttack ? 'super rise attack' : null)
+
+export function airThrowClashes(c: Character): string[] {
+  const out: string[] = []
+  if (c.baseMoves.no_throw) out.push('the air throw throws the club, but the baton throw is off: untick one on the Moves page')
+  if (c.moves.SuperJumpAttack || c.moveAnims.SuperJumpAttack || c.moveIdle.includes('SuperJumpAttack')) out.push('the air throw is the super jump attack, which is also changed on the Moves page: set it back to the base\'s, or untick the air throw')
+  if (c.moveReach.SuperJumpAttack) out.push('the air throw and a stretch both change the super jump attack: untick one of them on the Moves page')
+  if (c.baseMoves.holster?.drawn?.SuperJumpAttack === false) out.push("the air throw throws the club, so the super jump attack can't hold it on the back: tick it on the Moves page")
+  return out
+}
+
 export function problems(c: Character): Problem[] {
   const out: Problem[] = []
   if (!INTERNAL.test(c.internalName || '')) out.push(['error', 'the internal name must be 1-10 letters and digits, starting with a letter'])
@@ -608,9 +626,12 @@ export function problems(c: Character): Problem[] {
       out.push(['warning', 'the baton throw damage is set but no move throws the club, so it does nothing'])
     }
   }
+  if (c.baseMoves.air_throw_reach !== undefined && !c.baseMoves.air_throw) out.push(['error', 'the air throw reach is set but the air throw is off: tick it on the Moves page'])
+  if (airThrows(c)) for (const m of airThrowClashes(c)) out.push(['error', m])
   if (c.moves.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach changes the base\'s own super attack far: set that move back to the base\'s, or untick the reach'])
+  const longHit = longHitStretch(c)
   if (c.moveReach.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach and a stretch both change super attack far: untick one of them on the Moves page'])
-  else if (c.moveReach.SuperRiseAttack && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach and a stretched super rise attack both need the baton\'s long hit segment: untick one of them on the Moves page'])
+  else if (longHit && longThrows(c)) out.push(['error', `${throwReachName(c)} and a stretched ${longHit} both need the baton's long hit segment: untick one of them on the Moves page`])
   for (const id of Object.keys(c.moveReach)) if (!MOVE_IDS.has(id)) out.push(['error', `there is no move ${id} to stretch`])
   for (const id of c.moveIdle) {
     const label = MOVE_IDS.get(id)?.label ?? id
@@ -1004,12 +1025,15 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
       glow: p.glow ? color(p.glow, 'glow') : null,
     }
   }
-  const mv = keys(m.base_moves ?? {}, ['throw_reach', 'throw_cable', 'range_grab', 'holster', 'no_throw'], 'base_moves')
+  const mv = keys(m.base_moves ?? {}, ['throw_reach', 'throw_cable', 'range_grab', 'holster', 'no_throw', 'air_throw', 'air_throw_reach'], 'base_moves')
   c.baseMoves = {}
   const reach = num(mv.throw_reach, 'base_moves.throw_reach', THROW_REACH[0], THROW_REACH[1])
   if (reach !== null) c.baseMoves.throw_reach = reach
   if (mv.throw_cable !== null && mv.throw_cable !== undefined) c.baseMoves.throw_cable = typed<boolean>(mv.throw_cable, 'boolean', 'base_moves.throw_cable')
   if (mv.range_grab !== null && mv.range_grab !== undefined) c.baseMoves.range_grab = typed<boolean>(mv.range_grab, 'boolean', 'base_moves.range_grab')
+  if (mv.air_throw !== null && mv.air_throw !== undefined && typed<boolean>(mv.air_throw, 'boolean', 'base_moves.air_throw')) c.baseMoves.air_throw = true
+  const airReach = num(mv.air_throw_reach, 'base_moves.air_throw_reach', THROW_REACH[0], THROW_REACH[1])
+  if (airReach !== null) c.baseMoves.air_throw_reach = airReach
   if (mv.no_throw !== null && mv.no_throw !== undefined) {
     const v = str(mv.no_throw, 'base_moves.no_throw', 20)!
     if (!(NO_THROW as readonly string[]).includes(v)) throw new LabError(`manifest: base_moves.no_throw is one of ${NO_THROW.join(', ')}`)

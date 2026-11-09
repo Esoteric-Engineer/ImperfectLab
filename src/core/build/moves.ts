@@ -234,11 +234,11 @@ export function animations(cat: Catalog, base: string, move: Move): (string | nu
 }
 
 // The moves that hit with each damage value, by the animations the character ends up with (picked: move id -> base), then the baton throw's when it has its own.
-export function damageMoves(cat: Catalog, base: string, picked: Record<string, string>, ownThrow = false): Move[][] {
+export function damageMoves(cat: Catalog, base: string, picked: Record<string, string>, ownThrow = false, airThrow = false): Move[][] {
   const out: Move[][] = [...damage.KEYS, damage.THROW_KEY].map(() => [])
   for (const move of MOVES) {
     const from = picked[move.id] ?? base
-    const anims = animations(cat, from, move)
+    const anims = airThrow && from === base && move.id === basemoves.AIR_STATE ? move.states.map(() => basemoves.THROW) : animations(cat, from, move)
     if (!anims) continue
     const hits = (a: string) => (ownThrow && from === base && a === basemoves.THROW ? [damage.THROW_PARAM] : cat[from].strikes?.[a])
     const ts = new Set(move.states.flatMap((s, i) => (anims[i] ? damage.tiers(s, hits(anims[i]!.toLowerCase())) : [])))
@@ -626,6 +626,10 @@ export interface MotionFiles {
   model: ngmtool.Model
 }
 
+export interface AirThrow {
+  reach?: number
+}
+
 export interface NoShots {
   melee: boolean
   keep: string[]
@@ -638,7 +642,7 @@ export const MELEE_SWAP = ['SuperAttack1', 'SuperAttack2', 'SuperAttack3', 'Supe
 export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: string, moves: Record<string, string>, throwReach?: number,
   choice: Record<string, MoveEffect> = {}, plan: EffectPlan | null = null, stretches: Record<string, MoveReach> = {}, fx: Effects | null = null,
   size = 1, idle: string[] = [], onBack: holster.Plan | null = null, throwDamage = false, shooter: gun.Plan | null = null,
-  spawn: number | null = null, anims: MoveAnims | null = null, noShots: NoShots | null = null, noThrow: NoShots | null = null): MotionFiles {
+  spawn: number | null = null, anims: MoveAnims | null = null, noShots: NoShots | null = null, noThrow: NoShots | null = null, airThrow: AirThrow | null = null): MotionFiles {
   const set = motionSetOf(base), stem = stemOf(set), name = internal.toLowerCase()
   const own = nmstool.parse(src.entry(`Motions/${set}`))
   const bundles = loadBundles(src, stem)
@@ -667,7 +671,8 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
   const keepClub = noThrow !== null && !noThrow.melee
   if (noThrow && throwReach !== undefined) throw new LabError('the baton throw reach does nothing once the throw is off')
   let thrown = basemoves.THROW
-  if (throwReach !== undefined || throwDamage || arm || keepClub) {
+  if (airThrow && noThrow) throw new LabError('the air throw throws the club, but the baton throw is off')
+  if (throwReach !== undefined || throwDamage || arm || keepClub || airThrow) {
     const main = bundles.get('') ?? []
     const at = main.findIndex((r) => r.name.toLowerCase() === basemoves.THROW)
     if (at < 0) throw new LabError(`${base.label}'s animations have no ${basemoves.THROW}`)
@@ -679,12 +684,44 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       if (!stand) throw new LabError(`${base.label}'s animations have no power-stand to take the club's grip from`)
       rec = holster.regrip(rec, models[0], stand, arm.hand)
     }
-    if (throwReach !== undefined) rec = basemoves.longThrow(rec, models[0], throwReach)
-    if (throwDamage) rec = damage.throwRecord(rec)
-    rec.name = ownName(rec)
-    own.rename(main[at].name, rec.name)
-    main[at] = rec
+    const gripped = rec
+    const reachOf = (r: ngbtool.Record, reach: number | undefined) => {
+      const out = reach !== undefined ? basemoves.longThrow(r, models[0], reach) : r
+      return throwDamage ? damage.throwRecord(out) : out
+    }
+    rec = reachOf(gripped, throwReach)
+    const plain = main[at]
+    if (rec !== plain) {
+      rec.name = ownName(rec)
+      own.rename(plain.name, rec.name)
+      main[at] = rec
+    }
     thrown = rec.name.toLowerCase()
+    if (airThrow) {
+      const recOf = (state: string) => {
+        const anim = mine.get(state.toLowerCase())?.anim.toLowerCase()
+        const r = main.find((r) => r.name.toLowerCase() === anim)
+        if (!r) throw new LabError(`${base.label}'s animations have no ${state} for the air throw`)
+        return r
+      }
+      const sk = new Skeleton(models[0], base.body)
+      const thighs = ['L.thigh', 'R.thigh'].map((r) => sk.node(r))
+      if (thighs.some((n) => n === undefined)) throw new LabError(`${base.label}'s skeleton has no thighs to hold the legs of the air throw by`)
+      const legs = new Set<number>(thighs as number[])
+      models[0].nodes.forEach(([, , parent], i) => {
+        if (legs.has(parent)) legs.add(i)
+      })
+      const state = mine.get(basemoves.AIR_STATE.toLowerCase())
+      if (!state) throw new LabError(`${base.label} has no super jump attack to throw from`)
+      const reach = airThrow.reach ?? throwReach
+      const flown = reach === throwReach ? rec : reachOf(gripped, reach)
+      const air = basemoves.airThrow(flown, basemoves.CATCH + flown.length - plain.length, recOf('SuperJump'), [...legs], recOf(basemoves.AIR_STATE), size)
+      air.name = ownName(air)
+      main.push(air)
+      displaced.add(state.anim.toLowerCase())
+      own.set({ ...state, anim: air.name })
+      notes.push(`air throw: the super jump attack throws the club${reach !== undefined ? ` ${formatG(reach)} m` : ''}, at the nearest opponent`)
+    }
   }
   const shots = Object.keys(moves).length ? projectiles.filled(new tuning.Tuning(src, base)) : []
   for (const [id, from] of Object.entries(moves)) {

@@ -3,7 +3,7 @@ import * as dsp from '../core/audio/dspadpcm'
 import { toHex } from '../core/bytes'
 import { type Batch, buildBatch, checkBatch } from '../core/build/batch'
 import * as cutscenes from '../core/build/cutscenes'
-import { Builder, glowRgba, gunPlanOf, noShots, onBackPlan, patch, type Progress, propShape, report, type Result, WIRE, write } from '../core/build/patch'
+import { airThrowPlan, Builder, glowRgba, gunPlanOf, noShots, onBackPlan, patch, type Progress, propShape, report, type Result, WIRE, write } from '../core/build/patch'
 import * as effects from '../core/build/effects'
 import * as eyes from '../core/build/eyes'
 import * as gun from '../core/build/gun'
@@ -597,7 +597,7 @@ export class Service {
       const fx = Object.keys(c.moveReach).length ? new effects.Effects(src.entry('Misc/game.nfx')) : null
       try {
         const anims = animsOf(c, this.model, (d) => this.clipFile(d))
-        mf = moves.motionFiles(src, base, c.internalName, c.moves, c.baseMoves.throw_reach, {}, null, c.moveReach, fx, c.size, c.moveIdle, onBackPlan(c, center), false, shooter, null, anims, noShots(c))
+        mf = moves.motionFiles(src, base, c.internalName, c.moves, c.baseMoves.throw_reach, {}, null, c.moveReach, fx, c.size, c.moveIdle, onBackPlan(c, center), false, shooter, null, anims, noShots(c), null, airThrowPlan(c))
       } catch (e) {
         if (!(e instanceof LabError)) throw e
         return e.message

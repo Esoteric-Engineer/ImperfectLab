@@ -23,7 +23,7 @@ import * as bundle from '../model/bundle'
 import { Fit, type MaterialSlots, type Tri } from '../model/fit'
 import { Model } from '../model/glb'
 import { Skeleton } from '../model/skeleton'
-import { type Character, damageStages, gunOf, hasCutscenes, image as readImage, type Material, problems, type Placement, WALL, type WallKey, type ZCostume, zTexture } from '../package/imperfect'
+import { airThrows, type Character, damageStages, gunOf, hasCutscenes, image as readImage, longThrows, type Material, problems, type Placement, WALL, type WallKey, type ZCostume, zTexture } from '../package/imperfect'
 import * as cutscenes from './cutscenes'
 import * as damage from './damage'
 import * as effects from './effects'
@@ -143,6 +143,7 @@ export class Builder {
     if (this.r.cache !== null) this.r.dol = D.growEffectCache(this.r.dol, this.r.cache)
     if (mirrors(c)) this.r.dol = D.mirrorSkip(this.r.dol)
     if (splitsCharge(c)) this.r.dol = D.chargeRate(this.r.dol)
+    if (airThrows(c)) this.r.dol = D.airThrow(this.r.dol, [airThrowCharacter(c)])
     if (throwsDamage(c)) this.r.dol = D.throwDamage(this.r.dol)
     if (ownSounds(c)) this.r.dol = D.soundBanks(this.r.dol, [c.internalName])
     if (c.zButton) this.r.dol = D.zActions(this.r.dol, zCharacters([c]))
@@ -320,7 +321,7 @@ export class Builder {
       const copy = new Map([...tris].map(([k, v]) => [k, [...v]]))
       const render = bundle.renderModel(renderBase, copy, normals, nm.MODEL, [...mats, ...zs.map(([name]) => name), ...kept, ...staged.flat().map(([name]) => name)],
         renderBase.meshes.length ? renderBase.meshes[0][5] : [0, 0, 0], stats)
-      if (c.baseMoves.throw_reach !== undefined) basemoves.hitSegment(render)
+      if (longThrows(c)) basemoves.hitSegment(render)
       if (side && this.gunGeometry) render.attachments.push(gun.muzzleAttachment(gun.bone(models[0], base.body, side)[0], renderBase, this.gunGeometry))
       if (far && reach.farVolume(render, far, reach.bonesOf(sk)[far]) && !alt) {
         this.note(`reach: ${base.label}'s long hit segment (attachments 43 and 44) moves to the ${reach.LIMB_LABELS[far]}, so moves that hit with it hit from there`)
@@ -564,7 +565,7 @@ export class Builder {
     const fx = Object.keys(c.moveReach).length ? new effects.Effects(this.src.entry('Misc/game.nfx')) : null
     const shooter = this.gunPlan()
     const anims = animsOf(c, c.glb ? (this.model ?? new Model(c.glb)) : null)
-    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, this.onBack(), throwsDamage(c), shooter, boneShots(c) ? projectiles.LAUNCH_INDEX : null, anims, noShots(c), noThrow(c))
+    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, this.onBack(), throwsDamage(c), shooter, boneShots(c) ? projectiles.LAUNCH_INDEX : null, anims, noShots(c), noThrow(c), airThrowPlan(c))
     if (shooter) this.r.gun = this.gunEntry(shooter)
     for (const [k, v] of m.files) this.r.adds.set(k, v)
     if (thrown !== undefined) this.note(`baton throw: reaches ${thrown} m (${this.base.label}'s about 8)`)
@@ -710,7 +711,7 @@ export class Builder {
 
 // Whether the character gets its own motion set and animation bundles (Builder.motions).
 export function ownMotions(c: Character): boolean {
-  return gunOf(c) !== null || c.baseMoves.throw_reach !== undefined || c.baseMoves.holster !== undefined || throwsDamage(c) || Object.keys(c.moves).length > 0 || Object.keys(c.moveAnims).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1 || boneShots(c) || c.projectile.remove || c.baseMoves.no_throw !== undefined
+  return gunOf(c) !== null || c.baseMoves.throw_reach !== undefined || c.baseMoves.holster !== undefined || throwsDamage(c) || Object.keys(c.moves).length > 0 || Object.keys(c.moveAnims).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1 || boneShots(c) || c.projectile.remove || c.baseMoves.no_throw !== undefined || airThrows(c)
 }
 
 export const boneShots = (c: Character): boolean => c.projectile.on && c.projectile.from === 'bone'
@@ -749,7 +750,9 @@ export function gunPlanOf(c: Character, baseModel: ngmtool.Model, body: string, 
 
 // A stretched hit that comes back from where it lands needs RETURN_ABILITY and main.dol's mirrored skip.
 export const stretchReturns = (c: Character) => reach.RETURNS.some((id) => c.moveReach[id])
-export const mirrors = (c: Character) => c.baseMoves.throw_reach !== undefined || stretchReturns(c)
+export const mirrors = (c: Character) => longThrows(c) || stretchReturns(c)
+export const airThrowCharacter = (c: Character): D.AirThrowCharacter => ({ internal: c.internalName, drop: basemoves.AIM_FROM * c.size - basemoves.AIM_AT })
+export const airThrowPlan = (c: Character): moves.AirThrow | null => (c.baseMoves.air_throw ? { reach: c.baseMoves.air_throw_reach } : null)
 export const splitsCharge = (c: Character) => c.gameplay.energy_regen !== undefined || c.gameplay.energy_charge !== undefined
 export const throwsDamage = (c: Character) => c.gameplay.attack_damage_throw !== undefined
 export const impersonates = (c: Character) => Boolean(c.zButton?.impersonate && Object.values(c.zButton.impersonate).some(Boolean))
@@ -848,6 +851,7 @@ export function report(characters: Character | Character[], result: Result): str
   if (chars.length === 1) lines.push('main.dol: roster record 19, select-screen limits 18 -> 19')
   else lines.push(`main.dol: roster records 19 to ${18 + chars.length} in a new data section, select-screen limits 18 -> ${18 + chars.length}`, `main.dol: arena starts at 0x${D.arenaLo(result.dol!).toString(16).toUpperCase()}`)
   if (chars.some(mirrors)) lines.push('main.dol: fn_8019DB24 mirrors a long throw\'s or stretch\'s return on a hit')
+  if (chars.some(airThrows)) lines.push('main.dol: fn_800DDCB4 aims the air throw\'s super jump attack at the opponent\'s height, and event 0x7F clears that aim')
   if (chars.some(splitsCharge)) lines.push('main.dol: fn_8009D71C adds tuning field 245 to the energy recharge rate while holding R')
   if (chars.some(throwsDamage)) lines.push('main.dol: fn_800E1788 reads tuning field 217 for an animation\'s damage event with param 5 (the baton throw)')
   if (chars.some(ownSounds)) lines.push('main.dol: fn_80114420 loads a new character\'s own sound bank, and one bank per type ID')

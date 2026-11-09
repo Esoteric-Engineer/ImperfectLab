@@ -1,7 +1,7 @@
 import * as damage from '../../core/build/damage'
 import { damageMoves, type Move } from '../../core/build/moves'
 import { formatG } from '../../core/format'
-import { GAMEPLAY as RANGES } from '../../core/package/imperfect'
+import { airThrows, GAMEPLAY as RANGES } from '../../core/package/imperfect'
 import { store } from '../store'
 import { NumberInput } from './common'
 
@@ -18,9 +18,9 @@ export function DamageTable({ values, set, own = false, batonThrow = false }: {
   const cat = store.moveCatalog()
   const bv = store.baseDetails()
   const base = damage.KEYS.map((k, i) => cat?.[c.base]?.damage[i] ?? bv?.gameplay[k])
-  const users = cat?.[c.base] ? damageMoves(cat, c.base, c.moves, c.gameplay[damage.THROW_KEY] !== undefined) : null
+  const users = cat?.[c.base] ? damageMoves(cat, c.base, c.moves, c.gameplay[damage.THROW_KEY] !== undefined, airThrows(c)) : null
   const rows: Row[] = damage.KEYS.map((k, i) => [k, `Damage ${i + 1}`, (own ? c.gameplay[k] : undefined) ?? base[i], users?.[i]])
-  if (batonThrow) rows.push([damage.THROW_KEY, 'Baton throw', base[damage.THROW_TIER], cat?.[c.base] ? damageMoves(cat, c.base, c.moves, true)[damage.KEYS.length] : undefined])
+  if (batonThrow) rows.push([damage.THROW_KEY, 'Baton throw', base[damage.THROW_TIER], cat?.[c.base] ? damageMoves(cat, c.base, c.moves, true, airThrows(c))[damage.KEYS.length] : undefined])
   return (
     <table className="gameplay grid damage">
       <thead><tr><th>Value</th><th>Moves</th><th className="num">{own ? 'Normal' : 'Base'}</th><th>New</th><th className="num">Change</th></tr></thead>

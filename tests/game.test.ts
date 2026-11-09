@@ -105,6 +105,28 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(() => D.throwDamage(out)).toThrow(LabError)
   })
 
+  it('hooks the aim gate, the aim\'s arcsine and the event dispatcher for the air throw', () => {
+    const dol = gameSource().dol
+    const out = D.airThrow(dol, [{ internal: 'Synth', drop: 0.85 }, { internal: 'Cap', drop: 1.2 }])
+    const word = (d: Uint8Array, va: number) => u32be(d, D.fileOffset(d, va))
+    const target = (va: number) => va + (((word(out, va) & 0x3fffffc) << 6) >> 6)
+    expect(word(dol, 0x800de74c)).toBe(0x801f0058)
+    expect(word(out, 0x800de74c) & 0xfc000003).toBe(0x48000001)
+    expect(word(out, 0x80058c94) & 0xfc000003).toBe(0x48000000)
+    const code = target(0x800de74c)
+    expect(target(0x80058c94) - code).toBe(D.AIR_EVENT)
+    const at = D.fileOffset(out, code)
+    expect(word(out, code)).toBe(0x9421ffd0)
+    expect(word(out, code + D.AIR_EVENT)).toBe(0x2c05007f)
+    expect(word(out, 0x800de8f4) & 0xfc000003).toBe(0x48000001)
+    expect(target(0x800de8f4) - code).toBe(D.AIR_ELEV)
+    expect(word(out, code + D.AIR_ELEV)).toBe(0x801f0014)
+    const names = latin1(out.subarray(at, at + 0x600))
+    for (const n of ['plr_synth', 'plr_altSynth', 'plr_cap', 'plr_altCap']) expect(names).toContain(n)
+    expect(f32be(out, at + names.indexOf('plr_cap') + 0x40)).toBeCloseTo(1.2, 5)
+    expect(() => D.airThrow(out, [{ internal: 'Synth', drop: 0.85 }])).toThrow(LabError)
+  })
+
   it('binds Z to its actions', () => {
     const dol = gameSource().dol
     const none = { costume: false, damage: [null, null, null, null, null], taken: null, lift: null, run: null, sprint: null, size: null, slow: null, gun: false }
@@ -1223,6 +1245,101 @@ describe.skipIf(!ISO)('base moves', () => {
     const kept = played(c).at
     expect(kept('SuperAttackFar').anim).not.toBe(far)
     expect(kept('RangedAttack').anim).toBe(far)
+  })
+
+  it('throws the club from the air in the super jump attack', () => {
+    const c = daredevil()
+    c.baseMoves = { air_throw: true }
+    expect(imperfect.problems(c).filter(([l]) => l === 'error')).toEqual([])
+    const { r, at } = played(c)
+    const stock = ngbtool.parse(src().entry('Bundles/daredevil.ngb'))
+    const throwRec = stock.find((x) => x.name.toLowerCase() === basemoves.THROW)!
+    const air = at('SuperJumpAttack')
+    expect(air.anim).toMatch(/^daredevil_airthrow_[0-9a-f]{6}\.nad$/)
+    for (const s of ['SuperSwingAttack', 'SuperWireAttack']) expect(at(s).anim).toBe('daredevil_superswingattack.nad')
+    expect(at('SuperAttackFar').anim).toBe(basemoves.THROW)
+    expect(at('SuperAttackFar').rec).toBeDefined()
+    const rec = air.rec
+    const root = rec.tracks.find(([b, ch]) => b === 0 && ch === 1)![2].map(([, v]) => ngbtool.translation(v))
+    expect(Math.max(...root.map((p) => Math.abs(p[1])))).toBeLessThan(1)
+    expect(Math.max(...root.map((p) => p[2]))).toBeGreaterThan(0.4)
+    expect(root[root.length - 1][2]).toBeLessThan(-15)
+    const club = (x: ngbtool.Record) => x.tracks.filter(([b]) => b === basemoves.CLUB)
+    expect(club(rec)).toEqual(club(throwRec))
+    const sk = new Skeleton(ngmtool.read(src().entry('Bundles/daredevil.ngm'))[1][0], 'male')
+    const thigh = sk.node('R.thigh')!
+    const leg = rec.tracks.find(([b, ch]) => b === thigh && ch === 0)![2]
+    expect(leg.every(([, v]) => v.join() === leg[0][1].join())).toBe(true)
+    const types = (t: number) => rec.events.filter(([, e]) => e === t).map(([f]) => f)
+    expect(types(0x56).length).toBe(1)
+    expect(types(0x53).length).toBe(1)
+    expect(types(basemoves.CLEAR_AIM_EVENT)).toEqual([basemoves.CATCH])
+    const model = ngmtool.read(src().entry('Bundles/daredevil.ngm'))[1][0]
+    for (let t = basemoves.RELEASE + 2; t <= 19; t++) expect(Math.abs(ngbtool.pose(model, rec, t)[basemoves.CLUB][1][2] - basemoves.AIM_FROM), `frame ${t}`).toBeLessThan(0.15)
+    expect(r.notes.some((n) => n.startsWith('air throw: '))).toBe(true)
+    const dive = 'daredevil_superswingattack.nad'
+    const bundled = (x: { adds: Map<string, Uint8Array> }) => ngbtool.names(x.adds.get('Bundles/synth.ngb')!).map((n) => n.toLowerCase())
+    expect(bundled(r)).toContain(dive)
+    c.moves = { SuperSwingAttack: 'spiderman', SuperWireAttack: 'spiderman' }
+    expect(bundled(played(c).r)).not.toContain(dive)
+  })
+
+  it('starts the air throw\'s fall as the long throw turns back', () => {
+    const c = daredevil()
+    c.baseMoves = { air_throw: true, throw_reach: 35 }
+    const { at } = played(c)
+    const rec = at('SuperJumpAttack').rec
+    const far = at('SuperAttackFar').rec
+    const caught = basemoves.CATCH + far.length - 40
+    expect(rec.events.find(([, t]) => t === basemoves.CLEAR_AIM_EVENT)![0]).toBe(caught)
+    const root = rec.tracks.find(([b, ch]) => b === 0 && ch === 1)![2]
+    const z = (f: number) => ngbtool.translation(root.find(([k]) => k === f)![1])[2]
+    const turn = (basemoves.RELEASE + caught) / 2
+    const heights = root.map(([f, v]) => [f, ngbtool.translation(v)[2]])
+    expect(heights.reduce((a, b) => (b[1] > a[1] ? b : a))[0]).toBe(turn)
+    expect(z(caught)).toBeLessThan(-5)
+    expect(z(Math.round(rec.length))).toBeLessThan(-15)
+    expect(rec.events.some(([, t]) => t === basemoves.MIRROR_EVENT)).toBe(true)
+  })
+
+  it('gives the air throw a reach of its own', () => {
+    const c = daredevil()
+    c.baseMoves = { air_throw: true, throw_reach: 35, air_throw_reach: 10 }
+    const { r, at } = played(c)
+    const rec = at('SuperJumpAttack').rec, far = at('SuperAttackFar').rec
+    const clear = (x: ngbtool.Record) => x.events.find(([, t]) => t === basemoves.CLEAR_AIM_EVENT)![0]
+    const short = basemoves.CATCH + 2 * Math.max(Math.ceil(10 / 2), 6) - (basemoves.CATCH - basemoves.RELEASE)
+    expect(clear(rec)).toBe(short)
+    expect(far.length).toBeGreaterThan(rec.length)
+    const model = ngmtool.read(src().entry('Bundles/daredevil.ngm'))[1][0]
+    const out = Math.max(...Array.from({ length: Math.ceil(rec.length) }, (_, t) => ngbtool.pose(model, rec, t)[basemoves.CLUB][1][1]))
+    expect(out).toBeGreaterThan(9)
+    expect(out).toBeLessThan(13)
+    expect(r.notes.some((n) => n.startsWith('air throw: the super jump attack throws the club 10 m'))).toBe(true)
+    c.baseMoves = { air_throw: true, air_throw_reach: 12 }
+    const b = new Builder(src(), c).build()
+    expect(() => D.mirrorSkip(b.dol!)).toThrow(LabError)
+    const ground = moves.resolved(src(), nmstool.parse(b.adds.get('Motions/Synth.nms')!), () => true).get('superattackfar')!.anim.toLowerCase()
+    expect(ground).toBe(basemoves.THROW)
+    expect(ngbtool.names(b.adds.get('Bundles/synth.ngb')!).map((n) => n.toLowerCase())).toContain(ground)
+  })
+
+  it('refuses the air throw with the throw off or the move changed', () => {
+    const c = daredevil()
+    c.baseMoves = { air_throw: true, no_throw: 'in_hand' }
+    expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes('baton throw is off'))).toBe(true)
+    expect(() => new Builder(src(), c).build()).toThrow(LabError)
+    c.baseMoves = { air_throw: true }
+    c.moves = { SuperJumpAttack: 'wolverine' }
+    expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes('also changed'))).toBe(true)
+  })
+
+  it('aims the air throw in main.dol', () => {
+    const c = daredevil()
+    const plain = new Builder(src(), c).build().dol!
+    c.baseMoves = { air_throw: true }
+    const r = new Builder(src(), c).build()
+    expect(equal(r.dol!, D.airThrow(plain, [{ internal: c.internalName, drop: basemoves.AIM_FROM - basemoves.AIM_AT }]))).toBe(true)
   })
 
   it('refuses a reach on a throw that is off', () => {

@@ -2,16 +2,18 @@ import { useEffect, useRef, useState } from 'react'
 import { animChoice, clipList, parseChoice, stateClips, type Timing, type Travel, TURNS } from '../../core/build/moveanim'
 import type { Changes } from '../../core/build/moveexport'
 import { addOptions, animatable, animations, CATEGORIES, hasHits, type Catalog, LOW_ENERGY_STUN, type Move, MOVE_IDS, MOVES, options, RANGE_GRAB, WALL_JUMPS } from '../../core/build/moves'
+import * as basemoves from '../../core/build/basemoves'
 import * as holster from '../../core/build/holster'
 import * as reach from '../../core/build/reach'
 import { formatG } from '../../core/format'
 import { keys, label } from '../../core/game/roster'
-import { animFiles, BASE_MOVES, copyCharacter, defaultHolster, GAMEPLAY, type Holster as HolsterPlan, HOLSTER_POSITION, HOLSTER_ROTATION, type MoveEffect, type NoThrow, PICKUP_BASES, STUN_BASES, THROW_REACH, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
+import { airThrowClashes, airThrows, animFiles, BASE_MOVES, copyCharacter, defaultHolster, GAMEPLAY, type Holster as HolsterPlan, HOLSTER_POSITION, HOLSTER_ROTATION, longHitStretch, longThrows, type MoveEffect, type NoThrow, PICKUP_BASES, STUN_BASES, THROW_REACH, throwReachName, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
 import type { BoneLine, MeshData } from '../../core/preview'
 import { ColorButton, Note, NumberInput, OptionCard, ToggleCard, Warning } from '../components/common'
 import { MovePreviewDialog } from '../components/MovePreviewDialog'
 import { Viewport } from '../components/viewport'
 import { engine, errorText } from '../engine'
+import { sentence } from '../format'
 import { download, pickFile } from '../../io/files'
 import type { ImportedAnimations } from '../../worker/protocol'
 import { store, useStore } from '../store'
@@ -114,7 +116,8 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
   const clip = c.moveAnims[move.id]
   const files = animatable(move) ? animFiles(c) : []
   const at = picked ? opts.findIndex((o) => o.from.includes(picked)) : -1
-  const locked = move.id === 'SuperAttackFar' && c.baseMoves.throw_reach !== undefined
+  const air = move.id === basemoves.AIR_STATE && airThrows(c)
+  const locked = (move.id === 'SuperAttackFar' && c.baseMoves.throw_reach !== undefined) || air
   const idle = c.moveIdle.includes(move.id), offer = move.id !== 'Stand'
   const first = own.find((a) => a !== null) ?? null
   const more = own.filter((a) => a !== null).length - 1
@@ -151,11 +154,11 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
   return (
     <tr>
       <td title={move.states.join(', ')}>{move.label}</td>
-      <td className="anim">{stem(first)}{more > 0 ? ` (+${more})` : ''}</td>
+      <td className="anim">{air ? 'Air baton throw' : <>{stem(first)}{more > 0 ? ` (+${more})` : ''}</>}</td>
       <td>
         <div className="move-pick">
           <select value={clip ? animChoice(clip) : idle ? IDLE : at >= 0 ? opts[at].from[0] : (picked ?? '')} disabled={locked || (!opts.length && !offer && !picked && !files.length)}
-            title={locked ? 'The baton throw reach changes this move: untick it below to swap the move' : undefined}
+            title={air ? 'The air throw plays here: untick it below to swap the move' : locked ? 'The baton throw reach changes this move: untick it below to swap the move' : undefined}
             onChange={(e) => choose(e.target.value)}>
             <option value="">{label(c.base)} (base)</option>
             {offer && <option value={IDLE}>Idle: {stem(cat[c.moves.Stand ?? c.base]?.motions.stand ?? null)}</option>}
@@ -397,7 +400,7 @@ function InHand({ move }: { move: Move }) {
   const def = holster.defaultDrawn(move.states)
   if (def === null) return <span className="muted">{HOLSTER_SAYS[move.id] ?? '-'}</span>
   const now = h.drawn?.[move.id] ?? def
-  const locked = holster.CLUB_MOVES.includes(move.id) && now
+  const locked = (holster.CLUB_MOVES.includes(move.id) || (move.id === basemoves.AIR_STATE && airThrows(store.character))) && now
   const title = locked ? 'This move throws or hits with the prop, so it stays in hand' : `${def ? 'In hand' : 'On the back'} by default`
   return (
     <label className="check" title={title}>
@@ -686,10 +689,12 @@ function StretchRow({ move, plan }: { move: Move; plan: reach.Summary | null }) 
   const edited = () => store.touch('character')
   const far = (kind: reach.Kind) => (kind === 'line' ? (reach.PULLS.includes(move.id) ? 'out to the object' : 'out to the opponent') : kind === 'jump' ? 'longer' : 'further')
   const range = plan?.kind === 'jump' ? reach.JUMP_DISTANCE : reach.DISTANCE
-  const baton = move.id === 'SuperAttackFar' && c.baseMoves.throw_reach !== undefined
+  const lock = move.id === 'SuperAttackFar' && c.baseMoves.throw_reach !== undefined ? 'The baton throw reach changes this move: untick it above to stretch the move'
+    : reach.RETURNS.includes(move.id) && longThrows(c) ? `${sentence(throwReachName(c))} needs the club's long hit segment: untick it above to stretch the move`
+      : move.id === basemoves.AIR_STATE && airThrows(c) ? 'The air throw plays here: untick it above to stretch the move' : undefined
   return (
     <tr>
-      <td><label className="check" title={baton ? 'The baton throw reach changes this move: untick it above to stretch the move' : undefined}><input type="checkbox" checked={Boolean(want)} disabled={(!plan || baton) && !want} onChange={(e) => {
+      <td><label className="check" title={want ? undefined : lock}><input type="checkbox" checked={Boolean(want)} disabled={(!plan || lock !== undefined) && !want} onChange={(e) => {
         if (e.target.checked && plan) c.moveReach[move.id] = freshReach(move, plan)
         else delete c.moveReach[move.id]
         edited()
@@ -732,25 +737,31 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
   const edited = () => store.touch('character')
   const reach = mv.throw_reach !== undefined
   const cable = mv.throw_cable !== undefined
-  const farSwapped = Boolean(c.moves.SuperAttackFar), farStretched = Boolean(c.moveReach.SuperAttackFar)
+  const farSwapped = Boolean(c.moves.SuperAttackFar), longHit = longHitStretch(c)
   const grab = BASE_MOVES[c.base].includes('range_grab')
   const held = mv.holster !== undefined
   const off = mv.no_throw !== undefined
+  const air = airThrows(c)
+  const airReach = mv.air_throw_reach !== undefined
+  const clash = airThrowClashes(c)[0]
+  const stretchedTitle = longHit ? `${sentence(longHit)} is stretched below and takes the club's long hit segment: untick it to set the reach` : undefined
   return (
     <>
       <OptionCard plain head={`${label(c.base)}-specific moves`} note={<>
         Whatever is fixed to game bone 39, the club/baton, is what flies. On the Materials page, fix a prop to that bone.<br />
         The cable is drawn from the forearm to the baton all the time. Setting a custom holster location requires the baton cable to be off.
         {farSwapped && <><br />Super attack far is swapped above, so the reach can't be changed.</>}
-        {farStretched && <><br />Super attack far is stretched below, so the reach can't be changed.</>}
+        {longHit && <><br />{sentence(longHit)} is stretched below, so the throw reaches can't be changed.</>}
         {mv.no_throw === 'in_hand' && <><br />With the throw off, super attack far, ranged attack and dodge exit super attack keep their animation, but the club stays in the hand and hits up close.</>}
         {mv.no_throw === 'attack_far' && <><br />With the throw off, super attack far, ranged attack and dodge exit super attack play the "Attack far" lunge instead and hit with its damage. Super moves still cost their energy, and any of them changed above keeps its animation.</>}
+        {air && <><br />The air throw makes the super jump attack throw the club from the air, aimed at the opponent's height (up to 45° down), instead of diving at them. It hits with the baton throw's damage. Its reach is the baton throw's unless the air throw reach is set: the shorter the reach, the sooner the club comes back and the shorter the hover.</>}
+        {airReach && !reach && <><br />The air throw reach also makes the club's hit {formatG(basemoves.HIT_REACH)} m longer at each end, so the club's ground moves hit a little further too.</>}
       </>}>
         <table className="gameplay grid">
         <thead><tr><th>Value</th><th className="num">Base</th><th>New</th></tr></thead>
         <tbody>
           <tr>
-            <td><label className="check" title={off && !reach ? 'The baton throw is off: tick it back on to set its reach' : undefined}><input type="checkbox" checked={reach} disabled={(farSwapped || farStretched || off) && !reach} onChange={(e) => {
+            <td><label className="check" title={reach ? undefined : off ? 'The baton throw is off: tick it back on to set its reach' : stretchedTitle}><input type="checkbox" checked={reach} disabled={(farSwapped || longHit !== null || off) && !reach} onChange={(e) => {
               if (e.target.checked) mv.throw_reach = 35
               else delete mv.throw_reach
               edited()
@@ -762,7 +773,7 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
             }} /> m</span></td>
           </tr>
           <tr>
-            <td><label className="check" title={reach && !off ? 'The baton throw reach is set: untick it to turn the throw off' : undefined}><input type="checkbox" checked={off} disabled={reach && !off} onChange={(e) => {
+            <td><label className="check" title={off ? undefined : reach ? 'The baton throw reach is set: untick it to turn the throw off' : air ? 'The air throw throws the club: untick it to turn the throw off' : undefined}><input type="checkbox" checked={off} disabled={(reach || air) && !off} onChange={(e) => {
               if (e.target.checked) mv.no_throw = 'in_hand'
               else delete mv.no_throw
               edited()
@@ -770,6 +781,30 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
             <td className="num">thrown</td>
             <td><select disabled={!off} value={mv.no_throw ?? 'in_hand'} onChange={(e) => { mv.no_throw = e.target.value as NoThrow; edited() }}>
               <option value="in_hand">off, club in hand</option><option value="attack_far">off, Attack far</option></select></td>
+          </tr>
+          <tr>
+            <td><label className="check" title={!air && clash ? sentence(clash) : undefined}><input type="checkbox" checked={air} disabled={!air && clash !== undefined} onChange={(e) => {
+              if (e.target.checked) mv.air_throw = true
+              else {
+                delete mv.air_throw
+                delete mv.air_throw_reach
+              }
+              edited()
+            }} /> Super jump attack</label></td>
+            <td className="num">dive</td>
+            <td>{air ? 'air baton throw' : '-'}</td>
+          </tr>
+          <tr>
+            <td><label className="check" title={airReach ? undefined : !air ? 'Tick the super jump attack above to set how far it throws' : stretchedTitle}><input type="checkbox" checked={airReach} disabled={(!air || longHit !== null) && !airReach} onChange={(e) => {
+              if (e.target.checked) mv.air_throw_reach = 15
+              else delete mv.air_throw_reach
+              edited()
+            }} /> Air throw reach</label></td>
+            <td className="num">{reach ? `${formatG(mv.throw_reach!)} m` : bv ? `${formatG(bv.gameplay.throw_reach)} m` : '-'}</td>
+            <td><span><NumberInput disabled={!airReach} min={THROW_REACH[0]} max={THROW_REACH[1]} step={1} value={mv.air_throw_reach ?? null} onChange={(v) => {
+              mv.air_throw_reach = Math.round(v * 10) / 10
+              edited()
+            }} /> m</span></td>
           </tr>
           <tr>
             <td><label className="check"><input type="checkbox" checked={cable} onChange={(e) => {

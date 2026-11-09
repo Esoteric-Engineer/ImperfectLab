@@ -304,6 +304,31 @@ describe('round trip', () => {
     expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes('reach does nothing'))).toBe(true)
   })
 
+  it('throws the club from the air', () => {
+    const c = character()
+    c.base = 'daredevil'
+    c.baseMoves = { air_throw: true }
+    const d = imperfect.load(imperfect.save(c))
+    expect(d.baseMoves).toEqual({ air_throw: true })
+    expect(imperfect.problems(d).filter(([l]) => l === 'error')).toEqual([])
+    const says = (f: (x: imperfect.Character) => void, text: string) => {
+      const x = imperfect.load(imperfect.save(c))
+      f(x)
+      return imperfect.problems(x).some(([l, m]) => l === 'error' && m.includes(text))
+    }
+    expect(says((x) => (x.baseMoves.no_throw = 'attack_far'), 'baton throw is off')).toBe(true)
+    expect(says((x) => ((x.baseMoves.air_throw_reach = 12), delete x.baseMoves.air_throw), 'air throw is off')).toBe(true)
+    c.baseMoves = { air_throw: true, air_throw_reach: 12 }
+    expect(imperfect.load(imperfect.save(c)).baseMoves).toEqual({ air_throw: true, air_throw_reach: 12 })
+    for (const id of ['SuperRiseAttack', 'SuperAttackFar']) expect(says((x) => (x.moveReach[id] = { distance: 5 }), 'air throw reach and a stretched')).toBe(true)
+    expect(says((x) => (x.moveReach.SuperRiseAttack = { distance: 5 }), 'long hit segment')).toBe(true)
+    c.baseMoves = { air_throw: true }
+    expect(says((x) => (x.moves.SuperJumpAttack = 'wolverine'), 'also changed')).toBe(true)
+    expect(says((x) => (x.moveIdle = ['SuperJumpAttack']), 'also changed')).toBe(true)
+    expect(says((x) => (x.moveReach.SuperJumpAttack = { distance: 1 }), 'stretch both')).toBe(true)
+    expect(says((x) => ((x.baseMoves.throw_cable = false), (x.baseMoves.holster = { ...imperfect.defaultHolster(), drawn: { SuperJumpAttack: false } })), 'on the back')).toBe(true)
+  })
+
   it('asks the range grab for its animation', () => {
     const c = character()
     c.base = 'daredevil'
@@ -880,6 +905,9 @@ describe('hostile files', () => {
       (m) => ((m.base = 'daredevil'), (m.base_moves = { range_grab: 'yes' })),
       (m) => ((m.base = 'daredevil'), (m.base_moves = { no_throw: 'drop' })),
       (m) => (m.base_moves = { no_throw: 'in_hand' }),
+      (m) => (m.base_moves = { air_throw: true }),
+      (m) => ((m.base = 'daredevil'), (m.base_moves = { air_throw: 'yes' })),
+      (m) => ((m.base = 'daredevil'), (m.base_moves = { air_throw: true, air_throw_reach: 100 })),
       (m) => (m.base_moves = { holster: { position: [0, 0, 0], rotation: [0, 0, 0] } }),
       (m) => ((m.base = 'daredevil'), (m.base_moves = { holster: { position: [0, 0, 2], rotation: [0, 0, 0] } })),
       (m) => ((m.base = 'daredevil'), (m.base_moves = { holster: { position: [0, 0], rotation: [0, 0, 0] } })),

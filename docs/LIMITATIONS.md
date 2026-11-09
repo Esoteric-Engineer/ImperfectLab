@@ -93,6 +93,13 @@ Turning the throw off (`no_throw`):
 - **The CPU still attempts to use these moves from afar.**
 - **Memory** is the same as a swapped move.
 
+Throwing from the air (`air_throw`, `air_throw_reach`):
+
+- **Only the rising super jump attack throws.** Attack pressed later in the jump still plays `SuperJumpAttackDesc`.
+- **It throws at the nearest other player**, aimed when the attack starts, so an opponent who moves away can still be missed.
+- **Aim is limited to 45° up or down.**
+- **Memory** is the same as a swapped move.
+
 ## Holster
 
 A Daredevil-based character's `holster` (`base_moves`, [`FORMAT.md`](FORMAT.md)):
