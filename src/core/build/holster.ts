@@ -4,7 +4,7 @@ import * as ngbtool from '../mnroi/ngbtool'
 import type * as ngmtool from '../mnroi/ngmtool'
 import type { Tri } from '../model/fit'
 import type { Skeleton } from '../model/skeleton'
-import { CATCH, CLUB } from './basemoves'
+import { CATCH, CLUB, RELEASE } from './basemoves'
 import { withKeys } from './reach'
 
 type Vec3 = ngbtool.Vec3
@@ -178,13 +178,13 @@ export function heldAt(model: Model, prop: Prop): (posed: Posed) => [Mat3, Vec3]
   }
 }
 
-function propKeys(rec: ngbtool.Record, model: Model, bone: number, at: (posed: Posed) => [Mat3, Vec3], times: number[]): [ngbtool.Key[], ngbtool.Key[]] {
+function propKeys(rec: ngbtool.Record, model: Model, bone: number, at: (posed: Posed, t: number) => [Mat3, Vec3], times: number[]): [ngbtool.Key[], ngbtool.Key[]] {
   const parent = model.nodes[bone][2]
   const rot: ngbtool.Key[] = [], pos: ngbtool.Key[] = []
   let prev: Quat | null = null
   for (const t of times) {
     const posed = ngbtool.pose(model, rec, t)
-    const [R, T] = at(posed)
+    const [R, T] = at(posed, t)
     prev = near(ngbtool.matQuat(mul(tr(posed[parent][0]), R)), prev)
     rot.push([t, ngbtool.encodeRotation(prev)])
     pos.push([t, ngbtool.placeAt(model, rec, bone, t, T, posed)])
@@ -253,6 +253,19 @@ export function regrip(rec: ngbtool.Record, model: Model, stand: ngbtool.Record,
     pos.push([t, ngbtool.placeAt(model, rec, CLUB, t, add(T, scale(sub(add(HT, apply(HR, GT)), T), w)), posed)])
   }
   return withClub(rec, rot, pos)
+}
+
+export function inHand(rec: ngbtool.Record, model: Model, hand: number): ngbtool.Record {
+  const [a, b] = [RELEASE, CATCH]
+  const [AR, AT] = grip(ngbtool.pose(model, rec, a), hand), [BR, BT] = grip(ngbtool.pose(model, rec, b), hand)
+  const qa = ngbtool.matQuat(AR), qb = ngbtool.matQuat(BR)
+  const [rot, pos] = propKeys(rec, model, CLUB, (posed, t) => {
+    const w = smooth((t - a) / (b - a)), [HR, HT] = posed[hand]
+    return [mul(HR, ngbtool.qmat(nlerp(qa, qb, w))), add(HT, apply(HR, add(AT, scale(sub(BT, AT), w))))]
+  }, frameList(a, b))
+  const [ownRot, ownPos] = [0, 1].map((ch) => own(rec, ch, model, CLUB_PROP))
+  const around = (o: typeof ownRot, mid: ngbtool.Key[]): ngbtool.Key[] => [...o.keys.filter(([f]) => f < a), ...mid, ...o.keys.filter(([f]) => f > b)]
+  return withClub(rec, around(ownRot, rot), around(ownPos, pos))
 }
 
 // Bends the arm from frame a to c so the hand reaches the prop in its holster, blended in by w(t).

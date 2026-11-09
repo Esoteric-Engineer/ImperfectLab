@@ -222,9 +222,19 @@ function App() {
         </Modal>
       )}
       {s.credits && (
-        <Modal title="Credits" onClose={() => { store.credits = null; store.emit() }}>
-          <pre className="message">{s.credits}</pre>
-          <div className="row end"><button onClick={() => { store.credits = null; store.emit() }}>OK</button></div>
+        <Modal title="Credits" onClose={actions.closeCredits}>
+          <div className="credits-view">
+            <div className="credits-title">
+              {s.credits.tile && <img className="credits-tile" src={s.credits.tile} alt="" />}
+              <div>
+                <div className="credits-name" style={{ color: s.credits.color }}>{s.credits.name}</div>
+                {s.credits.author && <pre className="message">by {s.credits.author}</pre>}
+              </div>
+            </div>
+            {s.credits.description && <pre className="message credits-section">{s.credits.description}</pre>}
+            {s.credits.assets.length > 0 && <pre className="message credits-section">{s.credits.assets.join('\n')}</pre>}
+          </div>
+          <div className="row end"><button onClick={actions.closeCredits}>OK</button></div>
         </Modal>
       )}
       {whatsNew && (

@@ -23,6 +23,8 @@ function editKey(what: Change): string | null {
   return `${what}:${controlIds.get(el)}`
 }
 
+export interface CreditsView { name: string; color: string; tile: string | null; author: string; description: string; assets: string[] }
+
 export class ModelView implements JointModel {
   info: ModelInfo
   joints: Joint[]
@@ -79,7 +81,7 @@ class Store {
   modelError: string | null = null
   status = ''
   error: string | null = null
-  credits: string | null = null
+  credits: CreditsView | null = null
   busy = 0
   batch: BatchSlot[] = []
   batchCheck: BatchCheckResult | null = null

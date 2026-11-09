@@ -46,11 +46,22 @@ async function openFrom(get: () => Promise<OpenedCharacter | null>): Promise<boo
 export function showCredits() {
   const c = store.character
   const cr = c.credits
-  const lines = [`${c.displayName} (based on ${c.base})`]
-  if (cr.author) lines.push(`by ${cr.author}`)
-  if (cr.description) lines.push(cr.description)
-  for (const a of cr.assets) lines.push(`${a.what}: ${a.by}, ${a.license} ${a.url}`)
-  store.credits = lines.join('\n')
+  const tile = c.files.get('ui/tile.png') ?? c.files.get('ui/tile_selected.png')
+  closeCredits()
+  store.credits = {
+    name: c.displayName,
+    color: c.nameColor,
+    tile: tile ? URL.createObjectURL(new Blob([tile as BlobPart], { type: 'image/png' })) : null,
+    author: cr.author,
+    description: cr.description,
+    assets: cr.assets.filter((a) => a.what || a.by || a.license || a.url).map((a) => `${a.what}: ${a.by}, ${a.license} ${a.url}`),
+  }
+  store.emit()
+}
+
+export function closeCredits() {
+  if (store.credits?.tile) URL.revokeObjectURL(store.credits.tile)
+  store.credits = null
   store.emit()
 }
 

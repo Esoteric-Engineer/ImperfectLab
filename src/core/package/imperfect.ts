@@ -6,14 +6,14 @@ import { LabError } from '../errors'
 import { decodeImage } from '../image/decode'
 import { encodePng, pngSize } from '../image/png'
 import type { RgbaImage } from '../image/rgba'
-import { CLUB } from '../build/basemoves'
+import { CLUB, THROW_MOVES } from '../build/basemoves'
 import { CLUB_MOVES, defaultDrawn } from '../build/holster'
 import { type DamageKey, KEYS as DAMAGE_KEYS } from '../build/damage'
 import { COSTS, type EnergyKey, FALLBACK, RECHARGE, type RechargeKey } from '../build/energy'
 import { BULLETS as GUN_BULLETS, DAMAGE as GUN_DAMAGE, DEFAULT_BULLETS, DEFAULT_DAMAGE, DEFAULT_ENERGY, ENERGY as GUN_ENERGY, PLACES as GUN_PLACES, type Place as GunPlace, type Sound as GunSound } from '../build/gun'
 import { animatable, LOW_ENERGY_STUN, MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
 import { type ClipInfo, clipList } from '../build/moveanim'
-import { DISTANCE, JUMP_DISTANCE, JUMPS, type Limb, LIMBS } from '../build/reach'
+import { DISTANCE, JUMP_DISTANCE, JUMPS, type Limb, LIMBS, PULLS } from '../build/reach'
 import { Z_SECONDS, Z_SIZE, Z_SLOW, Z_VISIBLE } from '../game/dol'
 import { BASES } from '../game/roster'
 import * as asftool from '../mnroi/asftool'
@@ -60,7 +60,9 @@ export const GAMEPLAY: Record<string, [number, number, boolean]> = {
   ...Object.fromEntries(COSTS.map((c): [string, [number, number, boolean]] => [c.key, [FALLBACK.includes(c.key) ? 0.1 : 0, 100, false]])),
   ...Object.fromEntries(RECHARGE.map((r): [string, [number, number, boolean]] => [r.key, [0, 100, false]])),
 }
-export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable', 'range_grab', 'holster'] }
+export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable', 'range_grab', 'holster', 'no_throw'] }
+export const NO_THROW = ['in_hand', 'attack_far'] as const
+export type NoThrow = (typeof NO_THROW)[number]
 export type WallKey = 'wall_climb' | 'wall_run'
 export interface Wall {
   key: WallKey
@@ -76,6 +78,8 @@ export const WALL: Wall[] = [
 ]
 export const FLYERS = ['johnnyohm', 'storm', 'heatwave', 'humantorch', 'ironman', 'magneto', 'roekel']
 export const STUN_BASES = ['megalith']
+// bases with the ranged pickup (ability 0x2000)
+export const PICKUP_BASES = ['spiderman', 'venom', 'magneto', 'biohazard']
 export const THROW_REACH: [number, number] = [8, 35]
 export const HOLSTER_POSITION: [number, number] = [-0.6, 0.6]
 export const HOLSTER_ROTATION: [number, number] = [-180, 180]
@@ -165,6 +169,7 @@ export type Gameplay = Partial<Record<'damage_taken' | 'health' | 'run_speed' | 
   wire_swing?: boolean
   flight?: boolean
   low_energy_stun?: boolean
+  range_grab?: boolean
   wall_climb?: boolean
   wall_run?: boolean
 }
@@ -191,6 +196,7 @@ export interface BaseMoves {
   throw_cable?: boolean
   range_grab?: boolean
   holster?: Holster
+  no_throw?: NoThrow
 }
 
 export interface Flames {
@@ -566,6 +572,10 @@ export function problems(c: Character): Problem[] {
     if (COSTS.some((e) => e.flight && c.gameplay[e.key] !== undefined) && (c.gameplay.flight === false || !FLYERS.includes(c.base))) {
       out.push(['warning', "flight energy costs are set but the character can't fly, so they do nothing"])
     }
+    if (c.gameplay.range_grab === false) {
+      if (!PICKUP_BASES.includes(c.base)) out.push(['error', `${BASES[c.base][0]} has no range grab to turn off: set it back on the Moves page`])
+      else if (PULLS.some((id) => c.moves[id] || c.moveAnims[id] || c.moveReach[id])) out.push(['warning', 'ranged pickup animations are picked but the range grab is off, so they never play'])
+    }
     const stuns = STUN_BASES.includes(c.base), stun = c.gameplay.low_energy_stun
     if (stun === stuns) out.push(['error', `${BASES[c.base][0]} ${stuns ? 'already has' : 'has no'} low-energy stun: set it back on the Moves page`])
     else if (stun) {
@@ -589,6 +599,12 @@ export function problems(c: Character): Problem[] {
       else if (!inHand && CLUB_MOVES.includes(id)) out.push(['error', `${move.label} throws or hits with the club, so it can't be on the back: tick it on the Moves page`])
     }
     if (!c.mapping.has(CLUB) && !c.materials.some((m) => m.include && m.bind === CLUB)) out.push(['error', `the holster carries what is fixed to game bone ${CLUB}, and nothing is: fix a prop to it on the Materials page`])
+  }
+  if (c.baseMoves.no_throw) {
+    if (c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw is off, so its reach does nothing: untick one on the Moves page'])
+    if (c.baseMoves.no_throw === 'attack_far' && c.gameplay.attack_damage_throw !== undefined && !THROW_MOVES.some((id) => c.moveReach[id])) {
+      out.push(['warning', 'the baton throw damage is set but no move throws the club, so it does nothing'])
+    }
   }
   if (c.moves.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach changes the base\'s own super attack far: set that move back to the base\'s, or untick the reach'])
   if (c.moveReach.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach and a stretch both change super attack far: untick one of them on the Moves page'])
@@ -938,7 +954,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     if (v.length !== 6) throw new LabError('manifest: six display stats per costume')
     c.stats[k] = v.map((x) => num(x, 'a display stat', STAT_RANGE[0], STAT_RANGE[1], false, true)!)
   }
-  const gp = keys(st.gameplay ?? {}, [...Object.keys(GAMEPLAY), 'lift', 'wire_swing', 'flight', 'low_energy_stun', ...WALL.map((w) => w.key)], 'stats.gameplay')
+  const gp = keys(st.gameplay ?? {}, [...Object.keys(GAMEPLAY), 'lift', 'wire_swing', 'flight', 'low_energy_stun', 'range_grab', ...WALL.map((w) => w.key)], 'stats.gameplay')
   c.gameplay = {}
   for (const [k, [lo, hi, integer]] of Object.entries(GAMEPLAY)) {
     if (gp[k] !== null && gp[k] !== undefined) (c.gameplay as Record<string, number>)[k] = num(gp[k], k, lo, hi, true, integer)!
@@ -951,6 +967,10 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   if (gp.flight !== null && gp.flight !== undefined) {
     if (typed<boolean>(gp.flight, 'boolean', 'flight')) throw new LabError('manifest: flight can only be false, to turn off a base\'s flight')
     c.gameplay.flight = false
+  }
+  if (gp.range_grab !== null && gp.range_grab !== undefined) {
+    if (typed<boolean>(gp.range_grab, 'boolean', 'range_grab')) throw new LabError('manifest: range_grab can only be false, to turn off a base\'s ranged pickup')
+    c.gameplay.range_grab = false
   }
   if (gp.low_energy_stun !== null && gp.low_energy_stun !== undefined) c.gameplay.low_energy_stun = typed<boolean>(gp.low_energy_stun, 'boolean', 'low_energy_stun')
   for (const { key } of WALL) if (gp[key] !== null && gp[key] !== undefined && typed<boolean>(gp[key], 'boolean', key)) c.gameplay[key] = true
@@ -973,12 +993,17 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
       glow: p.glow ? color(p.glow, 'glow') : null,
     }
   }
-  const mv = keys(m.base_moves ?? {}, ['throw_reach', 'throw_cable', 'range_grab', 'holster'], 'base_moves')
+  const mv = keys(m.base_moves ?? {}, ['throw_reach', 'throw_cable', 'range_grab', 'holster', 'no_throw'], 'base_moves')
   c.baseMoves = {}
   const reach = num(mv.throw_reach, 'base_moves.throw_reach', THROW_REACH[0], THROW_REACH[1])
   if (reach !== null) c.baseMoves.throw_reach = reach
   if (mv.throw_cable !== null && mv.throw_cable !== undefined) c.baseMoves.throw_cable = typed<boolean>(mv.throw_cable, 'boolean', 'base_moves.throw_cable')
   if (mv.range_grab !== null && mv.range_grab !== undefined) c.baseMoves.range_grab = typed<boolean>(mv.range_grab, 'boolean', 'base_moves.range_grab')
+  if (mv.no_throw !== null && mv.no_throw !== undefined) {
+    const v = str(mv.no_throw, 'base_moves.no_throw', 20)!
+    if (!(NO_THROW as readonly string[]).includes(v)) throw new LabError(`manifest: base_moves.no_throw is one of ${NO_THROW.join(', ')}`)
+    c.baseMoves.no_throw = v as NoThrow
+  }
   if (mv.holster !== null && mv.holster !== undefined) {
     const h = keys(mv.holster, ['position', 'rotation', 'drawn'], 'base_moves.holster')
     c.baseMoves.holster = { position: three(h.position, 'base_moves.holster.position', HOLSTER_POSITION), rotation: three(h.rotation, 'base_moves.holster.rotation', HOLSTER_ROTATION) }

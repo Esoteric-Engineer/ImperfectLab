@@ -172,6 +172,7 @@ Or, to take the shots out instead ([`LIMITATIONS.md`](LIMITATIONS.md#removed-pro
   - `lift`: `light`, `medium` or `heavy`.
   - `wire_swing`: a boolean.
   - `flight`: `false` disallows flight on a base that flies. `true` is refused.
+  - `range_grab`: `false` turns off the ranged pickup (pulling props in from a distance) on a base that has it: Spider-Man, Venom, Magneto and Bio-Hazard. `true` is refused: a Daredevil base gets one with `base_moves.range_grab`.
   - `low_energy_stun`: `false` stops Megalith being stunned when his energy runs low. `true` gives the stun to another base (`moves` then names `LowEnergyStun`, taken from Megalith).
   - `wall_climb`: `true` lets a base that can't climb walls climb them (`moves` then names their animations). Not allowed on a base that already climbs.
   - `wall_run`: `true` lets a base that can't run on walls run on them, the same way. Not allowed on a base that already runs on walls.
@@ -219,6 +220,7 @@ Daredevil (`daredevil`):
 - `throw_reach`: 8-35, how far the baton throw reaches, in meters.
 - `throw_cable`: a boolean, default `true`. `false` removes the cable drawn from the forearm to the club.
 - `range_grab`: `true` lets him grab props from a distance as Spider-Man does.
+- `no_throw`: turns the baton throw off. `in_hand` keeps move animations with the club in the hand, hitting up close. `attack_far` plays the Attack far animation instead, with its damage, except in moves changed on the Moves page (`moves`, `move_anims`, `move_idle`, `move_reach`). Can't be combined with `throw_reach`.
 - `holster`: optional, carries what is fixed to game bone 39 (the club) on the back outside power mode and in the versus intros, and ends the baton throw's catch in the power-stand grip. Requires `throw_cable: false` and a prop on bone 39.
   - `position`: three numbers from -0.6 to 0.6, the prop's middle from the chest bone in meters.
   - `rotation`: three numbers from -180 to 180, degrees about X, Y and Z, rotating the prop from the middle.

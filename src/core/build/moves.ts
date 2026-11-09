@@ -638,7 +638,7 @@ export const MELEE_SWAP = ['SuperAttack1', 'SuperAttack2', 'SuperAttack3', 'Supe
 export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: string, moves: Record<string, string>, throwReach?: number,
   choice: Record<string, MoveEffect> = {}, plan: EffectPlan | null = null, stretches: Record<string, MoveReach> = {}, fx: Effects | null = null,
   size = 1, idle: string[] = [], onBack: holster.Plan | null = null, throwDamage = false, shooter: gun.Plan | null = null,
-  spawn: number | null = null, anims: MoveAnims | null = null, noShots: NoShots | null = null): MotionFiles {
+  spawn: number | null = null, anims: MoveAnims | null = null, noShots: NoShots | null = null, noThrow: NoShots | null = null): MotionFiles {
   const set = motionSetOf(base), stem = stemOf(set), name = internal.toLowerCase()
   const own = nmstool.parse(src.entry(`Motions/${set}`))
   const bundles = loadBundles(src, stem)
@@ -664,11 +664,15 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
   }
   const displaced = new Set<string>()
   const arm = onBack ? holster.armOf(new Skeleton(models[0], base.body)) : null
-  if (throwReach !== undefined || throwDamage || arm) {
+  const keepClub = noThrow !== null && !noThrow.melee
+  if (noThrow && throwReach !== undefined) throw new LabError('the baton throw reach does nothing once the throw is off')
+  let thrown = basemoves.THROW
+  if (throwReach !== undefined || throwDamage || arm || keepClub) {
     const main = bundles.get('') ?? []
     const at = main.findIndex((r) => r.name.toLowerCase() === basemoves.THROW)
     if (at < 0) throw new LabError(`${base.label}'s animations have no ${basemoves.THROW}`)
     let rec = main[at]
+    if (keepClub) rec = holster.inHand(rec, models[0], holster.armOf(new Skeleton(models[0], base.body)).hand)
     if (arm) {
       const anim = own.motions().get('powerstand')?.anim.toLowerCase()
       const stand = main.find((r) => r.name.toLowerCase() === anim)
@@ -680,6 +684,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     rec.name = ownName(rec)
     own.rename(main[at].name, rec.name)
     main[at] = rec
+    thrown = rec.name.toLowerCase()
   }
   const shots = Object.keys(moves).length ? projectiles.filled(new tuning.Tuning(src, base)) : []
   for (const [id, from] of Object.entries(moves)) {
@@ -887,22 +892,31 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       notes.push(`reach: ${move.label} stretches the ${r.limbs.map((l) => reach.LIMB_LABELS[l]).join(' and ')} ${how}${r.returns ? ', coming back from where it hits' : ''}${r.hold ? ', held while airborne' : ''}`)
     }
   }
+  // Points the states of ids (unless kept) whose animation plays(anim) to attack far's.
+  const toAttackFar = (ids: string[], keep: string[], plays: (anim: string) => boolean, what: string) => {
+    const now = resolved(src, own, holds(bundles))
+    const far = now.get('attackfar')
+    if (!far) throw new LabError(`${base.label} has no attack far to play in place of ${what}`)
+    const swapped: string[] = []
+    for (const id of ids.filter((id) => !keep.includes(id))) {
+      const m = now.get(id.toLowerCase())
+      if (!m || !plays(m.anim)) continue
+      own.set({ state: m.state, anim: far.anim, opts: far.opts })
+      displaced.add(m.anim.toLowerCase())
+      swapped.push(MOVE_IDS.get(id)!.label)
+    }
+    return swapped.length ? `${swapped.join(', ')} play${swapped.length === 1 ? 's' : ''} attack far instead` : null
+  }
+  if (noThrow) {
+    const swapped = noThrow.melee ? toAttackFar(basemoves.THROW_MOVES, noThrow.keep, (anim) => anim.toLowerCase() === thrown, 'the baton throw') : null
+    notes.push(`baton throw: ${noThrow.melee ? swapped ?? 'every move that threw is changed on the Moves page' : 'the club stays in the hand, and hits up close'}`)
+  }
   if (noShots) {
     const recOf = (anim: string) => [...bundles.values()].flat().find((r) => r.name.toLowerCase() === anim.toLowerCase())
     const fires = (anim: string) => recOf(anim)?.events.some(([, t]) => t === projectiles.FIRE) ?? false
     if (noShots.melee) {
-      const now = resolved(src, own, holds(bundles))
-      const far = now.get('attackfar')
-      if (!far) throw new LabError(`${base.label} has no attack far to play in place of its shots`)
-      const swapped: string[] = []
-      for (const id of MELEE_SWAP.filter((id) => !noShots.keep.includes(id))) {
-        const m = now.get(id.toLowerCase())
-        if (!m || !fires(m.anim)) continue
-        own.set({ state: m.state, anim: far.anim, opts: far.opts })
-        displaced.add(m.anim.toLowerCase())
-        swapped.push(MOVE_IDS.get(id)!.label)
-      }
-      if (swapped.length) notes.push(`projectile: ${swapped.join(', ')} play${swapped.length === 1 ? 's' : ''} attack far instead`)
+      const swapped = toAttackFar(MELEE_SWAP, noShots.keep, fires, 'its shots')
+      if (swapped) notes.push(`projectile: ${swapped}`)
     }
     // carried objects are thrown with 0x04 too; FinishingMove isn't in MOVE_OF
     const byAnim = new Map<string, nmstool.Motion[]>()

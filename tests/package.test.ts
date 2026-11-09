@@ -269,6 +269,21 @@ describe('round trip', () => {
     expect(imperfect.problems(d).filter(([l]) => l === 'error')).toEqual([])
   })
 
+  it('turns off the baton throw', () => {
+    const c = character()
+    c.base = 'daredevil'
+    for (const no_throw of imperfect.NO_THROW) {
+      c.baseMoves = { no_throw }
+      const d = imperfect.load(imperfect.save(c))
+      expect(d.baseMoves).toEqual({ no_throw })
+      expect(imperfect.problems(d).filter(([l]) => l === 'error')).toEqual([])
+    }
+    c.gameplay = { attack_damage_throw: 40 }
+    expect(imperfect.problems(c).some(([l, m]) => l === 'warning' && m.includes('no move throws'))).toBe(true)
+    c.baseMoves = { no_throw: 'in_hand', throw_reach: 20 }
+    expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes('reach does nothing'))).toBe(true)
+  })
+
   it('asks the range grab for its animation', () => {
     const c = character()
     c.base = 'daredevil'
@@ -277,6 +292,21 @@ describe('round trip', () => {
     c.baseMoves = {}
     c.moves = { WirePull: 'spiderman' }
     expect(imperfect.problems(c).some(([l, m]) => l === 'warning' && m.includes('never play'))).toBe(true)
+  })
+
+  it('turns off a base\'s ranged pickup', () => {
+    const c = character()
+    c.base = 'spiderman'
+    c.gameplay = { range_grab: false }
+    const d = imperfect.load(imperfect.save(c))
+    expect(d.gameplay.range_grab).toBe(false)
+    expect(imperfect.problems(d).filter(([l]) => l === 'error')).toEqual([])
+    d.moveReach = { WirePull: { distance: 4 } }
+    expect(imperfect.problems(d).some(([l, m]) => l === 'warning' && m.includes('never play'))).toBe(true)
+    d.base = 'wolverine'
+    d.moveReach = {}
+    expect(imperfect.problems(d).some(([l, m]) => l === 'error' && m.includes('no range grab'))).toBe(true)
+    rejected(withManifest({ 'model/model.glb': makeGlb() }, (m) => { m.stats.gameplay.range_grab = true }), 'range_grab can only be false')
   })
 
   it('keeps base moves to the bases that have them', () => {
@@ -828,6 +858,8 @@ describe('hostile files', () => {
       (m) => ((m.base = 'daredevil'), (m.base_moves = { throw_cable: 'no' })),
       (m) => ((m.base = 'daredevil'), (m.base_moves = { grab: 'thing' })),
       (m) => ((m.base = 'daredevil'), (m.base_moves = { range_grab: 'yes' })),
+      (m) => ((m.base = 'daredevil'), (m.base_moves = { no_throw: 'drop' })),
+      (m) => (m.base_moves = { no_throw: 'in_hand' }),
       (m) => (m.base_moves = { holster: { position: [0, 0, 0], rotation: [0, 0, 0] } }),
       (m) => ((m.base = 'daredevil'), (m.base_moves = { holster: { position: [0, 0, 2], rotation: [0, 0, 0] } })),
       (m) => ((m.base = 'daredevil'), (m.base_moves = { holster: { position: [0, 0], rotation: [0, 0, 0] } })),

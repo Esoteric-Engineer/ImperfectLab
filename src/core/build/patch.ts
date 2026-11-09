@@ -554,7 +554,7 @@ export class Builder {
     const fx = Object.keys(c.moveReach).length ? new effects.Effects(this.src.entry('Misc/game.nfx')) : null
     const shooter = this.gunPlan()
     const anims = animsOf(c, c.glb ? (this.model ?? new Model(c.glb)) : null)
-    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, this.onBack(), throwsDamage(c), shooter, boneShots(c) ? projectiles.LAUNCH_INDEX : null, anims, noShots(c))
+    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, this.onBack(), throwsDamage(c), shooter, boneShots(c) ? projectiles.LAUNCH_INDEX : null, anims, noShots(c), noThrow(c))
     if (shooter) this.r.gun = this.gunEntry(shooter)
     for (const [k, v] of m.files) this.r.adds.set(k, v)
     if (thrown !== undefined) this.note(`baton throw: reaches ${thrown} m (${this.base.label}'s about 8)`)
@@ -585,6 +585,7 @@ export class Builder {
       else off |= WIRE
     }
     if (gp.flight === false) off |= FLIGHT
+    if (gp.range_grab === false) off |= RANGE_GRAB_BIT
     if (gp.low_energy_stun) on |= LOW_ENERGY_STUN
     else if (gp.low_energy_stun === false) off |= LOW_ENERGY_STUN
     for (const w of WALL) if (gp[w.key]) on |= WALL_BITS[w.key]
@@ -699,12 +700,15 @@ export class Builder {
 
 // Whether the character gets its own motion set and animation bundles (Builder.motions).
 export function ownMotions(c: Character): boolean {
-  return gunOf(c) !== null || c.baseMoves.throw_reach !== undefined || c.baseMoves.holster !== undefined || throwsDamage(c) || Object.keys(c.moves).length > 0 || Object.keys(c.moveAnims).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1 || boneShots(c) || c.projectile.remove
+  return gunOf(c) !== null || c.baseMoves.throw_reach !== undefined || c.baseMoves.holster !== undefined || throwsDamage(c) || Object.keys(c.moves).length > 0 || Object.keys(c.moveAnims).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1 || boneShots(c) || c.projectile.remove || c.baseMoves.no_throw !== undefined
 }
 
 export const boneShots = (c: Character): boolean => c.projectile.on && c.projectile.from === 'bone'
 export const noShots = (c: Character): moves.NoShots | null =>
-  c.projectile.remove ? { melee: c.projectile.melee, keep: [...new Set([...Object.keys(c.moves), ...Object.keys(c.moveAnims), ...c.moveIdle, ...Object.keys(c.moveReach)])] } : null
+  c.projectile.remove ? { melee: c.projectile.melee, keep: changedMoves(c) } : null
+const changedMoves = (c: Character) => [...new Set([...Object.keys(c.moves), ...Object.keys(c.moveAnims), ...c.moveIdle, ...Object.keys(c.moveReach)])]
+export const noThrow = (c: Character): moves.NoShots | null =>
+  c.baseMoves.no_throw ? { melee: c.baseMoves.no_throw === 'attack_far', keep: changedMoves(c) } : null
 export const laserOf = (c: Character) => c.zButton?.laser ?? null
 
 export const gunSide = (c: Character): holster.Side => (gunOf(c)?.side === 'left' ? 'L' : 'R')
@@ -779,7 +783,7 @@ export function tuningFields(c: Character): Record<string, unknown> {
   const far = c.moveReach.SuperAttackFar?.distance
   if (far !== undefined) out.throw_reach = far
   const pickup = reach.PULLS.map((id) => c.moveReach[id]?.distance).find((d) => d !== undefined)
-  if (pickup !== undefined) out.pickup_range = pickup
+  if (pickup !== undefined && c.gameplay.range_grab !== false) out.pickup_range = pickup
   return out
 }
 
