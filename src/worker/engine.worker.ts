@@ -11,7 +11,7 @@ import { Service } from './service'
 declare const self: DedicatedWorkerGlobalScope
 
 const service = new Service()
-const FRESH = new Set(['preview', 'holsterPreview', 'eyesPreview', 'projectilePreview', 'laserPreview', 'movePreview', 'materialThumbs', 'materialPngs', 'compose', 'layout', 'bases', 'stripOutlines', 'cutscenePcm', 'cutsceneAnimation', 'moveAnimations', 'encodeCutsceneAudio', 'decodeCutsceneAudio', 'soundPcm', 'encodeSound', 'menuArt'])
+const FRESH = new Set(['preview', 'holsterPreview', 'eyesPreview', 'projectilePreview', 'laserPreview', 'materialPreview', 'movePreview', 'materialThumbs', 'materialPngs', 'compose', 'layout', 'bases', 'stripOutlines', 'cutscenePcm', 'cutsceneAnimation', 'moveAnimations', 'encodeCutsceneAudio', 'decodeCutsceneAudio', 'soundPcm', 'encodeSound', 'menuArt'])
 
 function fileReader(file: Blob): ReadAt {
   const reader = new FileReaderSync()
@@ -98,6 +98,7 @@ const handlers: Record<string, (progress: (stage: string, done?: number, total?:
   preview: (_p, c, needBase: boolean) => service.preview(c, needBase),
   fitCheck: (_p, c) => service.fitCheck(c),
   holsterPreview: (_p, c, kind) => service.holsterPreview(c, kind),
+  materialPreview: (_p, c, alt: boolean) => service.materialPreview(c, alt),
   eyesPreview: (_p, c) => service.eyesPreview(c),
   projectilePreview: (_p, c) => service.projectilePreview(c),
   laserPreview: (_p, c) => service.laserPreview(c),

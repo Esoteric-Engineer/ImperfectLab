@@ -34,7 +34,7 @@ import { Model } from '../core/model/glb'
 import * as mapping from '../core/model/mapping'
 import { Skeleton } from '../core/model/skeleton'
 import * as imperfect from '../core/package/imperfect'
-import { baseMeshes, type BoneLine, costumeImage, damageImages, fittedMeshes, gameBones, holsteredTris, materialImages, type MeshData, pointMeshes, sourceBones, sourceMeshes } from '../core/preview'
+import { baseMeshes, type BoneLine, costumeImage, damageImages, envImage, fittedMeshes, gameBones, holsteredTris, materialImages, type MeshData, pointMeshes, sourceBones, sourceMeshes } from '../core/preview'
 import type { BaseDetails, BaseInfo, CheckResult, ComposeArgs, DiscInfo, ImportedAnimations, ImportedModel, BatchCheckResult, LayoutInfo, ModelInfo, MovePreview, PreviewResult } from './protocol'
 
 const DEFAULT_SIZES: Record<string, [number, number]> = {
@@ -51,11 +51,12 @@ function shrink(im: RgbaImage | null, side: number): RgbaImage | null {
 
 function previewTextures(meshes: MeshData[]): MeshData[] {
   const seen = new Map<RgbaImage, RgbaImage | null>()
-  return meshes.map((m) => {
-    if (!m.image) return m
-    if (!seen.has(m.image)) seen.set(m.image, shrink(m.image, 512))
-    return { ...m, image: seen.get(m.image)! }
-  })
+  const fresh = (im: RgbaImage | null) => {
+    if (!im) return null
+    if (!seen.has(im)) seen.set(im, shrink(im, 512))
+    return seen.get(im)!
+  }
+  return meshes.map((m) => (m.image || m.env ? { ...m, image: fresh(m.image), env: fresh(m.env) } : m))
 }
 
 export function defaultMaterials(model: Model): imperfect.Material[] {
@@ -99,6 +100,7 @@ export class Service {
   private motionCache = new Map<string, moves.MotionFiles>()
   private motionModel: Model | null = null
   private clipFiles = new Map<string, ClipFile>()
+  private envs = new Map<string, RgbaImage>()
   decoder: ImageDecoder | null = null
 
   openDisc(disc: ImageDisc | FolderDisc): DiscInfo {
@@ -108,6 +110,7 @@ export class Service {
     this.templates = null
     this.bases.clear()
     this.skeletons.clear()
+    this.envs.clear()
     this.layoutCache = null
     return { name: disc.name, gameId: disc.gameId }
   }
@@ -413,6 +416,28 @@ export class Service {
       const bone = g && (kind === 'gun' ? imperfect.gunBone : imperfect.swapBone)(c.base, g.side)
       const moved = g ? holsteredTris(tris, sk, h, bone!, gun.anchorOf(sk, g.holster.place)) : holsteredTris(tris, sk, h)
       return { meshes: previewTextures(fittedMeshes(moved, bySlot, c.size)), bones: gameBones(sk, c.size) }
+    } catch (e) {
+      if (!(e instanceof LabError)) throw e
+      return e.message
+    }
+  }
+
+  materialPreview(c: imperfect.Character, alt: boolean): { meshes: MeshData[]; bones: BoneLine[] } | string {
+    try {
+      const { m, sk, included, tris } = this.fitted(c)
+      const images = materialImages(m, c)
+      const bySlot = new Map(included.map((x, i) => {
+        const im = images.get(x.gltfMaterial) ?? null
+        return [i, im && alt ? costumeImage(im, x.alt, c.files) : im]
+      }))
+      const finishes = new Map<number, [RgbaImage, number]>()
+      included.forEach((x, i) => {
+        if (!x.finish) return
+        let env = this.envs.get(x.finish.envmap)
+        if (!env) this.envs.set(x.finish.envmap, (env = envImage(this.src(), x.finish.envmap)))
+        finishes.set(i, [env, x.finish.intensity])
+      })
+      return { meshes: previewTextures(fittedMeshes(tris, bySlot, c.size, finishes)), bones: gameBones(sk, c.size) }
     } catch (e) {
       if (!(e instanceof LabError)) throw e
       return e.message

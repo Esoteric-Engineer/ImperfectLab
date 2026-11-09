@@ -303,6 +303,13 @@ The textures each costume changes to as health runs down (`model.damage_stages`,
 - **Each stage adds parts.** Each stage that changes something adds one more part to the costume, and each part is a block in `shaders.nsa`.
 - **After Z's Costume Change is released, the costume returns to its damage stage a frame later.**
 
+## Metallic finish
+
+The `finish` of a material (`model.materials`, [`FORMAT.md`](FORMAT.md)):
+
+- **The reflection is added to the texture.** A near-white texture turns flat white; one around 50% grey reads as metal.
+- **The sphere map is loaded with the match.** A costume whose base bundle lacks the chosen map gets a copy, on top of the memory above: 2 KB (Spider-Man's), 8 KB (Wink's onyx, green onyx), 11 KB (blue onyx), 32 KB (polished chrome, soft steel, gold onyx) or 43 KB (Iron Man's). Each different map on a character is one more copy.
+
 ## More characters
 
 The roster tables in `main.dol` hold 20 records, and the 19th character takes the last one (a filler copy of the Thing). For a 20th and more, up to a 27th, the patch copies the three tables, grown to one record per character, into a new data section, and points their only four readers (`fn_80431CCC` and `fn_8044F070`) at the copies. `fn_8044F070` searches the order table up to a fixed index, which is raised with the count.

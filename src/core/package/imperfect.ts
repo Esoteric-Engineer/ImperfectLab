@@ -14,6 +14,7 @@ import { BULLETS as GUN_BULLETS, DAMAGE as GUN_DAMAGE, DEFAULT_BULLETS, DEFAULT_
 import { animatable, LOW_ENERGY_STUN, MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
 import { type ClipInfo, clipList } from '../build/moveanim'
 import { DISTANCE, JUMP_DISTANCE, JUMPS, type Limb, LIMBS, PULLS } from '../build/reach'
+import { envMap, type Finish, FINISH_STRENGTH } from '../build/shaders'
 import { Z_SECONDS, Z_SIZE, Z_SLOW, Z_VISIBLE } from '../game/dol'
 import { BASES } from '../game/roster'
 import * as asftool from '../mnroi/asftool'
@@ -130,6 +131,7 @@ export interface Material {
   alt: string
   bind: number | null
   damage: Record<ZCostume, string[]>
+  finish: Finish | null
 }
 
 // A material's damage entries are 'prev', 'hue:<degrees>' or a textures/ member.
@@ -402,7 +404,7 @@ export function hasFlames(f: Flames): boolean {
 }
 
 export function newMaterial(gltfMaterial: number, name: string, include = true, suffix = '', size: [number, number] = [256, 256]): Material {
-  return { gltfMaterial, name, include, suffix, size, twoSided: false, texture: null, alt: 'same', bind: null, damage: noDamage() }
+  return { gltfMaterial, name, include, suffix, size, twoSided: false, texture: null, alt: 'same', bind: null, damage: noDamage(), finish: null }
 }
 
 export function newCharacter(): Character {
@@ -460,7 +462,7 @@ export function textureMember(name: string): string {
 
 function materialJson(m: Material): Json {
   return { gltf_material: m.gltfMaterial, name: m.name, include: m.include, suffix: m.suffix, size: [...m.size],
-    two_sided: m.twoSided, texture: m.texture, alt: m.alt, bind: m.bind, damage: damages(m) ? m.damage : undefined }
+    two_sided: m.twoSided, texture: m.texture, alt: m.alt, bind: m.bind, damage: damages(m) ? m.damage : undefined, finish: m.finish ?? undefined }
 }
 
 function sha(body: Uint8Array): string {
@@ -704,6 +706,14 @@ function num(v: unknown, what: string, lo: number, hi: number, optional = true, 
   return v
 }
 
+function readFinish(d: unknown): Finish | null {
+  if (d === undefined || d === null) return null
+  const f = keys(d, ['envmap', 'intensity'], 'a material finish')
+  const env = envMap(str(f.envmap, 'finish envmap', 64)!)
+  if (!env) throw new LabError(`manifest: unknown finish envmap ${String(f.envmap)}`)
+  return { envmap: env.name, intensity: num(f.intensity, 'finish intensity', FINISH_STRENGTH[0], FINISH_STRENGTH[1], false)! }
+}
+
 function keys(d: unknown, allowed: string[], what: string): Record<string, unknown> {
   const o = typed<Record<string, unknown>>(d, 'object', what)
   const extra = Object.keys(o).filter((k) => !allowed.includes(k)).sort()
@@ -849,7 +859,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   const mats = typed<unknown[]>(mo.materials ?? [], 'array', 'model.materials')
   if (mats.length > 16) throw new LabError('manifest: at most 16 materials')
   for (const d0 of mats) {
-    const d = keys(d0, ['gltf_material', 'name', 'include', 'suffix', 'size', 'two_sided', 'texture', 'alt', 'bind', 'damage'], 'a material')
+    const d = keys(d0, ['gltf_material', 'name', 'include', 'suffix', 'size', 'two_sided', 'texture', 'alt', 'bind', 'damage', 'finish'], 'a material')
     const size = typed<unknown[]>(d.size ?? [256, 256], 'array', 'material size')
     if (size.length !== 2 || size.some((s) => num(s, 'material size', 8, 1024, false, true)! & ((s as number) - 1))) {
       throw new LabError('manifest: material sizes are powers of two from 8 to 1024')
@@ -869,6 +879,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
       alt,
       bind: num(d.bind, 'material bind', 0, 255, true, true),
       damage: readDamage(d.damage, files),
+      finish: readFinish(d.finish),
     })
   }
   if (mo.damage_stages !== undefined) {

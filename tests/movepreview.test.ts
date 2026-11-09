@@ -6,10 +6,11 @@ import { Model } from '../src/core/model/glb'
 import * as mapping from '../src/core/model/mapping'
 import { Skeleton } from '../src/core/model/skeleton'
 import * as imperfect from '../src/core/package/imperfect'
-import { baseMeshes, skin } from '../src/core/preview'
+import * as shaders from '../src/core/build/shaders'
+import { baseMeshes, envImage, skin } from '../src/core/preview'
 import { Service } from '../src/worker/service'
 import type { MovePreview } from '../src/worker/protocol'
-import { fileReader, gameSource, ISO, makeGlb } from './helpers'
+import { fileReader, gameSource, ISO, makeGlb, pngBytes } from './helpers'
 
 function character(base: string, glb = false): imperfect.Character {
   const c = imperfect.newCharacter()
@@ -109,5 +110,26 @@ describe.skipIf(!ISO)('move preview', () => {
     expect(mean(24).map((v, k) => v - head[k])).toEqual([0.05, 0.1, 0.02].map((v) => expect.closeTo(v, 4)))
     expect(Array.from(dots.image!.data.slice(0, 4))).toEqual([255, 0, 0, 255])
     expect(r.focus[1]).toBeCloseTo(0.25)
+  })
+
+  it("shows each costume's textures with the materials' metallic finishes", async () => {
+    const s = service()
+    const c = character('wolverine', true)
+    await s.importModel(c.glb!)
+    c.materials = [{ ...c.materials[0], texture: 'textures/skin.png', alt: 'textures/skin_alt.png' }]
+    c.files = new Map([['textures/skin.png', pngBytes()], ['textures/skin_alt.png', pngBytes(4, 4, [0, 0, 255, 255])]])
+    const meshes = (alt: boolean) => {
+      const r = s.materialPreview(c, alt)
+      if (typeof r === 'string') throw new Error(r)
+      return r.meshes
+    }
+    expect(meshes(false).map((m) => [m.env, m.envStrength])).toEqual([[null, 0]])
+    expect(Array.from(meshes(false)[0].image!.data.slice(0, 4))).toEqual([255, 0, 0, 255])
+    expect(Array.from(meshes(true)[0].image!.data.slice(0, 4))).toEqual([0, 0, 255, 255])
+    c.materials[0].finish = { envmap: 'GE_env_polishedMetal', intensity: 0.5 }
+    const [m] = meshes(true)
+    expect([m.env!.width, m.env!.height, m.envStrength]).toEqual([256, 256, 0.5])
+    expect(meshes(false)[0].env!.data.buffer).not.toBe(m.env!.data.buffer)
+    for (const e of shaders.ENV_MAPS) expect(envImage(gameSource(), e.name).width, e.name).toBeGreaterThan(0)
   })
 })
