@@ -17,7 +17,7 @@ import type { ImportedAnimations } from '../../worker/protocol'
 import { store, useStore } from '../store'
 
 // Categories shown open; the rest start folded.
-const OPEN = new Set(['Attacks', 'Super attacks', 'Air and wall attacks', 'Ranged attacks', 'Throws'])
+const OPEN = new Set(['Attacks'])
 
 const stem = (anim: string | null) => (anim ?? '').replace(/\.nad$/i, '')
 const RANGE = GAMEPLAY.super_throw_range
