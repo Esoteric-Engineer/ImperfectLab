@@ -1799,6 +1799,27 @@ describe.skipIf(!ISO)('stretching limbs', () => {
     expect(R.u32(t.prop('plr_Synth', R.P_ABILITIES))! & 0x2000).toBe(0)
   })
 
+  it('knows which bases have the ranged pickup', () => {
+    const t = new R.Templates(src().entry('Misc/Global.not'))
+    expect(R.keys().filter((k) => new R.BaseCharacter(src(), k, t).abilities & 0x2000)).toEqual(imperfect.PICKUP_BASES)
+  })
+
+  it('turns off Spider-Man\'s range grab', () => {
+    const c = tinted('spiderman')
+    c.aura = { ...c.aura, mode: 'base' }
+    const build = () => new Builder(src(), c).build()
+    const abilities = (r: ReturnType<typeof build>, n: string) => R.u32(new R.Templates(r.sets.get('Misc/Global.not')!).prop(n, R.P_ABILITIES))!
+    const spidey = abilities(build(), 'plr_SpiderMan')
+    expect(spidey & 0x2000).toBe(0x2000)
+    c.gameplay = { range_grab: false }
+    expect(imperfect.problems(c).filter(([l]) => l === 'error')).toEqual([])
+    const r = build()
+    for (const n of ['plr_Synth', 'plr_altSynth']) expect(abilities(r, n)).toBe((spidey & ~0x2000) >>> 0)
+    expect(abilities(r, 'plr_SpiderMan')).toBe(spidey)
+    c.moveReach = { WirePull: { distance: 4 } }
+    expect(build().adds.has('Misc/PLAYER_Synth.nvb')).toBe(false)
+  })
+
   it('turns off a flyer\'s flight and keeps it by default', () => {
     const c = tinted('storm')
     c.aura = { ...c.aura, mode: 'base' }

@@ -6,7 +6,7 @@ import * as holster from '../../core/build/holster'
 import * as reach from '../../core/build/reach'
 import { formatG } from '../../core/format'
 import { keys, label } from '../../core/game/roster'
-import { animFiles, BASE_MOVES, copyCharacter, defaultHolster, GAMEPLAY, type Holster as HolsterPlan, HOLSTER_POSITION, HOLSTER_ROTATION, type MoveEffect, STUN_BASES, THROW_REACH, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
+import { animFiles, BASE_MOVES, copyCharacter, defaultHolster, GAMEPLAY, type Holster as HolsterPlan, HOLSTER_POSITION, HOLSTER_ROTATION, type MoveEffect, PICKUP_BASES, STUN_BASES, THROW_REACH, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
 import type { BoneLine, MeshData } from '../../core/preview'
 import { ColorButton, Note, NumberInput, OptionCard, ToggleCard, Warning } from '../components/common'
 import { MovePreviewDialog } from '../components/MovePreviewDialog'
@@ -98,6 +98,7 @@ export function MovesPage() {
       {mine && WALL.some((w) => !w.bases.includes(c.base)) && <WallMoves cat={cat!} />}
       {mine && <GrabRange cat={cat!} />}
       {mine && <LowEnergyStun cat={cat!} />}
+      {mine && PICKUP_BASES.includes(c.base) && <RangeGrab cat={cat!} />}
       {ownMoves && <BaseMoves cat={cat} />}
       {mine && <Stretching cat={cat!} />}
       <LineColors cat={cat} />
@@ -905,9 +906,18 @@ function setRangeGrab(cat: Catalog, on: boolean) {
   }
 }
 
-// Grabbing props from a distance, as Spider-Man does.
+// Grabbing props from a distance, as Spider-Man does: given to Daredevil, or turned off on a base that has it.
 function RangeGrab({ cat }: { cat: Catalog }) {
   const c = store.character
+  if (PICKUP_BASES.includes(c.base)) {
+    return (
+      <ToggleCard title="Range grab" checked={c.gameplay.range_grab !== false} onChange={(v) => {
+        if (v) delete c.gameplay.range_grab
+        else c.gameplay.range_grab = false
+        store.touch('character')
+      }} note={`${label(c.base)} pulls props in from a distance. Turned off, ${label(c.base)} picks props up only up close, as other characters do, on the ground and in flight. The CPU playing the character loses it too.`} />
+    )
+  }
   const on = Boolean(c.baseMoves.range_grab)
   return (
     <ToggleCard title="Range grab" checked={on} onChange={(v) => {

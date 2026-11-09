@@ -585,6 +585,7 @@ export class Builder {
       else off |= WIRE
     }
     if (gp.flight === false) off |= FLIGHT
+    if (gp.range_grab === false) off |= RANGE_GRAB_BIT
     if (gp.low_energy_stun) on |= LOW_ENERGY_STUN
     else if (gp.low_energy_stun === false) off |= LOW_ENERGY_STUN
     for (const w of WALL) if (gp[w.key]) on |= WALL_BITS[w.key]
@@ -779,7 +780,7 @@ export function tuningFields(c: Character): Record<string, unknown> {
   const far = c.moveReach.SuperAttackFar?.distance
   if (far !== undefined) out.throw_reach = far
   const pickup = reach.PULLS.map((id) => c.moveReach[id]?.distance).find((d) => d !== undefined)
-  if (pickup !== undefined) out.pickup_range = pickup
+  if (pickup !== undefined && c.gameplay.range_grab !== false) out.pickup_range = pickup
   return out
 }
 

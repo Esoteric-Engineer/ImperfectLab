@@ -13,7 +13,7 @@ import { COSTS, type EnergyKey, FALLBACK, RECHARGE, type RechargeKey } from '../
 import { BULLETS as GUN_BULLETS, DAMAGE as GUN_DAMAGE, DEFAULT_BULLETS, DEFAULT_DAMAGE, DEFAULT_ENERGY, ENERGY as GUN_ENERGY, PLACES as GUN_PLACES, type Place as GunPlace, type Sound as GunSound } from '../build/gun'
 import { animatable, LOW_ENERGY_STUN, MOVE_IDS, RANGE_GRAB, WALL_CLIMB, WALL_JUMPS, WALL_RUN } from '../build/moves'
 import { type ClipInfo, clipList } from '../build/moveanim'
-import { DISTANCE, JUMP_DISTANCE, JUMPS, type Limb, LIMBS } from '../build/reach'
+import { DISTANCE, JUMP_DISTANCE, JUMPS, type Limb, LIMBS, PULLS } from '../build/reach'
 import { Z_SECONDS, Z_SIZE, Z_SLOW, Z_VISIBLE } from '../game/dol'
 import { BASES } from '../game/roster'
 import * as asftool from '../mnroi/asftool'
@@ -76,6 +76,8 @@ export const WALL: Wall[] = [
 ]
 export const FLYERS = ['johnnyohm', 'storm', 'heatwave', 'humantorch', 'ironman', 'magneto', 'roekel']
 export const STUN_BASES = ['megalith']
+// bases with the ranged pickup (ability 0x2000)
+export const PICKUP_BASES = ['spiderman', 'venom', 'magneto', 'biohazard']
 export const THROW_REACH: [number, number] = [8, 35]
 export const HOLSTER_POSITION: [number, number] = [-0.6, 0.6]
 export const HOLSTER_ROTATION: [number, number] = [-180, 180]
@@ -165,6 +167,7 @@ export type Gameplay = Partial<Record<'damage_taken' | 'health' | 'run_speed' | 
   wire_swing?: boolean
   flight?: boolean
   low_energy_stun?: boolean
+  range_grab?: boolean
   wall_climb?: boolean
   wall_run?: boolean
 }
@@ -566,6 +569,10 @@ export function problems(c: Character): Problem[] {
     if (COSTS.some((e) => e.flight && c.gameplay[e.key] !== undefined) && (c.gameplay.flight === false || !FLYERS.includes(c.base))) {
       out.push(['warning', "flight energy costs are set but the character can't fly, so they do nothing"])
     }
+    if (c.gameplay.range_grab === false) {
+      if (!PICKUP_BASES.includes(c.base)) out.push(['error', `${BASES[c.base][0]} has no range grab to turn off: set it back on the Moves page`])
+      else if (PULLS.some((id) => c.moves[id] || c.moveAnims[id] || c.moveReach[id])) out.push(['warning', 'ranged pickup animations are picked but the range grab is off, so they never play'])
+    }
     const stuns = STUN_BASES.includes(c.base), stun = c.gameplay.low_energy_stun
     if (stun === stuns) out.push(['error', `${BASES[c.base][0]} ${stuns ? 'already has' : 'has no'} low-energy stun: set it back on the Moves page`])
     else if (stun) {
@@ -938,7 +945,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     if (v.length !== 6) throw new LabError('manifest: six display stats per costume')
     c.stats[k] = v.map((x) => num(x, 'a display stat', STAT_RANGE[0], STAT_RANGE[1], false, true)!)
   }
-  const gp = keys(st.gameplay ?? {}, [...Object.keys(GAMEPLAY), 'lift', 'wire_swing', 'flight', 'low_energy_stun', ...WALL.map((w) => w.key)], 'stats.gameplay')
+  const gp = keys(st.gameplay ?? {}, [...Object.keys(GAMEPLAY), 'lift', 'wire_swing', 'flight', 'low_energy_stun', 'range_grab', ...WALL.map((w) => w.key)], 'stats.gameplay')
   c.gameplay = {}
   for (const [k, [lo, hi, integer]] of Object.entries(GAMEPLAY)) {
     if (gp[k] !== null && gp[k] !== undefined) (c.gameplay as Record<string, number>)[k] = num(gp[k], k, lo, hi, true, integer)!
@@ -951,6 +958,10 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   if (gp.flight !== null && gp.flight !== undefined) {
     if (typed<boolean>(gp.flight, 'boolean', 'flight')) throw new LabError('manifest: flight can only be false, to turn off a base\'s flight')
     c.gameplay.flight = false
+  }
+  if (gp.range_grab !== null && gp.range_grab !== undefined) {
+    if (typed<boolean>(gp.range_grab, 'boolean', 'range_grab')) throw new LabError('manifest: range_grab can only be false, to turn off a base\'s ranged pickup')
+    c.gameplay.range_grab = false
   }
   if (gp.low_energy_stun !== null && gp.low_energy_stun !== undefined) c.gameplay.low_energy_stun = typed<boolean>(gp.low_energy_stun, 'boolean', 'low_energy_stun')
   for (const { key } of WALL) if (gp[key] !== null && gp[key] !== undefined && typed<boolean>(gp[key], 'boolean', key)) c.gameplay[key] = true

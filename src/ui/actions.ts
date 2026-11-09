@@ -46,7 +46,7 @@ async function openFrom(get: () => Promise<OpenedCharacter | null>): Promise<boo
 export function showCredits() {
   const c = store.character
   const cr = c.credits
-  const lines = [`${c.displayName} (based on ${c.base})`]
+  const lines = [`${c.displayName}`]
   if (cr.author) lines.push(`by ${cr.author}`)
   if (cr.description) lines.push(cr.description)
   for (const a of cr.assets) lines.push(`${a.what}: ${a.by}, ${a.license} ${a.url}`)

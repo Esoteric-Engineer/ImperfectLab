@@ -202,6 +202,8 @@ A Daredevil-based character's `range_grab` (`base_moves`, [`FORMAT.md`](FORMAT.m
 - **Light props only** unless `stats.gameplay.lift` is raised: Daredevil has no medium or heavy lift.
 - **The animation is added like a swapped move:** the same memory cost, and a Venom `WirePull` is approximate on Daredevil's skeleton. `WirePullFly` only plays in flight, so it isn't offered.
 
+Turning a base's ranged pickup off (`stats.gameplay.range_grab: false`, Spider-Man, Venom, Magneto and Bio-Hazard) clears ability bit 0x2000.
+
 ## Stretching limbs
 
 Moves that stretch a limb out and back (`move_reach`, [`FORMAT.md`](FORMAT.md)):

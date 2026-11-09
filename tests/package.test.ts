@@ -279,6 +279,21 @@ describe('round trip', () => {
     expect(imperfect.problems(c).some(([l, m]) => l === 'warning' && m.includes('never play'))).toBe(true)
   })
 
+  it('turns off a base\'s ranged pickup', () => {
+    const c = character()
+    c.base = 'spiderman'
+    c.gameplay = { range_grab: false }
+    const d = imperfect.load(imperfect.save(c))
+    expect(d.gameplay.range_grab).toBe(false)
+    expect(imperfect.problems(d).filter(([l]) => l === 'error')).toEqual([])
+    d.moveReach = { WirePull: { distance: 4 } }
+    expect(imperfect.problems(d).some(([l, m]) => l === 'warning' && m.includes('never play'))).toBe(true)
+    d.base = 'wolverine'
+    d.moveReach = {}
+    expect(imperfect.problems(d).some(([l, m]) => l === 'error' && m.includes('no range grab'))).toBe(true)
+    rejected(withManifest({ 'model/model.glb': makeGlb() }, (m) => { m.stats.gameplay.range_grab = true }), 'range_grab can only be false')
+  })
+
   it('keeps base moves to the bases that have them', () => {
     const c = character()
     c.baseMoves = { throw_reach: 20 }
