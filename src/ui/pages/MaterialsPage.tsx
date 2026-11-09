@@ -243,15 +243,37 @@ function MaterialCard({ index, thumbs }: { index: number; thumbs: Thumbs }) {
 
   return (
     <div className="card material">
-      <h4>Material: {m.name || m.gltfMaterial}</h4>
+      <div className="material-head">
+        <h4>Material: {m.name || m.gltfMaterial}</h4>
+        <span className="row tight" title="Name this material has in the game">
+          <code>{c.internalName}[_alt]</code>
+          <input className="short" value={m.suffix} maxLength={8} aria-label="Game material suffix" onChange={(e) => {
+            if (/^(_[A-Za-z0-9]{0,7})?$/.test(e.target.value)) {
+              m.suffix = e.target.value
+              edited()
+            }
+          }} />
+        </span>
+        <label className="check head-include"><input type="checkbox" checked={m.include} onChange={(e) => { m.include = e.target.checked; edited() }} /> Draw this material</label>
+      </div>
       <div className="material-body">
-        <div className="thumbs">
+        <div className="costume">
           <div className="thumb-head">
             <span>Costume 1</span>
             <button className="small" title="Download this texture" aria-label={`Download ${m.name || m.gltfMaterial} costume 1`} disabled={!thumbs[0]}
               onClick={() => downloadTexture(index, 0)}>&#x2B07;</button>
           </div>
           <ImageView image={thumbs[0]} side={128} />
+          <select aria-label="Costume 1 texture" value={m.texture ? 1 : 0} onChange={(e) => {
+            if (e.target.value === '1') { if (!m.texture) void choose('texture') }
+            else { m.texture = null; edited() }
+          }}>
+            <option value={0}>The model's own</option>
+            <option value={1}>A picture</option>
+          </select>
+          {m.texture && <button className="small" onClick={() => choose('texture')}>Choose...</button>}
+        </div>
+        <div className="costume">
           <div className="thumb-head">
             <span>Costume 2</span>
             <button className="small" title={m.alt === 'same' ? 'Costume 2 uses the costume 1 texture' : 'Download this texture'}
@@ -259,80 +281,67 @@ function MaterialCard({ index, thumbs }: { index: number; thumbs: Thumbs }) {
               onClick={() => downloadTexture(index, 1)}>&#x2B07;</button>
           </div>
           <ImageView image={thumbs[1]} side={128} />
-        </div>
-        <div className="form">
-          <span />
-          <label className="check"><input type="checkbox" checked={m.include} onChange={(e) => { m.include = e.target.checked; edited() }} /> Draw this material</label>
-          <label>Game material</label>
-          <div className="row tight">
-            <code>{c.internalName}[_alt]</code>
-            <input className="short" value={m.suffix} maxLength={8} onChange={(e) => {
-              if (/^(_[A-Za-z0-9]{0,7})?$/.test(e.target.value)) {
-                m.suffix = e.target.value
-                edited()
-              }
-            }} />
-          </div>
-          <label>Texture</label>
-          <div className="row tight">
-            <label className="check"><input type="radio" checked={!m.texture} onChange={() => { m.texture = null; edited() }} /> The model's own</label>
-            <label className="check"><input type="radio" checked={Boolean(m.texture)} onChange={() => { if (!m.texture) void choose('texture') }} /> A picture:</label>
-            <button className="small" onClick={() => choose('texture')}>Choose...</button>
-          </div>
-          <label>Size</label>
-          <div className="row tight">
-            <select value={m.size[0]} onChange={(e) => { m.size = [Number(e.target.value), m.size[1]]; edited() }}>{SIZES.map((v) => <option key={v}>{v}</option>)}</select>
-            x
-            <select value={m.size[1]} onChange={(e) => { m.size = [m.size[0], Number(e.target.value)]; edited() }}>{SIZES.map((v) => <option key={v}>{v}</option>)}</select>
-            <span className="note">pixels in the game (most characters use 256x256)</span>
-          </div>
-          <span />
-          <label className="check"><input type="checkbox" checked={m.twoSided} onChange={(e) => { m.twoSided = e.target.checked; edited() }} /> Draw both sides (capes, thin cloth)</label>
-          <label>Costume 2</label>
-          <div className="row tight">
-            <select value={altMode} onChange={(e) => {
-              const v = Number(e.target.value)
-              if (v === 2) return void choose('alt')
-              m.alt = v === 0 ? 'same' : 'hue:0'
-              edited()
-            }}>
-              <option value={0}>Same texture</option>
-              <option value={1}>Hue shift</option>
-              <option value={2}>Another picture</option>
-            </select>
-            <NumberInput className="short" min={-180} max={180} disabled={altMode !== 1} value={altMode === 1 ? Math.trunc(parseFloat(m.alt.slice(4))) : 0}
+          <select aria-label="Costume 2 texture" value={altMode} onChange={(e) => {
+            const v = Number(e.target.value)
+            if (v === 2) return void choose('alt')
+            m.alt = v === 0 ? 'same' : 'hue:0'
+            edited()
+          }}>
+            <option value={0}>Same texture</option>
+            <option value={1}>Hue shift</option>
+            <option value={2}>Another picture</option>
+          </select>
+          {altMode === 1 && <span className="row tight">
+            <NumberInput className="short" min={-180} max={180} value={Math.trunc(parseFloat(m.alt.slice(4)))}
               onChange={(v) => {
                 m.alt = `hue:${Math.trunc(v)}`
                 edited()
               }} />°
-            <button className="small" onClick={() => choose('alt')}>Choose...</button>
-          </div>
-          <label>Finish</label>
-          <div className="row tight">
-            <select value={m.finish?.envmap ?? ''} onChange={(e) => {
-              m.finish = e.target.value === '' ? null : { envmap: e.target.value, intensity: m.finish?.intensity ?? DEFAULT_STRENGTH }
-              edited()
-            }}>
-              <option value="">None</option>
-              {ENV_MAPS.map((e) => <option key={e.name} value={e.name}>Metallic: {e.label}</option>)}
-            </select>
-            <span>at strength</span>
-            <NumberInput className="short" min={FINISH_STRENGTH[0]} max={FINISH_STRENGTH[1]} step={0.05} disabled={!m.finish} value={m.finish?.intensity ?? DEFAULT_STRENGTH}
-              onChange={(v) => {
-                if (!m.finish) return
-                m.finish = { ...m.finish, intensity: Math.round(v * 100) / 100 }
+          </span>}
+          {altMode === 2 && <button className="small" onClick={() => choose('alt')}>Choose...</button>}
+        </div>
+        <div className="material-settings">
+          <div className="form">
+            <label title="Pixels in the game (most characters use 256x256)">Size</label>
+            <div className="row tight">
+              <select value={m.size[0]} onChange={(e) => { m.size = [Number(e.target.value), m.size[1]]; edited() }}>{SIZES.map((v) => <option key={v}>{v}</option>)}</select>
+              x
+              <select value={m.size[1]} onChange={(e) => { m.size = [m.size[0], Number(e.target.value)]; edited() }}>{SIZES.map((v) => <option key={v}>{v}</option>)}</select>
+            </div>
+            <label>Finish</label>
+            <div className="row tight">
+              <select value={m.finish?.envmap ?? ''} onChange={(e) => {
+                m.finish = e.target.value === '' ? null : { envmap: e.target.value, intensity: m.finish?.intensity ?? DEFAULT_STRENGTH }
                 edited()
-              }} />
+              }}>
+                <option value="">None</option>
+                {ENV_MAPS.map((e) => <option key={e.name} value={e.name}>Metallic: {e.label}</option>)}
+              </select>
+              {m.finish && <>
+                <span>at strength</span>
+                <NumberInput className="short" min={FINISH_STRENGTH[0]} max={FINISH_STRENGTH[1]} step={0.05} value={m.finish.intensity}
+                  onChange={(v) => {
+                    if (!m.finish) return
+                    m.finish = { ...m.finish, intensity: Math.round(v * 100) / 100 }
+                    edited()
+                  }} />
+              </>}
+            </div>
+            <span />
+            <label className="check"><input type="checkbox" checked={m.twoSided} onChange={(e) => { m.twoSided = e.target.checked; edited() }} /> Draw both sides (capes, thin cloth)</label>
           </div>
-          <label>Fixed to</label>
-          <div className="row tight">
-            <select value={m.bind ?? ''} onChange={(e) => { m.bind = e.target.value === '' ? null : Number(e.target.value); edited() }}>
-              <option value="">(follows its skin weights)</option>
-              {(sk?.nodes ?? []).map((n) => <option key={n.index} value={n.index}>{n.index} {n.name}</option>)}
-              {m.bind !== null && sk && m.bind >= sk.nodes.length && <option value={m.bind}>{m.bind} {m.bind === gunAt ? 'Gun' : m.bind === swapAt ? 'Gun swap' : '(not on this base)'}</option>}
-            </select>
-            <span className="note" title="Normally a material follows the skin weights. Fix it to one game bone for a prop, and model it where that bone is.">Normally follows skin weights. Set to a bone for a prop (Daredevil's club is 39)</span>
-          </div>
+          <details open={m.bind !== null} className="advanced">
+            <summary>Advanced</summary>
+            <div className="row tight" title="Normally a material follows the skin weights. Fix it to one game bone for a prop, and model it where that bone is.">
+              <span className="muted">Fixed to</span>
+              <select value={m.bind ?? ''} onChange={(e) => { m.bind = e.target.value === '' ? null : Number(e.target.value); edited() }}>
+                <option value="">(follows its skin weights)</option>
+                {(sk?.nodes ?? []).map((n) => <option key={n.index} value={n.index}>{n.index} {n.name}</option>)}
+                {m.bind !== null && sk && m.bind >= sk.nodes.length && <option value={m.bind}>{m.bind} {m.bind === gunAt ? 'Gun' : m.bind === swapAt ? 'Gun swap' : '(not on this base)'}</option>}
+              </select>
+              <span className="note">Set to a bone for a prop (Daredevil's club is 39)</span>
+            </div>
+          </details>
         </div>
       </div>
       {m.include && c.damageStages.some((st) => st.enabled) && (

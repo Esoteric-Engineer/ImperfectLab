@@ -43,6 +43,11 @@ async function openFrom(get: () => Promise<OpenedCharacter | null>): Promise<boo
   return true
 }
 
+function creditLine(a: { what: string; by: string; license: string; url: string }) {
+  const rest = [[a.by, a.license].filter(Boolean).join(', '), a.url].filter(Boolean).join(' ')
+  return [a.what, rest].filter(Boolean).join(': ')
+}
+
 export function showCredits() {
   const c = store.character
   const cr = c.credits
@@ -54,7 +59,7 @@ export function showCredits() {
     tile: tile ? URL.createObjectURL(new Blob([tile as BlobPart], { type: 'image/png' })) : null,
     author: cr.author,
     description: cr.description,
-    assets: cr.assets.filter((a) => a.what || a.by || a.license || a.url).map((a) => `${a.what}: ${a.by}, ${a.license} ${a.url}`),
+    assets: cr.assets.filter((a) => a.what || a.by || a.license || a.url).map(creditLine),
   }
   store.emit()
 }

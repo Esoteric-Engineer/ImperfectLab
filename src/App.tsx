@@ -232,7 +232,7 @@ function App() {
               </div>
             </div>
             {s.credits.description && <pre className="message credits-section">{s.credits.description}</pre>}
-            {s.credits.assets.length > 0 && <pre className="message credits-section">{s.credits.assets.join('\n')}</pre>}
+            {s.credits.assets.length > 0 && <ul className="credits-section credits-list">{s.credits.assets.map((a, i) => <li key={i}>{a}</li>)}</ul>}
           </div>
           <div className="row end"><button onClick={actions.closeCredits}>OK</button></div>
         </Modal>
