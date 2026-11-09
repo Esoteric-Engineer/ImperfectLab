@@ -6,7 +6,7 @@ import * as holster from '../../core/build/holster'
 import * as reach from '../../core/build/reach'
 import { formatG } from '../../core/format'
 import { keys, label } from '../../core/game/roster'
-import { animFiles, BASE_MOVES, copyCharacter, defaultHolster, GAMEPLAY, type Holster as HolsterPlan, HOLSTER_POSITION, HOLSTER_ROTATION, type MoveEffect, PICKUP_BASES, STUN_BASES, THROW_REACH, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
+import { animFiles, BASE_MOVES, copyCharacter, defaultHolster, GAMEPLAY, type Holster as HolsterPlan, HOLSTER_POSITION, HOLSTER_ROTATION, type MoveEffect, type NoThrow, PICKUP_BASES, STUN_BASES, THROW_REACH, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
 import type { BoneLine, MeshData } from '../../core/preview'
 import { ColorButton, Note, NumberInput, OptionCard, ToggleCard, Warning } from '../components/common'
 import { MovePreviewDialog } from '../components/MovePreviewDialog'
@@ -735,6 +735,7 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
   const farSwapped = Boolean(c.moves.SuperAttackFar), farStretched = Boolean(c.moveReach.SuperAttackFar)
   const grab = BASE_MOVES[c.base].includes('range_grab')
   const held = mv.holster !== undefined
+  const off = mv.no_throw !== undefined
   return (
     <>
       <OptionCard plain head={`${label(c.base)}-specific moves`} note={<>
@@ -742,12 +743,14 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
         The cable is drawn from the forearm to the baton all the time. Setting a custom holster location requires the baton cable to be off.
         {farSwapped && <><br />Super attack far is swapped above, so the reach can't be changed.</>}
         {farStretched && <><br />Super attack far is stretched below, so the reach can't be changed.</>}
+        {mv.no_throw === 'in_hand' && <><br />With the throw off, super attack far, ranged attack and dodge exit super attack keep their animation, but the club stays in the hand and hits up close.</>}
+        {mv.no_throw === 'attack_far' && <><br />With the throw off, super attack far, ranged attack and dodge exit super attack play the "Attack far" lunge instead and hit with its damage. Super moves still cost their energy, and any of them changed above keeps its animation.</>}
       </>}>
         <table className="gameplay grid">
         <thead><tr><th>Value</th><th className="num">Base</th><th>New</th></tr></thead>
         <tbody>
           <tr>
-            <td><label className="check"><input type="checkbox" checked={reach} disabled={(farSwapped || farStretched) && !reach} onChange={(e) => {
+            <td><label className="check" title={off && !reach ? 'The baton throw is off: tick it back on to set its reach' : undefined}><input type="checkbox" checked={reach} disabled={(farSwapped || farStretched || off) && !reach} onChange={(e) => {
               if (e.target.checked) mv.throw_reach = 35
               else delete mv.throw_reach
               edited()
@@ -757,6 +760,16 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
               mv.throw_reach = Math.round(v * 10) / 10
               edited()
             }} /> m</span></td>
+          </tr>
+          <tr>
+            <td><label className="check" title={reach && !off ? 'The baton throw reach is set: untick it to turn the throw off' : undefined}><input type="checkbox" checked={off} disabled={reach && !off} onChange={(e) => {
+              if (e.target.checked) mv.no_throw = 'in_hand'
+              else delete mv.no_throw
+              edited()
+            }} /> Baton throw</label></td>
+            <td className="num">thrown</td>
+            <td><select disabled={!off} value={mv.no_throw ?? 'in_hand'} onChange={(e) => { mv.no_throw = e.target.value as NoThrow; edited() }}>
+              <option value="in_hand">off, club in hand</option><option value="attack_far">off, Attack far</option></select></td>
           </tr>
           <tr>
             <td><label className="check"><input type="checkbox" checked={cable} onChange={(e) => {

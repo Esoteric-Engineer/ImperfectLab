@@ -6,7 +6,7 @@ import { LabError } from '../errors'
 import { decodeImage } from '../image/decode'
 import { encodePng, pngSize } from '../image/png'
 import type { RgbaImage } from '../image/rgba'
-import { CLUB } from '../build/basemoves'
+import { CLUB, THROW_MOVES } from '../build/basemoves'
 import { CLUB_MOVES, defaultDrawn } from '../build/holster'
 import { type DamageKey, KEYS as DAMAGE_KEYS } from '../build/damage'
 import { COSTS, type EnergyKey, FALLBACK, RECHARGE, type RechargeKey } from '../build/energy'
@@ -60,7 +60,9 @@ export const GAMEPLAY: Record<string, [number, number, boolean]> = {
   ...Object.fromEntries(COSTS.map((c): [string, [number, number, boolean]] => [c.key, [FALLBACK.includes(c.key) ? 0.1 : 0, 100, false]])),
   ...Object.fromEntries(RECHARGE.map((r): [string, [number, number, boolean]] => [r.key, [0, 100, false]])),
 }
-export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable', 'range_grab', 'holster'] }
+export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable', 'range_grab', 'holster', 'no_throw'] }
+export const NO_THROW = ['in_hand', 'attack_far'] as const
+export type NoThrow = (typeof NO_THROW)[number]
 export type WallKey = 'wall_climb' | 'wall_run'
 export interface Wall {
   key: WallKey
@@ -194,6 +196,7 @@ export interface BaseMoves {
   throw_cable?: boolean
   range_grab?: boolean
   holster?: Holster
+  no_throw?: NoThrow
 }
 
 export interface Flames {
@@ -597,6 +600,12 @@ export function problems(c: Character): Problem[] {
     }
     if (!c.mapping.has(CLUB) && !c.materials.some((m) => m.include && m.bind === CLUB)) out.push(['error', `the holster carries what is fixed to game bone ${CLUB}, and nothing is: fix a prop to it on the Materials page`])
   }
+  if (c.baseMoves.no_throw) {
+    if (c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw is off, so its reach does nothing: untick one on the Moves page'])
+    if (c.baseMoves.no_throw === 'attack_far' && c.gameplay.attack_damage_throw !== undefined && !THROW_MOVES.some((id) => c.moveReach[id])) {
+      out.push(['warning', 'the baton throw damage is set but no move throws the club, so it does nothing'])
+    }
+  }
   if (c.moves.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach changes the base\'s own super attack far: set that move back to the base\'s, or untick the reach'])
   if (c.moveReach.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach and a stretch both change super attack far: untick one of them on the Moves page'])
   else if (c.moveReach.SuperRiseAttack && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach and a stretched super rise attack both need the baton\'s long hit segment: untick one of them on the Moves page'])
@@ -984,12 +993,17 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
       glow: p.glow ? color(p.glow, 'glow') : null,
     }
   }
-  const mv = keys(m.base_moves ?? {}, ['throw_reach', 'throw_cable', 'range_grab', 'holster'], 'base_moves')
+  const mv = keys(m.base_moves ?? {}, ['throw_reach', 'throw_cable', 'range_grab', 'holster', 'no_throw'], 'base_moves')
   c.baseMoves = {}
   const reach = num(mv.throw_reach, 'base_moves.throw_reach', THROW_REACH[0], THROW_REACH[1])
   if (reach !== null) c.baseMoves.throw_reach = reach
   if (mv.throw_cable !== null && mv.throw_cable !== undefined) c.baseMoves.throw_cable = typed<boolean>(mv.throw_cable, 'boolean', 'base_moves.throw_cable')
   if (mv.range_grab !== null && mv.range_grab !== undefined) c.baseMoves.range_grab = typed<boolean>(mv.range_grab, 'boolean', 'base_moves.range_grab')
+  if (mv.no_throw !== null && mv.no_throw !== undefined) {
+    const v = str(mv.no_throw, 'base_moves.no_throw', 20)!
+    if (!(NO_THROW as readonly string[]).includes(v)) throw new LabError(`manifest: base_moves.no_throw is one of ${NO_THROW.join(', ')}`)
+    c.baseMoves.no_throw = v as NoThrow
+  }
   if (mv.holster !== null && mv.holster !== undefined) {
     const h = keys(mv.holster, ['position', 'rotation', 'drawn'], 'base_moves.holster')
     c.baseMoves.holster = { position: three(h.position, 'base_moves.holster.position', HOLSTER_POSITION), rotation: three(h.rotation, 'base_moves.holster.rotation', HOLSTER_ROTATION) }

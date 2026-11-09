@@ -220,6 +220,7 @@ Daredevil (`daredevil`):
 - `throw_reach`: 8-35, how far the baton throw reaches, in meters.
 - `throw_cable`: a boolean, default `true`. `false` removes the cable drawn from the forearm to the club.
 - `range_grab`: `true` lets him grab props from a distance as Spider-Man does.
+- `no_throw`: turns the baton throw off. `in_hand` keeps move animations with the club in the hand, hitting up close. `attack_far` plays the Attack far animation instead, with its damage, except in moves changed on the Moves page (`moves`, `move_anims`, `move_idle`, `move_reach`). Can't be combined with `throw_reach`.
 - `holster`: optional, carries what is fixed to game bone 39 (the club) on the back outside power mode and in the versus intros, and ends the baton throw's catch in the power-stand grip. Requires `throw_cable: false` and a prop on bone 39.
   - `position`: three numbers from -0.6 to 0.6, the prop's middle from the chest bone in meters.
   - `rotation`: three numbers from -180 to 180, degrees about X, Y and Z, rotating the prop from the middle.

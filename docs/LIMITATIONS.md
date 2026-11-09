@@ -86,6 +86,13 @@ A Daredevil-based character's `throw_reach` (`base_moves`, [`FORMAT.md`](FORMAT.
 - **Memory and space.** The character has its own copy of Daredevil's animations (about 2.7 MB on the disc), so a match against Daredevil loads both. It needs its own tuning file, so it takes a line in the tuning list (above).
 - **`main.dol` changes.** `fn_8019DB24` (animation time setter) is rewritten in place so that a club that hits comes back from where it hit.
 
+Turning the throw off (`no_throw`):
+
+- **`in_hand`** pins the club to the hand from the release. The club's long hit volume stays on, so the move hits up close, and `attack_damage_throw` still applies.
+- **`attack_far`** plays `Daredevil_MobilityAttack.nad` (the Attack far lunge) instead, with its damage. Super attack far still costs its energy.
+- **The CPU still attempts to use these moves from afar.**
+- **Memory** is the same as a swapped move.
+
 ## Holster
 
 A Daredevil-based character's `holster` (`base_moves`, [`FORMAT.md`](FORMAT.md)):

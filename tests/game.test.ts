@@ -1133,6 +1133,64 @@ describe.skipIf(!ISO)('base moves', () => {
     for (const s of ['rangedattack', 'dodgeexitsuperattack']) expect(set.get(s)!.anim).toBe(own)
     expect(names).toContain(own.toLowerCase())
   })
+
+  const played = (c: imperfect.Character) => {
+    const r = new Builder(src(), c).build()
+    const recs = ngbtool.parse(r.adds.get('Bundles/synth.ngb')!)
+    const now = moves.resolved(src(), nmstool.parse(r.adds.get('Motions/Synth.nms')!), () => true)
+    const at = (state: string) => {
+      const m = now.get(state.toLowerCase())!
+      return { anim: m.anim.toLowerCase(), rec: recs.find((x) => x.name.toLowerCase() === m.anim.toLowerCase())! }
+    }
+    return { r, at }
+  }
+
+  it('keeps the club in the hand with the throw off', () => {
+    const c = daredevil()
+    c.baseMoves = { no_throw: 'in_hand' }
+    expect(imperfect.problems(c).filter(([l]) => l === 'error')).toEqual([])
+    const { r, at } = played(c)
+    const [, models] = ngmtool.read(src().entry('Bundles/daredevil.ngm'))
+    const model = models[0]
+    const hand = holster.armOf(new Skeleton(model, new R.BaseCharacter(src(), 'daredevil').body)).hand
+    const stock = ngbtool.parse(src().entry('Bundles/daredevil.ngb')).find((x) => x.name.toLowerCase() === basemoves.THROW)!
+    const rec = at('SuperAttackFar').rec
+    expect(at('SuperAttackFar').anim).not.toBe(basemoves.THROW)
+    for (const s of ['RangedAttack', 'DodgeExitSuperAttack']) expect(at(s).anim).toBe(at('SuperAttackFar').anim)
+    const gap = (r: ngbtool.Record, t: number) => {
+      const p = ngbtool.pose(model, r, t)
+      return Math.hypot(...[0, 1, 2].map((k) => p[basemoves.CLUB][1][k] - p[hand][1][k]))
+    }
+    expect(Math.max(...[14, 16, 18, 20].map((t) => gap(stock, t)))).toBeGreaterThan(2)
+    for (let t = 0; t <= rec.length; t += 0.5) expect(gap(rec, t), `frame ${t}`).toBeLessThan(0.25)
+    for (const t of [5, 30, 38]) expect(gap(rec, t)).toBeCloseTo(gap(stock, t), 3)
+    expect(rec.events).toEqual(stock.events)
+    const other = (x: ngbtool.Record) => x.tracks.filter(([b]) => b !== basemoves.CLUB)
+    expect(other(rec)).toEqual(other(stock))
+    expect(r.notes.some((n) => n.startsWith('baton throw: the club stays in the hand'))).toBe(true)
+  })
+
+  it('plays attack far in place of the baton throw', () => {
+    const c = daredevil()
+    c.baseMoves = { no_throw: 'attack_far' }
+    const { r, at } = played(c)
+    const far = at('AttackFar').anim
+    expect(far).toBe('daredevil_mobilityattack.nad')
+    for (const s of basemoves.THROW_MOVES) expect(at(s).anim, s).toBe(far)
+    expect(ngbtool.names(r.adds.get('Bundles/synth.ngb')!).map((n) => n.toLowerCase())).not.toContain(basemoves.THROW)
+    expect(r.notes.some((n) => n.startsWith('baton throw: ') && n.endsWith('play attack far instead'))).toBe(true)
+    c.moves = { SuperAttackFar: 'spiderman' }
+    const kept = played(c).at
+    expect(kept('SuperAttackFar').anim).not.toBe(far)
+    expect(kept('RangedAttack').anim).toBe(far)
+  })
+
+  it('refuses a reach on a throw that is off', () => {
+    const c = daredevil()
+    c.baseMoves = { no_throw: 'in_hand', throw_reach: 20 }
+    expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes('reach does nothing'))).toBe(true)
+    expect(() => new Builder(src(), c).build()).toThrow(LabError)
+  })
 })
 
 describe.skipIf(!ISO)('holster', () => {
@@ -1261,6 +1319,22 @@ describe.skipIf(!ISO)('holster', () => {
     expect(r.adds.has('Cutscenes/synth_intro1.cut')).toBe(true)
     expect(r.notes.some((n) => n.startsWith('holster:'))).toBe(true)
     expect(r.notes.some((n) => n.includes('intro club on the back'))).toBe(true)
+  })
+
+  it('keeps the club in the hand with the throw off and a holster', () => {
+    const c = tinted('daredevil')
+    c.aura = { ...c.aura, mode: 'base' }
+    c.materials[0].bind = basemoves.CLUB
+    c.baseMoves = { throw_cable: false, holster: imperfect.defaultHolster(), no_throw: 'in_hand' }
+    const r = new Builder(src(), c).build()
+    const anim = nmstool.parse(r.adds.get('Motions/Synth.nms')!).motions().get('superattackfar')!.anim.toLowerCase()
+    const rec = ngbtool.parse(r.adds.get('Bundles/synth.ngb')!).find((x) => x.name.toLowerCase() === anim)!
+    const model = ngmtool.read(src().entry('Bundles/daredevil.ngm'))[1][0]
+    const hand = holster.armOf(new Skeleton(model, dd().body)).hand
+    for (const t of [14, 18, 22]) {
+      const p = ngbtool.pose(model, rec, t)
+      expect(Math.hypot(...[0, 1, 2].map((k) => p[basemoves.CLUB][1][k] - p[hand][1][k])), `frame ${t}`).toBeLessThan(0.25)
+    }
   })
 })
 
