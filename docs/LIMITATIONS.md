@@ -113,6 +113,18 @@ A Daredevil-based character's `holster` (`base_moves`, [`FORMAT.md`](FORMAT.md))
 - **The fingers keep their grip** from the `IKClaws` clip, which the game plays over every animation, even with the prop on the back.
 - **Memory and space** are as for swapped moves: the character has its own copy of the base's animations, and the club's keys on the back add about 115 KB to it.
 
+## Grip
+
+A Daredevil-based character's `grip` (`base_moves`, [`FORMAT.md`](FORMAT.md)):
+
+- **The prop doesn't move within the hand.** Daredevil's twirls are gone, and so is the club resting along the forearm outside power mode.
+- **A left-hand throw starts a little to the right of the body** before curving back.
+- **Only the throws fly:** the baton throw, the super rise attack and the air throw. The super swing attack, the air attacks and the super block swing the club up to 1.2 m out on its cable; with a grip it stays in the hand, so their club hits reach less far.
+- **In the left hand the prop is drawn on bone 59** (`L Forearm prop`). Animations that aren't the character's own, such as the victim's side of an opponent's throw, leave it where it is modeled, following the left forearm. In the right hand they show it where the club would be, as with the holster.
+- **A cutscene with a new animation** is left as that animation has it.
+- **The cable must be off in the left hand**, since it is drawn from the right forearm.
+- **Memory and space** are as for swapped moves: the character has its own copy of the base's animations, and the prop's keys add about 280 KB to it (176 animations on a Captain America with imported moves).
+
 ## Gun
 
 A gun (`z_button.gun`, [`FORMAT.md`](FORMAT.md)).

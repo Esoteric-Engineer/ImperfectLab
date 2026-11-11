@@ -230,6 +230,10 @@ Daredevil (`daredevil`):
   - `position`: three numbers from -0.6 to 0.6, the prop's middle from the chest bone in meters.
   - `rotation`: three numbers from -180 to 180, degrees about X, Y and Z, rotating the prop from the middle.
   - `drawn` (optional): move id -> `true` (in hand) or `false` (on the back), overriding the default of in hand for power-stand, `Super*` states, `RangedAttack` and `DodgeExitSuperAttack` and on the back otherwise. `PowerOn`, `PowerOff` and `IKClaws` can't be listed, and `SuperAttackFar`, `RangedAttack`, `DodgeExitSuperAttack`, `SuperRiseAttack` and, with `air_throw`, `SuperJumpAttack` can't be `false`.
+- `grip`: optional, holds what is fixed to game bone 39 (the club) in one hand, where the model has it. Requires a prop on bone 39.
+  - `hand`: `right` or `left`, default `right`. `left` requires `throw_cable: false`, nothing else fixed to game bone 59, and no left-hand `z_button.gun`.
+  - `position`: three numbers from -0.6 to 0.6, default `[0, 0, 0]`, meters moved from where the prop is modeled, in the hand's frame at bind (X the character's right, Y forward, Z up).
+  - `rotation`: three numbers from -180 to 180, default `[0, 0, 0]`, degrees about X, Y and Z, turning the prop about its middle.
 
 ### `moves`
 Moves taken from other bases: move id -> the base (not the character's own) whose animations it gets. Ids are motion-set state names, listed in `MOVES` in `src/core/build/moves.ts`; a throw or a sequence is one id covering its parts (`SuperThrow` includes the female, brute and victim versions).

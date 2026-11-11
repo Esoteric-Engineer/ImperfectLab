@@ -5,6 +5,7 @@ import * as ngmtool from '../mnroi/ngmtool'
 import { isRoot } from './size'
 
 export const CLUB = 39
+export const LEFT_CLUB = 59 // if club is swapped to left hand
 export const THROW = 'daredevil_rangedattack.nad'
 // the club leaves at frame 13 and is back at 24
 const FLIGHT: [number, number] = [13, 24]

@@ -140,6 +140,63 @@ describe('holster', () => {
     for (const t of [12, 20]) close(posed(out, t)[39][1], inHand(out, t)[1], 2e-3)
   })
 
+  const GRIP: holster.Prop = { bone: 39, anchor: 3, side: 'R', hand: 27, grip: { position: [0.02, 0.05, -0.03], rotation: [0, 0, 30], center: [0.7, 0.05, 1.6] } }
+  const skinned = (rec: ngbtool.Record, t: number, v: V3): V3 => {
+    const [R, T] = posed(rec, t)[39], b = ngbtool.pose(MODEL, null, 0)[39][1]
+    return holster.add(T, holster.apply(R, holster.sub(v, b)))
+  }
+
+  it('holds a gripped prop where it is modeled, nudged about its middle', () => {
+    const out = holster.holdProp(record(10), MODEL, GRIP)
+    const H = ngbtool.pose(MODEL, null, 0)[27][1], { position, rotation, center } = GRIP.grip!
+    for (const v of [center, holster.add(center, [0.1, 0, 0]), holster.add(center, [0, -0.05, 0.2])]) {
+      const inModel = holster.sub(holster.add(holster.add(holster.apply(holster.turn(rotation), holster.sub(v, center)), center), position), H)
+      for (const t of [0, 4.5, 10]) {
+        const [HR, HT] = posed(out, t)[27]
+        close(skinned(out, t, v), holster.add(HT, holster.apply(HR, inModel)), 3e-3)
+      }
+    }
+  })
+
+  it('reaches for a gripped prop with the hand that holds it', () => {
+    const plan: holster.Plan = { ...PLAN, prop: GRIP }
+    const out = holster.draw(record(20), MODEL, plan, ARM, 'on')
+    const p = posed(out, 9)
+    const [R, T] = holster.stowedAt(MODEL, plan)(p)
+    // the grip in the hand's frame: the prop held by a hand at the origin
+    const [GR, off] = holster.heldAt(MODEL, GRIP)(ngbtool.pose(MODEL, null, 0).map((x, i): [ngbtool.Mat3, V3] => (i === 27 ? [holster.turn([0, 0, 0]), [0, 0, 0]] : x)))
+    close(p[27][1], holster.sub(T, holster.apply(R, holster.apply(holster.tr(GR), off))), 0.02)
+    for (const t of [12, 20]) close(posed(out, t)[39][1], holster.heldAt(MODEL, GRIP)(posed(out, t))[1], 2e-3)
+  })
+
+  it('throws a gripped prop from the hand along the source path and catches it there', () => {
+    const base = record(20)
+    const fly: ngbtool.Track = [39, 1, [[0, ngbtool.encodeTranslation([0.01, 0, 0])], [5, ngbtool.encodeTranslation([0.01, 0, 0])], [10, ngbtool.encodeTranslation([0, 6, 0])], [15, ngbtool.encodeTranslation([0.01, 0, 0])], [20, ngbtool.encodeTranslation([0.01, 0, 0])]]]
+    const rec = { ...base, tracks: base.tracks.map((t) => (t[0] === 39 && t[1] === 1 ? fly : t)) }
+    const flight = holster.flightOf(MODEL, rec, 5, 15, (t) => t, (f) => f)
+    const out = holster.throwHeld(rec, MODEL, GRIP, flight)
+    const held = holster.heldAt(MODEL, GRIP)
+    for (const t of [0, 3, 5, 15, 18, 20]) close(posed(out, t)[39][1], held(posed(out, t))[1], 3e-3)
+    // halfway, the source's place moved by the mean of the offsets at release and catch
+    const off = (t: number) => holster.sub(held(posed(out, t))[1], holster.add(posed(rec, t)[0][1], flight.path(t)[1]))
+    const mid = holster.add(holster.add(posed(rec, 10)[0][1], flight.path(10)[1]), holster.scale(holster.add(off(5), off(15)), 0.5))
+    close(posed(out, 10)[39][1], mid, 0.01)
+    expect(Math.hypot(...holster.sub(posed(out, 10)[39][1], held(posed(out, 10))[1]))).toBeGreaterThan(4)
+  })
+
+  it("keys a held prop's twin at the prop's middle, and frees it with the prop", () => {
+    const prop: holster.Prop = { ...GRIP, twin: 30 }
+    const out = holster.withTwin(holster.holdProp(record(10), MODEL, prop), MODEL, prop)
+    const b = ngbtool.pose(MODEL, null, 0)[39][1]
+    for (const t of [0, 5, 10]) {
+      const p = posed(out, t)
+      close(p[30][1], holster.add(p[39][1], holster.apply(p[39][0], holster.sub(GRIP.grip!.center, b))), 3e-3)
+      sameRot(p[30][0], p[39][0], 5e-3)
+    }
+    const freed = holster.withTwin(holster.free(record(10)), MODEL, prop)
+    expect(freed.tracks.some(([x]) => x === 30 || x === 39)).toBe(false)
+  })
+
   it('finds the arm on either side', () => {
     const sk = { node: (r: string) => ({ 'R.upper_arm': 23, 'R.forearm': 25, 'R.hand': 27, 'L.upper_arm': 43, 'L.forearm': 45, 'L.hand': 47 } as Record<string, number>)[r] }
     expect(holster.armOf(sk as never, 'L')).toEqual({ upper: 43, fore: 45, hand: 47 })

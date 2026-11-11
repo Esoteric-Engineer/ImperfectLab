@@ -261,6 +261,8 @@ export class Retarget {
   notes: string[] = []
   // set by record(), for the notes
   timed: Retimed | null = null
+  // the last record's time for a frame of its template
+  warp: (f: number) => number = (f) => f
   travelled: { distance: number; shortened: boolean } | null = null
   // game node -> [the clip's node, the turn after the joint's world delta]
   private targets = new Map<number, [number, Mat3]>()
@@ -497,11 +499,14 @@ export class Retarget {
       }
       return tracks.map(([b, ch, keys]): ngbtool.Track => (keys.length && ((b === 0 && ch === 1) || marker(b, ch)) ? [b, ch, shrink(keys)] : [b, ch, keys]))
     }
+    this.warp = (f) => Math.min(n, f * k)
     const tracks = capped(assemble((f) => f * k))
     const events = template.events.map(([f, t, p, v]): ngbtool.Event => [f > 0 ? Math.min(n, Math.round(f * k * 100) / 100) : f, t, p, v])
     const out = { ...template, head: template.head.slice(), length: n, pointers: [], tracks, events, extra: template.extra.map((x) => x.slice()) }
     if (timing !== 'clip') return out
     this.timed = retime(template, out, nodes, this.sk)
+    const timed = this.timed
+    if (timed) this.warp = (f) => Math.round(timed.warp(f) * 100) / 100
     // the template's tracks move with the hits, as its events do
     return this.timed ? { ...out, events: this.timed.events, tracks: capped(assemble((f) => Math.round(this.timed!.warp(f) * 100) / 100)) } : out
   }

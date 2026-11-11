@@ -6,7 +6,7 @@ import { LabError } from '../errors'
 import { decodeImage } from '../image/decode'
 import { encodePng, pngSize } from '../image/png'
 import type { RgbaImage } from '../image/rgba'
-import { CLUB, THROW_MOVES } from '../build/basemoves'
+import { CLUB, LEFT_CLUB, THROW_MOVES } from '../build/basemoves'
 import { CLUB_MOVES, defaultDrawn } from '../build/holster'
 import { type DamageKey, KEYS as DAMAGE_KEYS } from '../build/damage'
 import { COSTS, type EnergyKey, FALLBACK, RECHARGE, type RechargeKey } from '../build/energy'
@@ -61,7 +61,7 @@ export const GAMEPLAY: Record<string, [number, number, boolean]> = {
   ...Object.fromEntries(COSTS.map((c): [string, [number, number, boolean]] => [c.key, [FALLBACK.includes(c.key) ? 0.1 : 0, 100, false]])),
   ...Object.fromEntries(RECHARGE.map((r): [string, [number, number, boolean]] => [r.key, [0, 100, false]])),
 }
-export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable', 'range_grab', 'holster', 'no_throw', 'air_throw', 'air_throw_reach'] }
+export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable', 'range_grab', 'holster', 'no_throw', 'air_throw', 'air_throw_reach', 'grip'] }
 export const NO_THROW = ['in_hand', 'attack_far'] as const
 export type NoThrow = (typeof NO_THROW)[number]
 export type WallKey = 'wall_climb' | 'wall_run'
@@ -85,6 +85,9 @@ export const THROW_REACH: [number, number] = [8, 35]
 export const HOLSTER_POSITION: [number, number] = [-0.6, 0.6]
 export const HOLSTER_ROTATION: [number, number] = [-180, 180]
 export const defaultHolster = (): Holster => ({ position: [0, -0.17, 0.05], rotation: [90, 0, 0] })
+export const GRIP_HANDS = ['right', 'left'] as const
+export type GripHand = (typeof GRIP_HANDS)[number]
+export const defaultGrip = (hand: GripHand): Grip => ({ hand, position: [0, 0, 0], rotation: [0, 0, 0] })
 export { GUN_BULLETS, GUN_DAMAGE, GUN_ENERGY, GUN_PLACES, type GunPlace }
 export const GUN_SIDES = ['right', 'left'] as const
 export type GunSide = (typeof GUN_SIDES)[number]
@@ -182,6 +185,12 @@ export interface Holster {
   drawn?: Record<string, boolean>
 }
 
+export interface Grip {
+  hand: GripHand
+  position: [number, number, number]
+  rotation: [number, number, number]
+}
+
 export interface Gun {
   side: GunSide
   damage: number
@@ -201,6 +210,7 @@ export interface BaseMoves {
   no_throw?: NoThrow
   air_throw?: boolean
   air_throw_reach?: number
+  grip?: Grip
 }
 
 export interface Flames {
@@ -620,6 +630,14 @@ export function problems(c: Character): Problem[] {
     }
     if (!c.mapping.has(CLUB) && !c.materials.some((m) => m.include && m.bind === CLUB)) out.push(['error', `the holster carries what is fixed to game bone ${CLUB}, and nothing is: fix a prop to it on the Materials page`])
   }
+  if (c.baseMoves.grip) {
+    if (c.baseMoves.grip.hand === 'left' && c.baseMoves.throw_cable !== false) out.push(['error', 'the baton cable runs from the right forearm, and the club is held in the left hand: set the baton cable to off on the Moves page'])
+    if (!c.mapping.has(CLUB) && !c.materials.some((m) => m.include && m.bind === CLUB)) out.push(['error', `the grip holds what is fixed to game bone ${CLUB}, and nothing is: fix a prop to it on the Materials page`])
+    if (c.baseMoves.grip.hand === 'left') {
+      if (gunOf(c) && gunBone(c.base, gunOf(c)!.side) === LEFT_CLUB) out.push(['error', `a club in the left hand and a gun in the left hand both need game bone ${LEFT_CLUB}: hold one of them in the right hand`])
+      if (c.mapping.has(LEFT_CLUB) || c.materials.some((m) => m.include && m.bind === LEFT_CLUB)) out.push(['error', `a club in the left hand is drawn on game bone ${LEFT_CLUB}, which something else is fixed to: fix it to another bone on the Materials page`])
+    }
+  }
   if (c.baseMoves.no_throw) {
     if (c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw is off, so its reach does nothing: untick one on the Moves page'])
     if (c.baseMoves.no_throw === 'attack_far' && c.gameplay.attack_damage_throw !== undefined && !THROW_MOVES.some((id) => c.moveReach[id])) {
@@ -1025,7 +1043,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
       glow: p.glow ? color(p.glow, 'glow') : null,
     }
   }
-  const mv = keys(m.base_moves ?? {}, ['throw_reach', 'throw_cable', 'range_grab', 'holster', 'no_throw', 'air_throw', 'air_throw_reach'], 'base_moves')
+  const mv = keys(m.base_moves ?? {}, ['throw_reach', 'throw_cable', 'range_grab', 'holster', 'no_throw', 'air_throw', 'air_throw_reach', 'grip'], 'base_moves')
   c.baseMoves = {}
   const reach = num(mv.throw_reach, 'base_moves.throw_reach', THROW_REACH[0], THROW_REACH[1])
   if (reach !== null) c.baseMoves.throw_reach = reach
@@ -1046,6 +1064,12 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
       const drawn = drawnMoves(h.drawn, 'base_moves.holster.drawn')
       if (Object.keys(drawn).length) c.baseMoves.holster.drawn = drawn
     }
+  }
+  if (mv.grip !== null && mv.grip !== undefined) {
+    const g = keys(mv.grip, ['hand', 'position', 'rotation'], 'base_moves.grip')
+    const hand = str(g.hand ?? 'right', 'base_moves.grip.hand', 8)!
+    if (!(GRIP_HANDS as readonly string[]).includes(hand)) throw new LabError(`manifest: base_moves.grip.hand is one of ${GRIP_HANDS.join(', ')}`)
+    c.baseMoves.grip = { hand: hand as GripHand, position: three(g.position ?? [0, 0, 0], 'base_moves.grip.position', HOLSTER_POSITION), rotation: three(g.rotation ?? [0, 0, 0], 'base_moves.grip.rotation', HOLSTER_ROTATION) }
   }
   for (const k of Object.keys(c.baseMoves)) {
     if (!(BASE_MOVES[c.base] ?? []).includes(k as keyof BaseMoves)) throw new LabError(`manifest: base_moves.${k} only applies to a ${movesBases(k)} base`)
@@ -1462,4 +1486,3 @@ export function slimGlb(data: Uint8Array, keepImages: Set<number>): Uint8Array {
   }
   return out
 }
-

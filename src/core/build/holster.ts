@@ -22,11 +22,20 @@ const SWITCH = 0.01
 // frames the club takes after the baton throw's catch to turn from Daredevil's reversed grip to the power-stand one
 const REGRIP = 4
 
+// a prop held fixed in the hand
+export interface Grip {
+  position: Vec3
+  rotation: Vec3
+  center: Vec3
+}
+
 export interface Prop {
   bone: number
   anchor: number
   side: Side
   hand: number | null
+  grip?: Grip
+  twin?: number
 }
 
 export type Side = 'R' | 'L'
@@ -45,7 +54,13 @@ const propOf = (plan: Plan) => plan.prop ?? CLUB_PROP
 
 export function sized(plan: Plan, size: number): Plan {
   const k = (v: Vec3) => v.map((x) => x * size) as Vec3
-  return { ...plan, position: k(plan.position), center: k(plan.center) }
+  return { ...plan, position: k(plan.position), center: k(plan.center), ...(plan.prop ? { prop: sizedProp(plan.prop, size) } : {}) }
+}
+
+export function sizedProp(prop: Prop, size: number): Prop {
+  if (!prop.grip) return prop
+  const k = (v: Vec3) => v.map((x) => x * size) as Vec3
+  return { ...prop, grip: { ...prop.grip, position: k(prop.grip.position), center: k(prop.grip.center) } }
 }
 
 export interface Arm {
@@ -168,13 +183,22 @@ export function stowedAt(model: Model, plan: Plan): (posed: Posed) => [Mat3, Vec
   }
 }
 
-// The prop's world rotation and place in the hand, held as at bind.
-export function heldAt(model: Model, prop: Prop): (posed: Posed) => [Mat3, Vec3] {
+// The prop's rotation and offset in the hand's frame: as at bind, then by its grip.
+function inHandFrame(model: Model, prop: Prop): [Mat3, Vec3] {
   const bind = ngbtool.pose(model, null, 0)
-  const off = sub(bind[prop.bone][1], bind[prop.hand!][1])
+  const B = bind[prop.bone][1], H = bind[prop.hand!][1]
+  if (!prop.grip) return [turn([0, 0, 0]), sub(B, H)]
+  const { position, rotation, center } = prop.grip
+  const R = turn(rotation)
+  return [R, sub(add(add(apply(R, sub(B, center)), center), position), H)]
+}
+
+// The prop's world rotation and place in the hand.
+export function heldAt(model: Model, prop: Prop): (posed: Posed) => [Mat3, Vec3] {
+  const [R, off] = inHandFrame(model, prop)
   return (posed) => {
     const [HR, HT] = posed[prop.hand!]
-    return [HR, add(HT, apply(HR, off))]
+    return [mul(HR, R), add(HT, apply(HR, off))]
   }
 }
 
@@ -190,6 +214,68 @@ function propKeys(rec: ngbtool.Record, model: Model, bone: number, at: (posed: P
     pos.push([t, ngbtool.placeAt(model, rec, bone, t, T, posed)])
   }
   return [rot, pos]
+}
+
+export function holdProp(rec: ngbtool.Record, model: Model, prop: Prop): ngbtool.Record {
+  const [rot, pos] = propKeys(rec, model, prop.bone, heldAt(model, prop), frameList(0, rec.length))
+  return withClub(rec, rot, pos, prop.bone)
+}
+
+// The twin follows the prop's middle where the record keys the prop, and is free with it.
+export function withTwin(rec: ngbtool.Record, model: Model, prop: Prop): ngbtool.Record {
+  if (prop.twin === undefined) return rec
+  const own = rec.tracks.filter(([b]) => (b & 0xffff) === prop.bone)
+  if (!own.length) return free(rec, prop.twin)
+  const bind = ngbtool.pose(model, null, 0)
+  const off = sub(prop.grip?.center ?? bind[prop.bone][1], bind[prop.bone][1])
+  const times = [...new Set(own.flatMap(([, , keys]) => keys.map(([f]) => f)))].sort((a, b) => a - b)
+  const [rot, pos] = propKeys(rec, model, prop.twin, (posed) => {
+    const [R, T] = posed[prop.bone]
+    return [R, add(T, apply(R, off))]
+  }, times)
+  return withClub(rec, rot, pos, prop.twin)
+}
+
+// A throw's club flight: the source record's own club (in its Root's frame) at a frame of the record being keyed.
+export interface Flight {
+  release: number
+  catch: number
+  path: (t: number) => [Mat3, Vec3]
+}
+
+const toRoot = (posed: Posed, [R, T]: [Mat3, Vec3]): [Mat3, Vec3] => [mul(tr(posed[0][0]), R), apply(tr(posed[0][0]), sub(T, posed[0][1]))]
+const fromRoot = (posed: Posed, [R, T]: [Mat3, Vec3]): [Mat3, Vec3] => [mul(posed[0][0], R), add(posed[0][1], apply(posed[0][0], T))]
+
+// toSrc and toOut map frames between the keyed record and the source.
+export function flightOf(model: Model, src: ngbtool.Record, release: number, caught: number, toSrc: (t: number) => number, toOut: (f: number) => number, bone = CLUB): Flight {
+  return {
+    release: toOut(release),
+    catch: toOut(caught),
+    path: (t) => {
+      const posed = ngbtool.pose(model, src, toSrc(t))
+      return toRoot(posed, posed[bone])
+    },
+  }
+}
+
+// Held in the hand, except from release to catch, when it flies the source's path, moved to leave the hand and come back to it.
+export function throwHeld(rec: ngbtool.Record, model: Model, prop: Prop, flight: Flight): ngbtool.Record {
+  const held = heldAt(model, prop)
+  const { release: a, catch: b } = flight
+  const ends = [a, b].map((t) => {
+    const posed = ngbtool.pose(model, rec, t)
+    const [HR, HT] = toRoot(posed, held(posed)), [SR, ST] = flight.path(t)
+    return { q: ngbtool.matQuat(mul(HR, tr(SR))), d: sub(HT, ST) }
+  })
+  const at = (posed: Posed, t: number): [Mat3, Vec3] => {
+    if (t <= a || t >= b || b <= a) return held(posed)
+    const w = smooth((t - a) / (b - a)), [SR, ST] = flight.path(t)
+    const q = nlerp(ngbtool.matQuat(mul(ngbtool.qmat(ends[0].q), SR)), ngbtool.matQuat(mul(ngbtool.qmat(ends[1].q), SR)), w)
+    return fromRoot(posed, [ngbtool.qmat(q), add(ST, add(ends[0].d, scale(sub(ends[1].d, ends[0].d), w)))])
+  }
+  const times = [...new Set([...frameList(0, rec.length), a, b].filter((t) => t >= 0 && t <= rec.length))].sort((x, y) => x - y)
+  const [rot, pos] = propKeys(rec, model, prop.bone, at, times)
+  return withClub(rec, rot, pos, prop.bone)
 }
 
 const clubKeys = (rec: ngbtool.Record, model: Model, plan: Plan, times: number[]) => propKeys(rec, model, propOf(plan).bone, stowedAt(model, plan), times)
@@ -271,11 +357,14 @@ export function inHand(rec: ngbtool.Record, model: Model, hand: number): ngbtool
 // Bends the arm from frame a to c so the hand reaches the prop in its holster, blended in by w(t).
 function reachArm(rec: ngbtool.Record, model: Model, plan: Plan, arm: Arm, a: number, c: number, w: (t: number) => number): ngbtool.Record {
   const at = stowedAt(model, plan)
+  const prop = propOf(plan)
   const bind = ngbtool.pose(model, null, 0)
-  const grip = sub(bind[arm.hand][1], bind[propOf(plan).bone][1])
+  // where the hand is when it holds the prop at (R, T)
+  const [GR, off] = prop.grip && prop.hand !== null ? inHandFrame(model, prop) : [turn([0, 0, 0]), sub(bind[prop.bone][1], bind[arm.hand][1])]
   return bendArm(rec, model, arm, frameList(a, c), (posed) => {
     const [R, T] = at(posed)
-    return add(T, apply(R, grip))
+    const HR = mul(R, tr(GR))
+    return sub(T, apply(HR, off))
   }, w)
 }
 

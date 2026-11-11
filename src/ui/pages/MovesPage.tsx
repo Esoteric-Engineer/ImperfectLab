@@ -7,7 +7,7 @@ import * as holster from '../../core/build/holster'
 import * as reach from '../../core/build/reach'
 import { formatG } from '../../core/format'
 import { keys, label } from '../../core/game/roster'
-import { airThrowClashes, airThrows, animFiles, BASE_MOVES, copyCharacter, defaultHolster, GAMEPLAY, type Holster as HolsterPlan, HOLSTER_POSITION, HOLSTER_ROTATION, longHitStretch, longThrows, type MoveEffect, type NoThrow, PICKUP_BASES, STUN_BASES, THROW_REACH, throwReachName, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
+import { airThrowClashes, airThrows, animFiles, BASE_MOVES, copyCharacter, defaultGrip, defaultHolster, GAMEPLAY, type GripHand, type Holster as HolsterPlan, HOLSTER_POSITION, HOLSTER_ROTATION, longHitStretch, longThrows, type MoveEffect, type NoThrow, PICKUP_BASES, STUN_BASES, THROW_REACH, throwReachName, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
 import type { BoneLine, MeshData } from '../../core/preview'
 import { ColorButton, Note, NumberInput, OptionCard, ToggleCard, Warning } from '../components/common'
 import { MovePreviewDialog } from '../components/MovePreviewDialog'
@@ -740,6 +740,7 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
   const farSwapped = Boolean(c.moves.SuperAttackFar), longHit = longHitStretch(c)
   const grab = BASE_MOVES[c.base].includes('range_grab')
   const held = mv.holster !== undefined
+  const gripped = mv.grip !== undefined
   const off = mv.no_throw !== undefined
   const air = airThrows(c)
   const airReach = mv.air_throw_reach !== undefined
@@ -750,6 +751,7 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
       <OptionCard plain head={`${label(c.base)}-specific moves`} note={<>
         Whatever is fixed to game bone 39, the club/baton, is what flies. On the Materials page, fix a prop to that bone.<br />
         The cable is drawn from the forearm to the baton all the time. Setting a custom holster location requires the baton cable to be off.
+        {gripped && <><br />The club is held where it is modeled in the {mv.grip!.hand} hand (moved by the grip below) instead of in {label(c.base)}'s animated grip, and throws leave from that hand and come back to it.{mv.grip!.hand === 'left' && ' The cable runs from the right forearm, so it has to be off.'}</>}
         {farSwapped && <><br />Super attack far is swapped above, so the reach can't be changed.</>}
         {longHit && <><br />{sentence(longHit)} is stretched below, so the throw reaches can't be changed.</>}
         {mv.no_throw === 'in_hand' && <><br />With the throw off, super attack far, ranged attack and dodge exit super attack keep their animation, but the club stays in the hand and hits up close.</>}
@@ -827,9 +829,24 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
             <td className="num">forearm</td>
             <td>{held ? 'custom' : '-'}</td>
           </tr>
+          <tr>
+            <td><label className="check"><input type="checkbox" checked={gripped} onChange={(e) => {
+              if (e.target.checked) mv.grip = defaultGrip('right')
+              else delete mv.grip
+              edited()
+            }} /> Baton held in</label></td>
+            <td className="num">right hand</td>
+            <td><select disabled={!gripped} value={mv.grip?.hand ?? 'right'} onChange={(e) => {
+              const hand = e.target.value as GripHand
+              mv.grip = { ...mv.grip!, hand }
+              if (hand === 'left') mv.throw_cable = false
+              edited()
+            }}><option value="right">right hand, as modeled</option><option value="left">left hand, as modeled</option></select></td>
+          </tr>
         </tbody>
       </table>
       {held && <Holster />}
+      {gripped && <GripPlace />}
       </OptionCard>
       {grab && cat && <RangeGrab cat={cat} />}
     </>
@@ -842,6 +859,15 @@ function Holster() {
   const c = store.character
   return <HolsterPlace h={c.baseMoves.holster!} from="the chest" view="back" onChange={(next) => {
     c.baseMoves.holster = next
+    store.touch('character')
+  }} />
+}
+
+function GripPlace() {
+  const c = store.character
+  const g = c.baseMoves.grip!
+  return <HolsterPlace h={{ position: g.position, rotation: g.rotation }} from="where it is modeled, turning about its middle" view="front" kind="grip" title="Grip" what="the club" onChange={(next) => {
+    c.baseMoves.grip = { hand: g.hand, position: next.position, rotation: next.rotation }
     store.touch('character')
   }} />
 }
@@ -877,13 +903,13 @@ export function HolsterPlace({ h, from, view, kind = 'club', title = 'Holster Lo
             ))}
           </tbody>
         </table>
-        <PlacementView first={view} method="holsterPreview" args={[kind]} what="the holster" />
+        <PlacementView first={view} method="holsterPreview" args={[kind]} what={kind === 'grip' ? 'the grip' : 'the holster'} />
       </div>
     </>
   )
 }
 
-export type HolsterKind = 'club' | 'gun' | 'swap'
+export type HolsterKind = 'club' | 'gun' | 'swap' | 'grip'
 
 // The fitted model from a worker preview (holsterPreview, eyesPreview), turnable to three views.
 export function PlacementView({ first, method, args = [], what }: { first: 'back' | 'right' | 'front'; method: string; args?: unknown[]; what: string }) {

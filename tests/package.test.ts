@@ -182,6 +182,33 @@ describe('round trip', () => {
     expect(errors(d)).toContain('Daredevil')
   })
 
+  it('saves and loads the grip, which needs a prop on the club, and in the left hand the cable off', () => {
+    const c = character()
+    c.base = 'daredevil'
+    c.baseMoves = { grip: { hand: 'left', position: [0.01, -0.02, 0.03], rotation: [0, 0, 45] } }
+    const errors = (x: imperfect.Character) => imperfect.problems(x).filter(([l]) => l === 'error').map(([, m]) => m).join(' ')
+    expect(errors(c)).toContain('cable')
+    expect(errors(c)).toContain('bone 39')
+    c.materials[0].bind = 39
+    c.baseMoves.grip!.hand = 'right'
+    expect(errors(c)).toBe('')
+    c.baseMoves.grip!.hand = 'left'
+    c.baseMoves.throw_cable = false
+    expect(errors(c)).toBe('')
+    expect(imperfect.load(imperfect.save(c)).baseMoves).toEqual(c.baseMoves)
+    c.mapping.set(59, 'mixamorig:LeftHand')
+    expect(errors(c)).toContain('bone 59')
+    c.mapping.delete(59)
+    c.zButton = { stealth: null, costume: null, stats: null, size: null, bullet: null, gun: imperfect.defaultGun('left'), laser: null, impersonate: null, requires: {} }
+    expect(errors(c)).toContain('gun in the left hand')
+    c.zButton = null
+    const glb = makeGlb()
+    const read = (grip: Json) => withManifest({ 'model/model.glb': glb }, (m) => { m.base = 'daredevil'; m.base_moves = { grip } })
+    expect(imperfect.load(read({ hand: 'left' })).baseMoves.grip).toEqual(imperfect.defaultGrip('left'))
+    rejected(read({ hand: 'middle' }), 'grip.hand')
+    rejected(read({ position: [0, 0, 1] }), 'grip.position')
+  })
+
   it('saves and loads moves held apart from the holster default', () => {
     const c = character()
     c.base = 'daredevil'

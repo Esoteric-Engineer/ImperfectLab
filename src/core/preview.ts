@@ -166,6 +166,18 @@ export function holsteredTris(trisByMat: Map<number, Tri[]>, skeleton: Skeleton,
   return new Map([...trisByMat].map(([slot, tris]) => [slot, tris.map((t) => t.map((v): Tri[number] => (onClub(v[3]) ? [at(v[0]), holster.apply(R, v[1]), v[2], v[3]] : v)) as Tri)]))
 }
 
+// What is fixed to the prop bone alone, turned about its middle and moved by the grip's nudge.
+export function grippedTris(trisByMat: Map<number, Tri[]>, g: Pick<Holster, 'position' | 'rotation'>, bone = CLUB): Map<number, Tri[]> {
+  const C = holster.center(trisByMat.values(), bone)
+  const R = holster.turn(g.rotation)
+  const at = (p: number[]) => {
+    const v = holster.apply(R, [p[0] - C[0], p[1] - C[1], p[2] - C[2]])
+    return [0, 1, 2].map((k) => C[k] + g.position[k] + v[k]) as [number, number, number]
+  }
+  const onClub = (w: [number, number][]) => w.some(([b, x]) => b === bone && x > 0) && !w.some(([b, x]) => b !== bone && x > 0)
+  return new Map([...trisByMat].map(([slot, tris]) => [slot, tris.map((t) => t.map((v): Tri[number] => (onClub(v[3]) ? [at(v[0]), holster.apply(R, v[1]), v[2], v[3]] : v)) as Tri)]))
+}
+
 export function baseMeshes(source: GameSource, base: BaseCharacter, alpha = 1.0): MeshData[] {
   const [ngm, ngt, tpl] = base.bundleFiles()
   const [, models] = ngmtool.read(ngm)
