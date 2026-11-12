@@ -21,11 +21,15 @@ const HIT_KINDS = [43, 44]
 export const RETURN_EVENT = 0x53
 export const MIRROR_EVENT = 0x7e
 
-export function longThrow(rec: ngbtool.Record, model: Pick<ngmtool.Model, 'nodes'>, reach: number): ngbtool.Record {
-  const [a, b] = FLIGHT
+export function throwHold(reach: number, [a, b]: [number, number] = FLIGHT) {
   const n = Math.max(Math.ceil(reach / STEP), Math.floor((b - a + 1) / 2))
   const shift = 2 * n - (b - a)
-  const remap = (f: number) => (f <= a ? f : f >= b ? f + shift : a + ((f - a) * 2 * n) / (b - a))
+  return { n, shift, remap: (f: number) => (f <= a ? f : f >= b ? f + shift : a + ((f - a) * 2 * n) / (b - a)) }
+}
+
+export function longThrow(rec: ngbtool.Record, model: Pick<ngmtool.Model, 'nodes'>, reach: number, flight: [number, number] = FLIGHT): ngbtool.Record {
+  const [a] = flight
+  const { n, shift, remap } = throwHold(reach, flight)
   const tracks: ngbtool.Track[] = rec.tracks.map(([bone, ch, keys]) => [bone, ch, keys.map(([f, v]): ngbtool.Key => [remap(f), v])])
   const out: ngbtool.Record = { ...rec, tracks, length: rec.length + shift }
   const i39 = tracks.findIndex(([bone, ch]) => bone === CLUB && ch === 1)

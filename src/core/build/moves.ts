@@ -713,6 +713,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
   let thrown = basemoves.THROW
   if (airThrow && noThrow) throw new LabError('the air throw throws the club, but the baton throw is off')
   const flights = new Map<string, Flying>()
+  let longPick: { anim: string; reach: number } | null = null
   if (throwReach !== undefined || throwDamage || arm || keepClub || airThrow || grip) {
     const main = bundles.get('') ?? []
     const at = main.findIndex((r) => r.name.toLowerCase() === basemoves.THROW)
@@ -736,6 +737,10 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       rec.name = ownName(rec)
       own.rename(plain.name, rec.name)
       main[at] = rec
+      // plain copy for clips on the throw moves to be fitted over
+      const short = reachOf(gripped, undefined)
+      plainBundles.get('')?.push({ ...(short === plain ? plainBundles.get('')![at] : size !== 1 ? scaleRecord(short, 1 / size) : short), name: rec.name })
+      if (throwReach !== undefined) longPick = { anim: rec.name.toLowerCase(), reach: throwReach }
     }
     thrown = rec.name.toLowerCase()
     if (grip && !keepClub) flights.set(thrown, { rec, release: basemoves.RELEASE, caught: basemoves.CATCH + rec.length - plain.length, toOut: (f) => f, toSrc: (t) => t })
@@ -841,7 +846,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
         targets.set(pick.file, rt)
         for (const n of rt.notes) notes.push(`moves: ${pick.file}: ${n}`)
       }
-      let length = 0, stretch = 1
+      let length = 0, stretch = 1, held = ''
       let timed: Retimed | null | undefined
       let travelled: Retarget['travelled'] | undefined
       for (const state of move.states) {
@@ -852,21 +857,33 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
           return rec ? [[slot, rec]] : []
         })
         if (!found.length) throw new LabError(`${base.label}'s ${state} has no animation to replace`)
+        const long = longPick?.anim === m.anim.toLowerCase() ? longPick.reach : undefined
+        let flight = null as [number, number] | null, fitted = 0
         const out = found.map(([slot, rec]): [string, ngbtool.Record] => {
-          const made = rt.record(rec, pick.states?.[state] ?? pick.clip, plainModel.nodes, motionFps(m.opts), pick.timing ?? null, pick.travel ?? null)
+          const made = sizedRec(rt.record(rec, pick.states?.[state] ?? pick.clip, plainModel.nodes, motionFps(m.opts), pick.timing ?? null, pick.travel ?? null))
           if (timed === undefined) timed = rt.timed
           if (travelled === undefined) travelled = rt.travelled
-          return [slot, sizedRec(made)]
+          fitted ||= made.length
+          if (long === undefined) return [slot, made]
+          const a = Math.round(rt.warp(basemoves.RELEASE))
+          flight = [a, Math.max(a + 1, Math.round(rt.warp(basemoves.CATCH)))]
+          return [slot, basemoves.longThrow(made, models[0], long, flight)]
         })
+        stretch = found[0][1].length > 0 ? fitted / found[0][1].length : 1
+        const hold = flight && basemoves.throwHold(long!, flight)
+        if (hold) {
+          held = ` and held ${hold.shift} frames while the club flies ${formatG(long!)} m`
+          if (timed) timed = { ...timed, moved: timed.moved.map((w) => ({ ...w, from: hold.remap(w.from), to: hold.remap(w.to) })) }
+        }
         length = out[0][1].length
-        stretch = found[0][1].length > 0 ? length / found[0][1].length : 1
         const anim = ownName(out[0][1])
         for (const [slot, rec] of out) {
           const into = bundles.get(slot)!
           if (!into.some((r) => r.name.toLowerCase() === anim.toLowerCase())) into.push({ ...rec, name: anim })
         }
-        const flying = grip && (flights.get(found[0][1].name.toLowerCase()) ?? selfFlight(sizedRec(found[0][1]), models[0], size))
-        if (flying) {
+        const flying = grip && !hold && (flights.get(found[0][1].name.toLowerCase()) ?? selfFlight(sizedRec(found[0][1]), models[0], size))
+        if (grip && hold) flights.set(anim.toLowerCase(), { rec: out[0][1], release: flight![0], caught: flight![0] + 2 * hold.n, toOut: (f) => f, toSrc: (t) => t })
+        else if (flying) {
           const toOut = rt.warp
           flights.set(anim.toLowerCase(), { ...flying, toOut, toSrc: inverse(toOut, found[0][1].length) })
         }
@@ -877,7 +894,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       const cues = `${base.label}'s timing cues ${stretch === 1 ? 'kept' : `stretched ×${formatG(Math.round(stretch * 100) / 100)}`}`
       const travel = travelled ? `; travels ${formatG(Math.round(travelled.distance * 100) / 100)} m as ${base.label}'s does${travelled.shortened ? ', shortened to keep pace with the shorter clip' : ''}` : ''
       const clips = [...new Set(move.states.filter((s) => now.has(s.toLowerCase())).map((s) => pick.states?.[s] ?? pick.clip))].join(' / ')
-      notes.push(`moves: ${move.label} plays ${clips} (${length} frames; ${pick.timing !== 'clip' ? cues : timed ? hitsText(timed) : `no hits to time from the clip, so ${cues}`}${travel})`)
+      notes.push(`moves: ${move.label} plays ${clips} (${length} frames; ${pick.timing !== 'clip' ? cues : timed ? hitsText(timed) : `no hits to time from the clip, so ${cues}`}${held}${travel})`)
     }
   }
   if (idle.length) {

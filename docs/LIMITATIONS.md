@@ -83,6 +83,7 @@ So a patch of several characters fits only a few that need tuning: two with 10-l
 A Daredevil-based character's `throw_reach` (`base_moves`, [`FORMAT.md`](FORMAT.md)):
 
 - **What it hits.** The target must be in front, more than 4 m away and no more than 10 m above or below.
+- **Clips on the throw moves.** A `move_anims` clip on `SuperAttackFar`, `RangedAttack` or `DodgeExitSuperAttack` holds still while the club is out, so the move runs longer than the clip (about 27 frames at 35 m).
 - **Memory and space.** The character has its own copy of Daredevil's animations (about 2.7 MB on the disc), so a match against Daredevil loads both. It needs its own tuning file, so it takes a line in the tuning list (above).
 - **`main.dol` changes.** `fn_8019DB24` (animation time setter) is rewritten in place so that a club that hits comes back from where it hit.
 
