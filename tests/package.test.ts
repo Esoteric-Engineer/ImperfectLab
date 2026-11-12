@@ -195,6 +195,14 @@ describe('round trip', () => {
     c.baseMoves.grip!.hand = 'left'
     c.baseMoves.throw_cable = false
     expect(errors(c)).toBe('')
+    const unaimed = (x: imperfect.Character) => imperfect.problems(x).some(([l, m]) => l === 'warning' && m.includes("can't aim up or down"))
+    expect(unaimed(c)).toBe(true)
+    c.baseMoves.no_throw = 'in_hand'
+    expect(unaimed(c)).toBe(false)
+    delete c.baseMoves.no_throw
+    c.baseMoves.grip!.hand = 'right'
+    expect(unaimed(c)).toBe(false)
+    c.baseMoves.grip!.hand = 'left'
     expect(imperfect.load(imperfect.save(c)).baseMoves).toEqual(c.baseMoves)
     c.mapping.set(59, 'mixamorig:LeftHand')
     expect(errors(c)).toContain('bone 59')

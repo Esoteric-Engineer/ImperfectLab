@@ -123,6 +123,7 @@ A Daredevil-based character's `grip` (`base_moves`, [`FORMAT.md`](FORMAT.md)):
 - **Only the throws fly:** the baton throw, the super rise attack and the air throw. The super swing attack, the air attacks and the super block swing the club up to 1.2 m out on its cable; with a grip it stays in the hand, so their club hits reach less far.
 - **In the left hand the prop is drawn on bone 59** (`L Forearm prop`). Animations that aren't the character's own, such as the victim's side of an opponent's throw, leave it where it is modeled, following the left forearm. In the right hand they show it where the club would be, as with the holster.
 - **A cutscene with a new animation** is left as that animation has it.
+- **Left-hand throws can't aim up or down.** The game aims the far super attack and the air throw by bending the right arm, which the left-hand prop doesn't hang from, so its throws fly level and only hit opponents at about the same height.
 - **The cable must be off in the left hand**, since it is drawn from the right forearm.
 - **Memory and space** are as for swapped moves: the character has its own copy of the base's animations, and the prop's keys add about 280 KB to it (176 animations on a Captain America with imported moves).
 

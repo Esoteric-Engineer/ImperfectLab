@@ -845,6 +845,9 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
           </tr>
         </tbody>
       </table>
+      {gripped && mv.grip!.hand === 'left' && !off && <Warning title="Left-hand throws can't aim up or down">
+        The game aims the far super attack{air ? ' and the air throw' : ''} by bending {label(c.base)}'s right arm, so a club thrown from the left hand doesn't have much success with hitting opponents above or below Daredevil. Using the right hand is recommended.
+      </Warning>}
       {held && <Holster />}
       {gripped && <GripPlace />}
       </OptionCard>

@@ -634,6 +634,7 @@ export function problems(c: Character): Problem[] {
     if (c.baseMoves.grip.hand === 'left' && c.baseMoves.throw_cable !== false) out.push(['error', 'the baton cable runs from the right forearm, and the club is held in the left hand: set the baton cable to off on the Moves page'])
     if (!c.mapping.has(CLUB) && !c.materials.some((m) => m.include && m.bind === CLUB)) out.push(['error', `the grip holds what is fixed to game bone ${CLUB}, and nothing is: fix a prop to it on the Materials page`])
     if (c.baseMoves.grip.hand === 'left') {
+      if (!c.baseMoves.no_throw) out.push(['warning', 'a club thrown from the left hand flies level and can\'t aim up or down: hold it in the right hand to aim'])
       if (gunOf(c) && gunBone(c.base, gunOf(c)!.side) === LEFT_CLUB) out.push(['error', `a club in the left hand and a gun in the left hand both need game bone ${LEFT_CLUB}: hold one of them in the right hand`])
       if (c.mapping.has(LEFT_CLUB) || c.materials.some((m) => m.include && m.bind === LEFT_CLUB)) out.push(['error', `a club in the left hand is drawn on game bone ${LEFT_CLUB}, which something else is fixed to: fix it to another bone on the Materials page`])
     }
