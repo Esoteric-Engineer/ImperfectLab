@@ -345,9 +345,9 @@ export function effectFit(src: GameSource, baseKey: string, c: EffectChoices): E
   return out
 }
 
-// `stow` reworks the character's animation in the intros (the holster's club on the back, or the gun at the hip).
+// `stow` reworks the character's animation in the intros (club on the back, or gun at the hip), `hold` in the others (club fixed in a hand).
 export function plan(src: GameSource, base: R.BaseCharacter, c: Character, given = moveSlots(src, base, c),
-  stow: ((rec: ngbtool.Record) => ngbtool.Record) | null = null): Plan {
+  stow: ((rec: ngbtool.Record) => ngbtool.Record) | null = null, hold: ((rec: ngbtool.Record) => ngbtool.Record) | null = null): Plan {
   const out: Plan = { fields: new Map(), files: new Map(), notes: [] }
   const r = new Reader(src)
   const prefix = c.internalName.toLowerCase()
@@ -359,7 +359,7 @@ export function plan(src: GameSource, base: R.BaseCharacter, c: Character, given
     const clips = Object.entries(c.cutscenes.audio).filter(([k]) => k.startsWith(kind + '_'))
     const anims = Object.keys(c.cutscenes.animation).filter((k) => k.startsWith(kind + '_'))
     const effects = retargets.get(kind) ?? new Map<number, number>()
-    const stowed = kind === 'intro' ? stow : null
+    const stowed = kind === 'intro' ? (stow ?? hold) : hold
     if (from === base && !clips.length && !stowed && !anims.length) continue
     const avail = slots(r, kind, names)
     const clipFor = new Map<string, string>()
@@ -417,7 +417,7 @@ export function plan(src: GameSource, base: R.BaseCharacter, c: Character, given
       }
     }
     for (const [f, fid] of FIELDS[kind].entries()) out.fields.set(fid, names[f].map((v) => renamed.get(v.trim().toLowerCase())!))
-    const what = [from !== base ? `${from.label}'s` : '', clips.length ? `${clips.length} new audio` : '', anims.length ? `${anims.length} new animation${anims.length === 1 ? '' : 's'}` : '', stowed && anims.length < firsts.length ? (gunOf(c) ? 'gun holstered' : 'club on the back') : ''].filter(Boolean).join(', ')
+    const what = [from !== base ? `${from.label}'s` : '', clips.length ? `${clips.length} new audio` : '', anims.length ? `${anims.length} new animation${anims.length === 1 ? '' : 's'}` : '', stowed && anims.length < firsts.length ? (kind === 'intro' && stow ? (gunOf(c) ? 'gun holstered' : 'club on the back') : `club held in the ${c.baseMoves.grip?.hand ?? 'right'} hand`) : ''].filter(Boolean).join(', ')
     let note = `cutscenes: ${LABELS[kind].toLowerCase()} ${what}`
     if (c.cutscenes.effects[kind] === 'theirs' && from !== base) {
       const lost = missed.get(kind) ?? 0

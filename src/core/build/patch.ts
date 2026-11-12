@@ -23,7 +23,7 @@ import * as bundle from '../model/bundle'
 import { Fit, type MaterialSlots, type Tri } from '../model/fit'
 import { Model } from '../model/glb'
 import { Skeleton } from '../model/skeleton'
-import { type Character, damageStages, gunOf, hasCutscenes, image as readImage, type Material, problems, type Placement, WALL, type WallKey, type ZCostume, zTexture } from '../package/imperfect'
+import { airThrows, type Character, damageStages, gunOf, hasCutscenes, image as readImage, longThrows, type Material, problems, type Placement, WALL, type WallKey, type ZCostume, zTexture } from '../package/imperfect'
 import * as cutscenes from './cutscenes'
 import * as damage from './damage'
 import * as effects from './effects'
@@ -95,6 +95,7 @@ export class Builder {
   propCenter: [number, number, number] | null = null
   gunGeometry: gun.Geometry | null = null
   swapCenter: [number, number, number] | null = null
+  gripCenter: [number, number, number] | null = null
   shot: projectileswap.Shot | null = null
   private namer: ((old: string) => string) | null = null
 
@@ -143,6 +144,7 @@ export class Builder {
     if (this.r.cache !== null) this.r.dol = D.growEffectCache(this.r.dol, this.r.cache)
     if (mirrors(c)) this.r.dol = D.mirrorSkip(this.r.dol)
     if (splitsCharge(c)) this.r.dol = D.chargeRate(this.r.dol)
+    if (airThrows(c)) this.r.dol = D.airThrow(this.r.dol, [airThrowCharacter(c)])
     if (throwsDamage(c)) this.r.dol = D.throwDamage(this.r.dol)
     if (ownSounds(c)) this.r.dol = D.soundBanks(this.r.dol, [c.internalName])
     if (c.zButton) this.r.dol = D.zActions(this.r.dol, zCharacters([c]))
@@ -244,8 +246,10 @@ export class Builder {
     for (const m of included) {
       if (m.bind !== null && m.bind >= sk.nodes.length) throw new LabError(`material ${m.name} is bound to game bone ${m.bind}, which ${base.label} does not have`)
     }
-    const tris = f.triangles(slots)
-    ;[this.propCenter, this.gunGeometry, this.swapCenter] = propShape(c, baseModel, base.body, tris, sk)
+    const fitted = f.triangles(slots)
+    ;[this.propCenter, this.gunGeometry, this.swapCenter] = propShape(c, baseModel, base.body, fitted, sk)
+    this.gripCenter = gripCenterOf(c, fitted)
+    const tris = gripTris(c, fitted)
     const far = Object.keys(c.moveReach).length ? moves.farLimb(this.src, base, c.moveReach, c.moves) : null
     const imgs = this.materialImages(model)
     const normals = new bundle.NormalIndex(bundle.readNormals(this.src.entry('Misc/NormalTable.ngn')))
@@ -320,7 +324,7 @@ export class Builder {
       const copy = new Map([...tris].map(([k, v]) => [k, [...v]]))
       const render = bundle.renderModel(renderBase, copy, normals, nm.MODEL, [...mats, ...zs.map(([name]) => name), ...kept, ...staged.flat().map(([name]) => name)],
         renderBase.meshes.length ? renderBase.meshes[0][5] : [0, 0, 0], stats)
-      if (c.baseMoves.throw_reach !== undefined) basemoves.hitSegment(render)
+      if (longThrows(c)) basemoves.hitSegment(render)
       if (side && this.gunGeometry) render.attachments.push(gun.muzzleAttachment(gun.bone(models[0], base.body, side)[0], renderBase, this.gunGeometry))
       if (far && reach.farVolume(render, far, reach.bonesOf(sk)[far]) && !alt) {
         this.note(`reach: ${base.label}'s long hit segment (attachments 43 and 44) moves to the ${reach.LIMB_LABELS[far]}, so moves that hit with it hit from there`)
@@ -515,15 +519,29 @@ export class Builder {
     const strings = new Map(power)
     if (fields.pickup_range !== undefined) this.note(`pickup: props can be grabbed from ${fields.pickup_range} m away`)
     const onBack = this.onBack() ?? this.gunPlan()?.holster ?? null
-    if (hasCutscenes(c.cutscenes) || onBack) {
+    const grip = this.gripProp()
+    if (hasCutscenes(c.cutscenes) || onBack || grip) {
       let stow: ((rec: ngbtool.Record) => ngbtool.Record) | null = null
-      if (onBack) {
+      let hold: ((rec: ngbtool.Record) => ngbtool.Record) | null = null
+      if (onBack || grip) {
         const base0 = ngmtool.read(this.base.bundleFiles()[0])[1][0]
         const own = gunOf(c) ? gun.rig(base0, this.base.body, gunSide(c), gunSwaps(c)) : base0
-        const model = c.size !== 1 ? bundle.scaleModel(own, c.size) : own, plan = holster.sized(onBack, c.size)
-        stow = (rec) => holster.stow(rec, model, plan)
+        const model = c.size !== 1 ? bundle.scaleModel(own, c.size) : own
+        if (onBack) {
+          const plan = holster.sized(onBack, c.size)
+          stow = (rec) => holster.withTwin(holster.stow(rec, model, plan), model, plan.prop ?? holster.CLUB_PROP)
+        }
+        if (grip) {
+          const prop = holster.sizedProp(grip, c.size)
+          hold = (rec) => holster.withTwin(holster.holdProp(rec, model, prop), model, prop)
+          // the club holster's intro keeps the club on the back; the gun's still holds it
+          if (stow && gunOf(c)) {
+            const gunStow = stow
+            stow = (rec) => hold!(gunStow(rec))
+          }
+        }
       }
-      const cuts = cutscenes.plan(this.src, this.base, c, this.moveFx?.slots ?? cutscenes.moveSlots(this.src, this.base, c), stow)
+      const cuts = cutscenes.plan(this.src, this.base, c, this.moveFx?.slots ?? cutscenes.moveSlots(this.src, this.base, c), stow, hold)
       for (const [fid, names] of cuts.fields) strings.set(fid, names)
       for (const [k, v] of cuts.files) this.r.adds.set(k, v)
       for (const n of cuts.notes) this.note(n)
@@ -539,7 +557,12 @@ export class Builder {
 
   // The holster's plan, once the model has given the prop's middle.
   onBack(): holster.Plan | null {
-    return onBackPlan(this.c, this.propCenter)
+    return onBackPlan(this.c, this.propCenter, this.gripProp())
+  }
+
+  // The club held fixed in a hand, once the model has given the club's middle.
+  gripProp(): holster.Prop | null {
+    return gripPropOf(this.c, ngmtool.read(this.base.bundleFiles()[0])[1][0], this.base.body, this.gripCenter)
   }
 
   // The gun's plan, once the model has given the gun's middle and shape.
@@ -564,7 +587,7 @@ export class Builder {
     const fx = Object.keys(c.moveReach).length ? new effects.Effects(this.src.entry('Misc/game.nfx')) : null
     const shooter = this.gunPlan()
     const anims = animsOf(c, c.glb ? (this.model ?? new Model(c.glb)) : null)
-    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, this.onBack(), throwsDamage(c), shooter, boneShots(c) ? projectiles.LAUNCH_INDEX : null, anims, noShots(c), noThrow(c))
+    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, this.onBack(), throwsDamage(c), shooter, boneShots(c) ? projectiles.LAUNCH_INDEX : null, anims, noShots(c), noThrow(c), airThrowPlan(c), this.gripProp())
     if (shooter) this.r.gun = this.gunEntry(shooter)
     for (const [k, v] of m.files) this.r.adds.set(k, v)
     if (thrown !== undefined) this.note(`baton throw: reaches ${thrown} m (${this.base.label}'s about 8)`)
@@ -710,7 +733,7 @@ export class Builder {
 
 // Whether the character gets its own motion set and animation bundles (Builder.motions).
 export function ownMotions(c: Character): boolean {
-  return gunOf(c) !== null || c.baseMoves.throw_reach !== undefined || c.baseMoves.holster !== undefined || throwsDamage(c) || Object.keys(c.moves).length > 0 || Object.keys(c.moveAnims).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1 || boneShots(c) || c.projectile.remove || c.baseMoves.no_throw !== undefined
+  return gunOf(c) !== null || c.baseMoves.throw_reach !== undefined || c.baseMoves.holster !== undefined || c.baseMoves.grip !== undefined || throwsDamage(c) || Object.keys(c.moves).length > 0 || Object.keys(c.moveAnims).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1 || boneShots(c) || c.projectile.remove || c.baseMoves.no_throw !== undefined || airThrows(c)
 }
 
 export const boneShots = (c: Character): boolean => c.projectile.on && c.projectile.from === 'bone'
@@ -732,9 +755,31 @@ export function propShape(c: Character, baseModel: ngmtool.Model, body: string, 
   return [holster.center(tris.values(), prop.bone), gun.geometry(tris.values(), prop.bone, sk.nodes[prop.hand!].pos), swap]
 }
 
-export function onBackPlan(c: Character, center: ngbtool.Vec3 | null): holster.Plan | null {
+export function onBackPlan(c: Character, center: ngbtool.Vec3 | null, grip: holster.Prop | null = null): holster.Plan | null {
   const h = c.baseMoves.holster
-  return h && center ? { ...h, center } : null
+  return h && center ? { ...h, center, ...(grip ? { prop: grip } : {}) } : null
+}
+
+export const gripCenterOf = (c: Character, tris: Map<number, Tri[]>): ngbtool.Vec3 | null => (c.baseMoves.grip ? holster.center(tris.values(), basemoves.CLUB) : null)
+
+// In the left hand, what is fixed to the club is drawn on the left forearm prop, and the club (its hit volume) follows its middle.
+export function gripPropOf(c: Character, baseModel: ngmtool.Model, body: string, center: ngbtool.Vec3 | null): holster.Prop | null {
+  const g = c.baseMoves.grip
+  if (!g || !center) return null
+  const side: holster.Side = g.hand === 'left' ? 'L' : 'R'
+  const hand = new Skeleton(baseModel, body).node(`${side}.hand`)
+  if (hand === undefined) throw new LabError(`the skeleton has no ${g.hand} hand to hold the club`)
+  const grip = { position: g.position, rotation: g.rotation, center }
+  if (side === 'R') return { bone: basemoves.CLUB, anchor: holster.CHEST, side, hand, grip }
+  if (basemoves.LEFT_CLUB >= baseModel.nodes.length) throw new LabError(`the skeleton has no game bone ${basemoves.LEFT_CLUB} to hold the club in the left hand`)
+  return { bone: basemoves.LEFT_CLUB, anchor: holster.CHEST, side, hand, grip, twin: basemoves.CLUB }
+}
+
+export function gripTris(c: Character, tris: Map<number, Tri[]>): Map<number, Tri[]> {
+  if (c.baseMoves.grip?.hand !== 'left') return tris
+  const to = basemoves.LEFT_CLUB
+  const moved = (w: [number, number][]): [number, number][] => w.map(([b, x]) => [b === basemoves.CLUB ? to : b, x])
+  return new Map([...tris].map(([slot, list]) => [slot, list.map((t) => t.map((v): Tri[number] => [v[0], v[1], v[2], moved(v[3])]) as Tri)]))
 }
 
 export function gunPlanOf(c: Character, baseModel: ngmtool.Model, body: string, center: ngbtool.Vec3 | null, geometry: gun.Geometry | null,
@@ -749,7 +794,9 @@ export function gunPlanOf(c: Character, baseModel: ngmtool.Model, body: string, 
 
 // A stretched hit that comes back from where it lands needs RETURN_ABILITY and main.dol's mirrored skip.
 export const stretchReturns = (c: Character) => reach.RETURNS.some((id) => c.moveReach[id])
-export const mirrors = (c: Character) => c.baseMoves.throw_reach !== undefined || stretchReturns(c)
+export const mirrors = (c: Character) => longThrows(c) || stretchReturns(c)
+export const airThrowCharacter = (c: Character): D.AirThrowCharacter => ({ internal: c.internalName, drop: basemoves.AIM_FROM * c.size - basemoves.AIM_AT })
+export const airThrowPlan = (c: Character): moves.AirThrow | null => (c.baseMoves.air_throw ? { reach: c.baseMoves.air_throw_reach } : null)
 export const splitsCharge = (c: Character) => c.gameplay.energy_regen !== undefined || c.gameplay.energy_charge !== undefined
 export const throwsDamage = (c: Character) => c.gameplay.attack_damage_throw !== undefined
 export const impersonates = (c: Character) => Boolean(c.zButton?.impersonate && Object.values(c.zButton.impersonate).some(Boolean))
@@ -848,6 +895,7 @@ export function report(characters: Character | Character[], result: Result): str
   if (chars.length === 1) lines.push('main.dol: roster record 19, select-screen limits 18 -> 19')
   else lines.push(`main.dol: roster records 19 to ${18 + chars.length} in a new data section, select-screen limits 18 -> ${18 + chars.length}`, `main.dol: arena starts at 0x${D.arenaLo(result.dol!).toString(16).toUpperCase()}`)
   if (chars.some(mirrors)) lines.push('main.dol: fn_8019DB24 mirrors a long throw\'s or stretch\'s return on a hit')
+  if (chars.some(airThrows)) lines.push('main.dol: fn_800DDCB4 aims the air throw\'s super jump attack at the opponent\'s height, and event 0x7F clears that aim')
   if (chars.some(splitsCharge)) lines.push('main.dol: fn_8009D71C adds tuning field 245 to the energy recharge rate while holding R')
   if (chars.some(throwsDamage)) lines.push('main.dol: fn_800E1788 reads tuning field 217 for an animation\'s damage event with param 5 (the baton throw)')
   if (chars.some(ownSounds)) lines.push('main.dol: fn_80114420 loads a new character\'s own sound bank, and one bank per type ID')
@@ -874,4 +922,3 @@ export function report(characters: Character | Character[], result: Result): str
   }
   return lines.join('\n') + '\n'
 }
-

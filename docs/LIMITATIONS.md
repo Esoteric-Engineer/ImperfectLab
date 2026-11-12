@@ -83,6 +83,7 @@ So a patch of several characters fits only a few that need tuning: two with 10-l
 A Daredevil-based character's `throw_reach` (`base_moves`, [`FORMAT.md`](FORMAT.md)):
 
 - **What it hits.** The target must be in front, more than 4 m away and no more than 10 m above or below.
+- **Clips on the throw moves.** A `move_anims` clip on `SuperAttackFar`, `RangedAttack` or `DodgeExitSuperAttack` holds still while the club is out, so the move runs longer than the clip (about 27 frames at 35 m).
 - **Memory and space.** The character has its own copy of Daredevil's animations (about 2.7 MB on the disc), so a match against Daredevil loads both. It needs its own tuning file, so it takes a line in the tuning list (above).
 - **`main.dol` changes.** `fn_8019DB24` (animation time setter) is rewritten in place so that a club that hits comes back from where it hit.
 
@@ -91,6 +92,13 @@ Turning the throw off (`no_throw`):
 - **`in_hand`** pins the club to the hand from the release. The club's long hit volume stays on, so the move hits up close, and `attack_damage_throw` still applies.
 - **`attack_far`** plays `Daredevil_MobilityAttack.nad` (the Attack far lunge) instead, with its damage. Super attack far still costs its energy.
 - **The CPU still attempts to use these moves from afar.**
+- **Memory** is the same as a swapped move.
+
+Throwing from the air (`air_throw`, `air_throw_reach`):
+
+- **Only the rising super jump attack throws.** Attack pressed later in the jump still plays `SuperJumpAttackDesc`.
+- **It throws at the nearest other player**, aimed when the attack starts, so an opponent who moves away can still be missed.
+- **Aim is limited to 45° up or down.**
 - **Memory** is the same as a swapped move.
 
 ## Holster
@@ -105,6 +113,19 @@ A Daredevil-based character's `holster` (`base_moves`, [`FORMAT.md`](FORMAT.md))
 - **The cable must be off**, since it is drawn from the forearm to the club.
 - **The fingers keep their grip** from the `IKClaws` clip, which the game plays over every animation, even with the prop on the back.
 - **Memory and space** are as for swapped moves: the character has its own copy of the base's animations, and the club's keys on the back add about 115 KB to it.
+
+## Grip
+
+A Daredevil-based character's `grip` (`base_moves`, [`FORMAT.md`](FORMAT.md)):
+
+- **The prop doesn't move within the hand.** Daredevil's twirls are gone, and so is the club resting along the forearm outside power mode.
+- **A left-hand throw starts a little to the right of the body** before curving back.
+- **Only the throws fly:** the baton throw, the super rise attack and the air throw. The super swing attack, the air attacks and the super block swing the club up to 1.2 m out on its cable; with a grip it stays in the hand, so their club hits reach less far.
+- **In the left hand the prop is drawn on bone 59** (`L Forearm prop`). Animations that aren't the character's own, such as the victim's side of an opponent's throw, leave it where it is modeled, following the left forearm. In the right hand they show it where the club would be, as with the holster.
+- **A cutscene with a new animation** is left as that animation has it.
+- **Left-hand throws can't aim up or down.** The game aims the far super attack and the air throw by bending the right arm, which the left-hand prop doesn't hang from, so its throws fly level and only hit opponents at about the same height.
+- **The cable must be off in the left hand**, since it is drawn from the right forearm.
+- **Memory and space** are as for swapped moves: the character has its own copy of the base's animations, and the prop's keys add about 280 KB to it (176 animations on a Captain America with imported moves).
 
 ## Gun
 

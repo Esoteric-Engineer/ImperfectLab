@@ -7,7 +7,7 @@ import * as nottool from '../mnroi/nottool'
 
 const DEFAULTS: [number, number][] = [[R.P_RADIUS, 0.4], [R.P_HEIGHT, 1.92]]
 
-const isRoot = (bone: number, ch: number) => (bone & 0xffff) === 0 && ch === 1
+export const isRoot = (bone: number, ch: number) => (bone & 0xffff) === 0 && ch === 1
 
 // A root that leaves the ground keeps the base's travel.
 export const airborne = (rec: ngbtool.Record) => rec.tracks.some(([bone, ch, keys]) => isRoot(bone, ch) && keys.some(([, v]) => Math.abs(ngbtool.translation(v)[2]) > 0.01))

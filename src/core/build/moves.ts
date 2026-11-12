@@ -234,11 +234,11 @@ export function animations(cat: Catalog, base: string, move: Move): (string | nu
 }
 
 // The moves that hit with each damage value, by the animations the character ends up with (picked: move id -> base), then the baton throw's when it has its own.
-export function damageMoves(cat: Catalog, base: string, picked: Record<string, string>, ownThrow = false): Move[][] {
+export function damageMoves(cat: Catalog, base: string, picked: Record<string, string>, ownThrow = false, airThrow = false): Move[][] {
   const out: Move[][] = [...damage.KEYS, damage.THROW_KEY].map(() => [])
   for (const move of MOVES) {
     const from = picked[move.id] ?? base
-    const anims = animations(cat, from, move)
+    const anims = airThrow && from === base && move.id === basemoves.AIR_STATE ? move.states.map(() => basemoves.THROW) : animations(cat, from, move)
     if (!anims) continue
     const hits = (a: string) => (ownThrow && from === base && a === basemoves.THROW ? [damage.THROW_PARAM] : cat[from].strikes?.[a])
     const ts = new Set(move.states.flatMap((s, i) => (anims[i] ? damage.tiers(s, hits(anims[i]!.toLowerCase())) : [])))
@@ -626,6 +626,49 @@ export interface MotionFiles {
   model: ngmtool.Model
 }
 
+export interface AirThrow {
+  reach?: number
+}
+
+// A record that throws the club: its source (whose club path it flies), the source's release and catch, and frame maps both ways.
+interface Flying {
+  rec: ngbtool.Record
+  release: number
+  caught: number
+  toOut: (f: number) => number
+  toSrc: (t: number) => number
+}
+
+// club offsets from the forearm past this (× size) are a throw; the cable swings reach 1.2 m, the throws 8 m and more
+const FLYING = 2
+
+function inverse(fn: (f: number) => number, hi: number): (t: number) => number {
+  return (t) => {
+    let lo = 0, up = hi
+    for (let i = 0; i < 40; i++) {
+      const mid = (lo + up) / 2
+      if (fn(mid) < t) lo = mid
+      else up = mid
+    }
+    return (lo + up) / 2
+  }
+}
+
+// A throw found in the record itself (one no other pass named): from where the club leaves the hand to where it's back.
+function selfFlight(rec: ngbtool.Record, model: Pick<ngmtool.Model, 'nodes'>, size: number): Flying | null {
+  const keys = rec.tracks.find(([b, ch]) => (b & 0xffff) === basemoves.CLUB && ch === 1)?.[2]
+  if (!keys?.length || basemoves.CLUB >= model.nodes.length) return null
+  const lin = keys.map(([f, v]): [number, ngbtool.Vec3] => [f, ngbtool.translation(v)])
+  const d = holster.frameList(0, rec.length).map((t): [number, number] => [t, Math.hypot(...ngbtool.sample(lin, t))])
+  const out = d.map(([, x]) => x > FLYING * size)
+  const first = out.indexOf(true), last = out.lastIndexOf(true)
+  if (first < 0) return null
+  let a = first, b = last
+  while (a > 0 && d[a - 1][1] < d[a][1]) a--
+  while (b < d.length - 1 && d[b + 1][1] < d[b][1]) b++
+  return { rec, release: d[a][0], caught: d[b][0], toOut: (f) => f, toSrc: (t) => t }
+}
+
 export interface NoShots {
   melee: boolean
   keep: string[]
@@ -638,7 +681,8 @@ export const MELEE_SWAP = ['SuperAttack1', 'SuperAttack2', 'SuperAttack3', 'Supe
 export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: string, moves: Record<string, string>, throwReach?: number,
   choice: Record<string, MoveEffect> = {}, plan: EffectPlan | null = null, stretches: Record<string, MoveReach> = {}, fx: Effects | null = null,
   size = 1, idle: string[] = [], onBack: holster.Plan | null = null, throwDamage = false, shooter: gun.Plan | null = null,
-  spawn: number | null = null, anims: MoveAnims | null = null, noShots: NoShots | null = null, noThrow: NoShots | null = null): MotionFiles {
+  spawn: number | null = null, anims: MoveAnims | null = null, noShots: NoShots | null = null, noThrow: NoShots | null = null, airThrow: AirThrow | null = null,
+  grip: holster.Prop | null = null): MotionFiles {
   const set = motionSetOf(base), stem = stemOf(set), name = internal.toLowerCase()
   const own = nmstool.parse(src.entry(`Motions/${set}`))
   const bundles = loadBundles(src, stem)
@@ -667,24 +711,65 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
   const keepClub = noThrow !== null && !noThrow.melee
   if (noThrow && throwReach !== undefined) throw new LabError('the baton throw reach does nothing once the throw is off')
   let thrown = basemoves.THROW
-  if (throwReach !== undefined || throwDamage || arm || keepClub) {
+  if (airThrow && noThrow) throw new LabError('the air throw throws the club, but the baton throw is off')
+  const flights = new Map<string, Flying>()
+  let longPick: { anim: string; reach: number } | null = null
+  if (throwReach !== undefined || throwDamage || arm || keepClub || airThrow || grip) {
     const main = bundles.get('') ?? []
     const at = main.findIndex((r) => r.name.toLowerCase() === basemoves.THROW)
     if (at < 0) throw new LabError(`${base.label}'s animations have no ${basemoves.THROW}`)
     let rec = main[at]
     if (keepClub) rec = holster.inHand(rec, models[0], holster.armOf(new Skeleton(models[0], base.body)).hand)
-    if (arm) {
+    if (arm && !grip) {
       const anim = own.motions().get('powerstand')?.anim.toLowerCase()
       const stand = main.find((r) => r.name.toLowerCase() === anim)
       if (!stand) throw new LabError(`${base.label}'s animations have no power-stand to take the club's grip from`)
       rec = holster.regrip(rec, models[0], stand, arm.hand)
     }
-    if (throwReach !== undefined) rec = basemoves.longThrow(rec, models[0], throwReach)
-    if (throwDamage) rec = damage.throwRecord(rec)
-    rec.name = ownName(rec)
-    own.rename(main[at].name, rec.name)
-    main[at] = rec
+    const gripped = rec
+    const reachOf = (r: ngbtool.Record, reach: number | undefined) => {
+      const out = reach !== undefined ? basemoves.longThrow(r, models[0], reach) : r
+      return throwDamage ? damage.throwRecord(out) : out
+    }
+    rec = reachOf(gripped, throwReach)
+    const plain = main[at]
+    if (rec !== plain) {
+      rec.name = ownName(rec)
+      own.rename(plain.name, rec.name)
+      main[at] = rec
+      // plain copy for clips on the throw moves to be fitted over
+      const short = reachOf(gripped, undefined)
+      plainBundles.get('')?.push({ ...(short === plain ? plainBundles.get('')![at] : size !== 1 ? scaleRecord(short, 1 / size) : short), name: rec.name })
+      if (throwReach !== undefined) longPick = { anim: rec.name.toLowerCase(), reach: throwReach }
+    }
     thrown = rec.name.toLowerCase()
+    if (grip && !keepClub) flights.set(thrown, { rec, release: basemoves.RELEASE, caught: basemoves.CATCH + rec.length - plain.length, toOut: (f) => f, toSrc: (t) => t })
+    if (airThrow) {
+      const recOf = (state: string) => {
+        const anim = mine.get(state.toLowerCase())?.anim.toLowerCase()
+        const r = main.find((r) => r.name.toLowerCase() === anim)
+        if (!r) throw new LabError(`${base.label}'s animations have no ${state} for the air throw`)
+        return r
+      }
+      const sk = new Skeleton(models[0], base.body)
+      const thighs = ['L.thigh', 'R.thigh'].map((r) => sk.node(r))
+      if (thighs.some((n) => n === undefined)) throw new LabError(`${base.label}'s skeleton has no thighs to hold the legs of the air throw by`)
+      const legs = new Set<number>(thighs as number[])
+      models[0].nodes.forEach(([, , parent], i) => {
+        if (legs.has(parent)) legs.add(i)
+      })
+      const state = mine.get(basemoves.AIR_STATE.toLowerCase())
+      if (!state) throw new LabError(`${base.label} has no super jump attack to throw from`)
+      const reach = airThrow.reach ?? throwReach
+      const flown = reach === throwReach ? rec : reachOf(gripped, reach)
+      const air = basemoves.airThrow(flown, basemoves.CATCH + flown.length - plain.length, recOf('SuperJump'), [...legs], recOf(basemoves.AIR_STATE), size)
+      air.name = ownName(air)
+      main.push(air)
+      if (grip) flights.set(air.name.toLowerCase(), { rec: air, release: basemoves.RELEASE, caught: basemoves.CATCH + flown.length - plain.length, toOut: (f) => f, toSrc: (t) => t })
+      displaced.add(state.anim.toLowerCase())
+      own.set({ ...state, anim: air.name })
+      notes.push(`air throw: the super jump attack throws the club${reach !== undefined ? ` ${formatG(reach)} m` : ''}, at the nearest opponent`)
+    }
   }
   const shots = Object.keys(moves).length ? projectiles.filled(new tuning.Tuning(src, base)) : []
   for (const [id, from] of Object.entries(moves)) {
@@ -761,7 +846,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
         targets.set(pick.file, rt)
         for (const n of rt.notes) notes.push(`moves: ${pick.file}: ${n}`)
       }
-      let length = 0, stretch = 1
+      let length = 0, stretch = 1, held = ''
       let timed: Retimed | null | undefined
       let travelled: Retarget['travelled'] | undefined
       for (const state of move.states) {
@@ -772,18 +857,35 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
           return rec ? [[slot, rec]] : []
         })
         if (!found.length) throw new LabError(`${base.label}'s ${state} has no animation to replace`)
+        const long = longPick?.anim === m.anim.toLowerCase() ? longPick.reach : undefined
+        let flight = null as [number, number] | null, fitted = 0
         const out = found.map(([slot, rec]): [string, ngbtool.Record] => {
-          const made = rt.record(rec, pick.states?.[state] ?? pick.clip, plainModel.nodes, motionFps(m.opts), pick.timing ?? null, pick.travel ?? null)
+          const made = sizedRec(rt.record(rec, pick.states?.[state] ?? pick.clip, plainModel.nodes, motionFps(m.opts), pick.timing ?? null, pick.travel ?? null))
           if (timed === undefined) timed = rt.timed
           if (travelled === undefined) travelled = rt.travelled
-          return [slot, sizedRec(made)]
+          fitted ||= made.length
+          if (long === undefined) return [slot, made]
+          const a = Math.round(rt.warp(basemoves.RELEASE))
+          flight = [a, Math.max(a + 1, Math.round(rt.warp(basemoves.CATCH)))]
+          return [slot, basemoves.longThrow(made, models[0], long, flight)]
         })
+        stretch = found[0][1].length > 0 ? fitted / found[0][1].length : 1
+        const hold = flight && basemoves.throwHold(long!, flight)
+        if (hold) {
+          held = ` and held ${hold.shift} frames while the club flies ${formatG(long!)} m`
+          if (timed) timed = { ...timed, moved: timed.moved.map((w) => ({ ...w, from: hold.remap(w.from), to: hold.remap(w.to) })) }
+        }
         length = out[0][1].length
-        stretch = found[0][1].length > 0 ? length / found[0][1].length : 1
         const anim = ownName(out[0][1])
         for (const [slot, rec] of out) {
           const into = bundles.get(slot)!
           if (!into.some((r) => r.name.toLowerCase() === anim.toLowerCase())) into.push({ ...rec, name: anim })
+        }
+        const flying = grip && !hold && (flights.get(found[0][1].name.toLowerCase()) ?? selfFlight(sizedRec(found[0][1]), models[0], size))
+        if (grip && hold) flights.set(anim.toLowerCase(), { rec: out[0][1], release: flight![0], caught: flight![0] + 2 * hold.n, toOut: (f) => f, toSrc: (t) => t })
+        else if (flying) {
+          const toOut = rt.warp
+          flights.set(anim.toLowerCase(), { ...flying, toOut, toSrc: inverse(toOut, found[0][1].length) })
         }
         displaced.add(m.anim.toLowerCase())
         own.set({ state: m.state, anim, opts: m.opts })
@@ -792,7 +894,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       const cues = `${base.label}'s timing cues ${stretch === 1 ? 'kept' : `stretched ×${formatG(Math.round(stretch * 100) / 100)}`}`
       const travel = travelled ? `; travels ${formatG(Math.round(travelled.distance * 100) / 100)} m as ${base.label}'s does${travelled.shortened ? ', shortened to keep pace with the shorter clip' : ''}` : ''
       const clips = [...new Set(move.states.filter((s) => now.has(s.toLowerCase())).map((s) => pick.states?.[s] ?? pick.clip))].join(' / ')
-      notes.push(`moves: ${move.label} plays ${clips} (${length} frames; ${pick.timing !== 'clip' ? cues : timed ? hitsText(timed) : `no hits to time from the clip, so ${cues}`}${travel})`)
+      notes.push(`moves: ${move.label} plays ${clips} (${length} frames; ${pick.timing !== 'clip' ? cues : timed ? hitsText(timed) : `no hits to time from the clip, so ${cues}`}${held}${travel})`)
     }
   }
   if (idle.length) {
@@ -968,17 +1070,12 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     notes.push(`projectile: ${moved} animation${moved === 1 ? '' : 's'} launch from the new point`)
   }
   if (shooter) notes.push(gunMoves(src, base, own, bundles, models[0], shooter, size))
-  const carried = onBack ?? shooter?.holster ?? null
-  if (carried) {
-    const plan = holster.sized(carried, size)
-    const pinned = plan.prop?.hand != null
-    const holdArm = holster.armOf(new Skeleton(models[0], base.body), plan.prop?.side)
+  // Reworks every played record whose role isn't null, one copy per role and record.
+  const rework = (roleOf: (m: nmstool.Motion) => holster.Role | null, make: (role: holster.Role, anim: string, rec: ngbtool.Record) => ngbtool.Record): number => {
     const groups = new Map<string, [holster.Role, string, nmstool.Motion[]]>()
     for (const m of resolved(src, own, holds(bundles)).values()) {
-      const own = holster.role(m.state)
-      const picked = carried.drawn?.[MOVE_OF.get(m.state.toLowerCase()) ?? '']
-      const role = shooter ? (own === null || own === 'free' ? own : 'stowed') : (own === 'stowed' || own === 'drawn') && picked !== undefined ? (picked ? 'drawn' : 'stowed') : own
-      if (role === null || (role === 'drawn' && !pinned)) continue
+      const role = roleOf(m)
+      if (role === null) continue
       const key = `${role} ${m.anim.toLowerCase()}`
       if (!groups.has(key)) groups.set(key, [role, m.anim.toLowerCase(), []])
       groups.get(key)![2].push(m)
@@ -990,12 +1087,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
         return rec ? [[slot, rec]] : []
       })
       if (!found.length) continue
-      const out = found.map(([, rec]) => {
-        if (role === 'stowed') return holster.stow(rec, models[0], plan)
-        if (role === 'drawn') return holster.hold(rec, models[0], plan)
-        if (role === 'free') return holster.free(rec, plan.prop?.bone)
-        return holster.draw(rec, models[0], plan, holdArm, role)
-      })
+      const out = found.map(([, rec]) => make(role, anim, rec))
       const named = ownName(out[0])
       found.forEach(([slot], i) => {
         const into = bundles.get(slot)!
@@ -1005,10 +1097,55 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
       displaced.add(anim)
       held++
     }
+    return held
+  }
+  const sizedGrip = grip && holster.sizedProp(grip, size)
+  let thrownHeld = 0
+  const gripped = (prop: holster.Prop, anim: string, rec: ngbtool.Record): ngbtool.Record => {
+    const flying = flights.get(anim) ?? selfFlight(rec, models[0], size)
+    if (!flying) return holster.holdProp(rec, models[0], prop)
+    thrownHeld++
+    return holster.throwHeld(rec, models[0], prop, holster.flightOf(models[0], flying.rec, flying.release, flying.caught, flying.toSrc, flying.toOut))
+  }
+  const handName = (prop: holster.Prop) => (prop.side === 'L' ? 'left' : 'right')
+  // a club held fixed is left alone by the IK poses played over the moves
+  const gripRole = (state: string, own: holster.Role | null): holster.Role | null => {
+    const s = state.toLowerCase()
+    return grip && !s.includes('victim') && s.startsWith('ik') ? 'free' : own
+  }
+  const twinned = (prop: holster.Prop | undefined, role: holster.Role, rec: ngbtool.Record) =>
+    prop?.twin === undefined ? rec : role === 'free' ? holster.free(rec, prop.twin) : holster.withTwin(rec, models[0], prop)
+  const carried = onBack ?? shooter?.holster ?? null
+  if (carried) {
+    const plan = holster.sized(carried, size)
+    const pinned = plan.prop?.hand != null
+    const holdArm = holster.armOf(new Skeleton(models[0], base.body), plan.prop?.side)
+    const held = rework((m) => {
+      const own = gripRole(m.state, holster.role(m.state))
+      const picked = carried.drawn?.[MOVE_OF.get(m.state.toLowerCase()) ?? '']
+      const role = shooter ? (own === null || own === 'free' ? own : 'stowed') : (own === 'stowed' || own === 'drawn') && picked !== undefined ? (picked ? 'drawn' : 'stowed') : own
+      return role === null || (role === 'drawn' && !pinned) ? null : role
+    }, (role, anim, rec) => {
+      const out = role === 'stowed' ? holster.stow(rec, models[0], plan)
+        : role === 'drawn' ? (grip && !shooter ? gripped(plan.prop!, anim, rec) : holster.hold(rec, models[0], plan))
+          : role === 'free' ? holster.free(rec, plan.prop?.bone)
+            : holster.draw(rec, models[0], plan, holdArm, role)
+      return twinned(plan.prop, role, out)
+    })
     notes.push(shooter
       ? `gun: holstered ${gun.PLACE_TEXT[shooter.place]} (${held} animations), and drawn while Z is held${shooter.swap ? `, when what the ${shooter.holster.prop!.side === 'R' ? 'right' : 'left'} hand holds (game bone ${shooter.swap.bone}) goes into the holster in its place` : ''}`
-      : `holster: ${base.label}'s club rides on the back outside power mode (${held} animations); power-on draws it and power-off puts it back; the baton throw's catch ends in the power-stand grip`)
+      : grip
+        ? `holster: ${base.label}'s club rides on the back outside power mode (${held} animations); power-on draws it with the ${handName(grip)} hand and power-off puts it back`
+        : `holster: ${base.label}'s club rides on the back outside power mode (${held} animations); power-on draws it and power-off puts it back; the baton throw's catch ends in the power-stand grip`)
   }
+  if (sizedGrip && (!onBack || shooter)) {
+    const held = rework((m) => {
+      const r = gripRole(m.state, holster.role(m.state))
+      return r === null || r === 'free' ? r : 'drawn'
+    }, (role, anim, rec) => twinned(sizedGrip, role, role === 'free' ? holster.free(rec, sizedGrip.bone) : gripped(sizedGrip, anim, rec)))
+    notes.push(`grip: ${base.label}'s club stays where it is modeled in the ${handName(grip!)} hand (${held} animations)`)
+  }
+  if (grip && thrownHeld) notes.push(`grip: ${thrownHeld} throw animation${thrownHeld === 1 ? '' : 's'} throw the club from the ${handName(grip)} hand and catch it there`)
   // the base's records the moves replaced, unless another state still plays them
   const used = new Set([...resolved(src, own, () => true).values()].map((m) => m.anim.toLowerCase()))
   for (const l of own.lines) if (l.motion) used.add(l.motion.anim.toLowerCase())

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { animChoice, animGlb, animsOf, ClipFile, clipList, guessTurn, parseChoice, reduce, Retarget } from '../src/core/build/moveanim'
+import * as basemoves from '../src/core/build/basemoves'
 import * as moves from '../src/core/build/moves'
 import * as reach from '../src/core/build/reach'
 import { sha256 } from '@noble/hashes/sha2.js'
@@ -381,5 +382,35 @@ describe.skipIf(!ISO)('retargeting a clip', () => {
     const t = s.movePreview({ ...c, moveAnims: {} }, 'PowerOn', pick, 'clip') as MovePreview
     expect(t.notes.some((n) => n.includes('no hits to time from the clip'))).toBe(true)
     expect(Object.keys(t.hitBones).sort()).toEqual(['left_arm', 'left_leg', 'right_arm', 'right_leg'])
+  })
+
+  it("plays a clip on Daredevil's throw moves over the long throw, held while the club flies at the base's pace", () => {
+    const src = gameSource()
+    const base = new R.BaseCharacter(src, 'daredevil')
+    const c = imperfect.newCharacter()
+    c.internalName = 'Synth'
+    c.base = 'daredevil'
+    c.glb = makeGlb()
+    const auto = mapping.autoMap(new Model(c.glb), Skeleton.ofBase(base))
+    c.mapping = auto.mapping
+    c.overrides = auto.overrides
+    c.files = new Map([['animations/hero.glb', animGlb(clipGlb())]])
+    c.moveAnims = Object.fromEntries(basemoves.THROW_MOVES.map((id) => [id, { file: 'animations/hero.glb', clip: 'bend' }]))
+    const mf = moves.motionFiles(src, base, c.internalName, {}, 35, {}, null, {}, null, 1, [], null, false, null, null, animsOf(c, new Model(c.glb)))
+    const model = ngmtool.read(base.bundleFiles()[0])[1][0]
+    for (const id of basemoves.THROW_MOVES) {
+      const played = moves.played(src, mf, c.internalName, moves.MOVE_IDS.get(id)!)
+      expect(played.length).toBeGreaterThan(0)
+      for (const { rec } of played) {
+        expect(rec.events.some(([, t]) => t === basemoves.MIRROR_EVENT)).toBe(true)
+        const club = Array.from({ length: rec.length + 1 }, (_, f) => ngbtool.pose(model, rec, f)[basemoves.CLUB][1])
+        const steps = club.slice(1).map((p, f) => Math.hypot(p[0] - club[f][0], p[1] - club[f][1], p[2] - club[f][2]))
+        expect(Math.max(...club.map((p) => Math.hypot(p[0] - club[0][0], p[1] - club[0][1], p[2] - club[0][2])))).toBeGreaterThan(34)
+        // 36 frames out and back at Daredevil's 2 m a frame, the last a snap back to the hand
+        expect(steps.filter((d) => d > 1.8 && d < 2)).toHaveLength(35)
+        expect(steps.filter((d) => d >= 2).length).toBeLessThanOrEqual(1)
+      }
+    }
+    expect(mf.notes.filter((n) => n.includes('while the club flies 35 m'))).toHaveLength(basemoves.THROW_MOVES.length)
   })
 })

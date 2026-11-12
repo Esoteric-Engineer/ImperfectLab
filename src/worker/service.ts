@@ -3,7 +3,7 @@ import * as dsp from '../core/audio/dspadpcm'
 import { toHex } from '../core/bytes'
 import { type Batch, buildBatch, checkBatch } from '../core/build/batch'
 import * as cutscenes from '../core/build/cutscenes'
-import { Builder, glowRgba, gunPlanOf, noShots, onBackPlan, patch, type Progress, propShape, report, type Result, WIRE, write } from '../core/build/patch'
+import { airThrowPlan, Builder, glowRgba, gripCenterOf, gripPropOf, gripTris, gunPlanOf, noShots, onBackPlan, patch, type Progress, propShape, report, type Result, WIRE, write } from '../core/build/patch'
 import * as effects from '../core/build/effects'
 import * as eyes from '../core/build/eyes'
 import * as gun from '../core/build/gun'
@@ -34,7 +34,7 @@ import { Model } from '../core/model/glb'
 import * as mapping from '../core/model/mapping'
 import { Skeleton } from '../core/model/skeleton'
 import * as imperfect from '../core/package/imperfect'
-import { baseMeshes, type BoneLine, costumeImage, damageImages, envImage, fittedMeshes, gameBones, holsteredTris, materialImages, type MeshData, pointMeshes, sourceBones, sourceMeshes } from '../core/preview'
+import { baseMeshes, type BoneLine, costumeImage, damageImages, envImage, fittedMeshes, gameBones, grippedTris, holsteredTris, materialImages, type MeshData, pointMeshes, sourceBones, sourceMeshes } from '../core/preview'
 import type { BaseDetails, BaseInfo, CheckResult, ComposeArgs, DiscInfo, ImportedAnimations, ImportedModel, BatchCheckResult, LayoutInfo, ModelInfo, MovePreview, PreviewResult } from './protocol'
 
 const DEFAULT_SIZES: Record<string, [number, number]> = {
@@ -406,7 +406,20 @@ export class Service {
     }
   }
 
-  holsterPreview(c: imperfect.Character, kind: 'club' | 'gun' | 'swap' = 'club'): { meshes: MeshData[]; bones: BoneLine[] } | string {
+  holsterPreview(c: imperfect.Character, kind: 'club' | 'gun' | 'swap' | 'grip' = 'club'): { meshes: MeshData[]; bones: BoneLine[] } | string {
+    if (kind === 'grip') {
+      const grip = c.baseMoves.grip
+      if (!grip) return 'the club is held in Daredevil\'s grip'
+      try {
+        const { m, sk, included, tris } = this.fitted(c)
+        const images = materialImages(m, c)
+        const bySlot = new Map(included.map((x, i) => [i, images.get(x.gltfMaterial) ?? null]))
+        return { meshes: previewTextures(fittedMeshes(grippedTris(tris, grip), bySlot, c.size)), bones: gameBones(sk, c.size) }
+      } catch (e) {
+        if (!(e instanceof LabError)) throw e
+        return e.message
+      }
+    }
     const g = kind === 'club' ? null : imperfect.gunOf(c), h = kind === 'club' ? c.baseMoves.holster : kind === 'gun' ? g?.holster : g?.swap
     if (!h) return 'the holster is off'
     try {
@@ -577,7 +590,7 @@ export class Service {
         tris = f.tris
         sk = f.sk
         const images = materialImages(f.m, c)
-        custom = previewTextures(fittedMeshes(tris, new Map(f.included.map((x, i) => [i, images.get(x.gltfMaterial) ?? null])), c.size))
+        custom = previewTextures(fittedMeshes(gripTris(c, tris), new Map(f.included.map((x, i) => [i, images.get(x.gltfMaterial) ?? null])), c.size))
       } catch (e) {
         if (!(e instanceof LabError)) throw e
         notes.push(`The custom model can't be shown: ${e.message}`)
@@ -594,10 +607,11 @@ export class Service {
       const baseModel = ngmtool.read(base.bundleFiles()[0])[1][0]
       const [center, geometry, swapCenter] = tris && sk ? propShape(c, baseModel, base.body, tris, sk) : [null, null, null]
       const shooter = gunPlanOf(c, baseModel, base.body, center, geometry, swapCenter)
+      const grip = tris ? gripPropOf(c, baseModel, base.body, gripCenterOf(c, tris)) : null
       const fx = Object.keys(c.moveReach).length ? new effects.Effects(src.entry('Misc/game.nfx')) : null
       try {
         const anims = animsOf(c, this.model, (d) => this.clipFile(d))
-        mf = moves.motionFiles(src, base, c.internalName, c.moves, c.baseMoves.throw_reach, {}, null, c.moveReach, fx, c.size, c.moveIdle, onBackPlan(c, center), false, shooter, null, anims, noShots(c))
+        mf = moves.motionFiles(src, base, c.internalName, c.moves, c.baseMoves.throw_reach, {}, null, c.moveReach, fx, c.size, c.moveIdle, onBackPlan(c, center, grip), false, shooter, null, anims, noShots(c), null, airThrowPlan(c), grip)
       } catch (e) {
         if (!(e instanceof LabError)) throw e
         return e.message
@@ -605,7 +619,7 @@ export class Service {
       this.motionCache.set(key, mf)
       if (this.motionCache.size > 8) this.motionCache.delete(this.motionCache.keys().next().value!)
     }
-    if ((c.baseMoves.holster || imperfect.gunOf(c)) && !tris) notes.push('The holstered prop needs the custom model, so the move plays without it.')
+    if ((c.baseMoves.holster || c.baseMoves.grip || imperfect.gunOf(c)) && !tris) notes.push('The holstered prop needs the custom model, so the move plays without it.')
     notes.push(...mf.notes.filter((n) => n.startsWith(`moves: ${move.label} `) || n.startsWith(`reach: ${move.label} `)).map((n) => n.slice(n.indexOf(': ') + 2)))
     const variants = moves.played(src, mf, c.internalName, move).map((p) => ({ state: p.state, slot: p.slot, fps: moves.motionFps(p.opts), rec: p.rec }))
     const baseMesh = baseMeshes(src, base).map((m) => (c.size === 1 ? m : { ...m, positions: m.positions.map((v) => v * c.size) }))
