@@ -217,6 +217,37 @@ describe('round trip', () => {
     rejected(read({ position: [0, 0, 1] }), 'grip.position')
   })
 
+  it('saves and loads the shield throw, which needs the prop, the grip and the baton throw as it is', () => {
+    const c = character()
+    c.base = 'daredevil'
+    c.baseMoves = { shield_throw: { return: 'physics' } }
+    const errors = (x: imperfect.Character) => imperfect.problems(x).filter(([l]) => l === 'error').map(([, m]) => m).join(' ')
+    expect(errors(c)).toContain('bone 39')
+    expect(errors(c)).toContain('Baton held in')
+    expect(errors(c)).toContain('cable')
+    c.materials[0].bind = 39
+    c.baseMoves.grip = imperfect.defaultGrip('left')
+    c.baseMoves.throw_cable = false
+    expect(errors(c)).toBe('')
+    expect(imperfect.problems(c).some(([, m]) => m.includes("can't aim up or down"))).toBe(false)
+    const clash = (edit: (x: imperfect.Character) => void, text: string) => {
+      const d = imperfect.load(imperfect.save(c))
+      edit(d)
+      expect(errors(d)).toContain(text)
+    }
+    clash((x) => (x.baseMoves.no_throw = 'in_hand'), 'baton throw, which is off')
+    clash((x) => (x.baseMoves.throw_reach = 20), 'reach does nothing')
+    clash((x) => (x.baseMoves.air_throw = true), 'air throw flies the club')
+    clash((x) => (x.projectile.remove = true), 'projectile removal')
+    c.baseMoves.shield_throw = { return: 'fly_back' }
+    expect(imperfect.load(imperfect.save(c)).baseMoves).toEqual(c.baseMoves)
+    const glb = makeGlb()
+    const read = (v: Json, base = 'daredevil') => withManifest({ 'model/model.glb': glb }, (m) => { m.base = base; m.base_moves = { shield_throw: v } })
+    expect(imperfect.load(read({})).baseMoves.shield_throw).toEqual({ return: 'physics' })
+    rejected(read({ return: 'boomerang' }), 'shield_throw.return')
+    rejected(read({}, 'wolverine'), 'Daredevil')
+  })
+
   it('saves and loads moves held apart from the holster default', () => {
     const c = character()
     c.base = 'daredevil'

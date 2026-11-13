@@ -13,6 +13,7 @@ import * as projectiles from '../src/core/build/projectiles'
 import * as projectileswap from '../src/core/build/projectileswap'
 import * as reach from '../src/core/build/reach'
 import * as shaders from '../src/core/build/shaders'
+import * as shield from '../src/core/build/shield'
 import { buildBatch, checkBatch, ordinal } from '../src/core/build/batch'
 import { Builder, report } from '../src/core/build/patch'
 import * as templates from '../src/core/build/templates'
@@ -125,6 +126,39 @@ describe.skipIf(!ISO)('main.dol', () => {
     for (const n of ['plr_synth', 'plr_altSynth', 'plr_cap', 'plr_altCap']) expect(names).toContain(n)
     expect(f32be(out, at + names.indexOf('plr_cap') + 0x40)).toBeCloseTo(1.2, 5)
     expect(() => D.airThrow(out, [{ internal: 'Synth', drop: 0.85 }])).toThrow(LabError)
+  })
+
+  it('hooks the launcher, the pose, the ranged attack press and the damage for the shield throw, after the air throw', () => {
+    const dol = gameSource().dol
+    const entry = (internal: string): D.ShieldCharacter => ({ internal, templates: [`proj_${internal}Shield`, `proj_${internal}AltShield`], glint: 'sysh0',
+      bone: 39, flyBack: internal === 'Cap', marker: 4, chest: 1.1, radius: 1, minMs: 200, speed: 30, out: 20, outMs: 600, lifeMs: 3000, blocking: 0.8,
+      hit: 0.9, bind: [0.5, 0, 1.4], throwSpeed: 70 })
+    const out = D.daredevil(dol, [{ internal: 'Synth', drop: 0.85 }], [entry('Synth'), entry('Cap')])
+    const word = (d: Uint8Array, va: number) => u32be(d, D.fileOffset(d, va))
+    const target = (va: number) => va + (((word(out, va) & 0x3fffffc) << 6) >> 6)
+    const air = target(0x800de74c)
+    const sh = target(0x800f14d8)
+    for (const [va, old, to] of [[0x800f14d8, 0x4bf5eee1, D.SHIELD_SPAWN], [0x801a4a0c, 0x801e00ec, D.SHIELD_POSE], [0x800cc124, 0x7c601b78, D.SHIELD_PRESSED],
+      [0x80030188, 0x4804e511, D.SHIELD_DAMAGE], [0x800de9bc, 0x4bfb932d, D.SHIELD_PLAY]]) {
+      expect(word(dol, va)).toBe(old)
+      expect(word(out, va) & 0xfc000003).toBe(0x48000001)
+      expect(target(va) - sh).toBe(to)
+    }
+    expect(sh).toBeGreaterThan(air)
+    const [freeze, still, flies] = D.SHIELD_FREEZE
+    const hex = (d: Uint8Array) => Buffer.from(d.subarray(D.fileOffset(d, freeze), D.fileOffset(d, freeze) + 16)).toString('hex')
+    expect([hex(dol), hex(out)]).toEqual([still, flies])
+    expect(word(out, sh)).toBe(0x9421ffc0)
+    expect(target(0x80058c94) - air).toBe(D.AIR_EVENT)
+    const at = D.fileOffset(out, sh)
+    const names = latin1(out.subarray(at, at + 0x1000))
+    for (const n of ['plr_synth', 'plr_altCap', 'proj_SynthShield', 'proj_CapAltShield', 'sysh0']) expect(names).toContain(n)
+    const cap = at + names.indexOf('plr_cap')
+    expect([...out.subarray(cap + 0xa0, cap + 0xa4)]).toEqual([39, 1, 40, 4])
+    expect(f32be(out, cap + 0xc0)).toBeCloseTo(0.8, 5)
+    expect(f32be(out, cap + 0xc8 + 8)).toBeCloseTo(1.4, 5)
+    expect(equal(D.daredevil(dol, [{ internal: 'Synth', drop: 0.85 }], []), D.airThrow(dol, [{ internal: 'Synth', drop: 0.85 }]))).toBe(true)
+    expect(() => D.daredevil(out, [], [entry('Synth')])).toThrow(LabError)
   })
 
   it('binds Z to its actions', () => {
@@ -1340,6 +1374,48 @@ describe.skipIf(!ISO)('base moves', () => {
     c.baseMoves = { air_throw: true }
     const r = new Builder(src(), c).build()
     expect(equal(r.dol!, D.airThrow(plain, [{ internal: c.internalName, drop: basemoves.AIM_FROM - basemoves.AIM_AT }]))).toBe(true)
+  })
+
+  it('throws the shield from the ranged attack alone, as a model of the prop on its own', () => {
+    const c = daredevil()
+    c.materials[0].bind = basemoves.CLUB
+    c.baseMoves = { throw_cable: false, grip: imperfect.defaultGrip('right'), shield_throw: { return: 'physics' } }
+    const plain = new Builder(src(), daredevil()).build().dol!
+    const r = new Builder(src(), c).build()
+    const T = new R.Templates(r.sets.get('Misc/Global.not')!)
+    for (const alt of [false, true]) {
+      const t = T.get(alt ? 'proj_SynthAltShield' : 'proj_SynthShield')
+      expect(R.text(t.get(0x0a))).toBe(alt ? 'SynthAltShield.nod' : 'SynthShield.nod')
+      expect([R.u32(t.get(0x06)), R.u32(t.get(0x07)), R.u32(t.get(0x4a)), R.u32(t.get(0x04))]).toEqual([3, 1, 0x401, 2000])
+      const [, models] = ngmtool.read(r.adds.get(`Bundles/synth${alt ? '_alt' : ''}.ngm`)!)
+      const m = models.find((x) => x.name === (alt ? 'SynthAltShield.nod' : 'SynthShield.nod'))!
+      expect(m.nodes.length).toBe(1)
+      const lit = shaders.blocks(r.sets.get('Materials/Shaders/shaders.nsa')!)
+      for (const part of m.parts) {
+        expect(part.startsWith(alt ? 'Synth_altsh' : 'Synth_sh')).toBe(true)
+        expect(lit.get(part.toLowerCase())?.get('shader')).toBe('normal')
+      }
+      expect(models[0].attachments.some(([n, k, i]) => n === basemoves.CLUB && k === projectiles.SPAWN_KIND && i === projectiles.LAUNCH_INDEX)).toBe(true)
+    }
+    const nvb = latin1(r.adds.get('Misc/PLAYER_Synth.nvb')!)
+    for (const n of ['proj_SynthShield', 'proj_SynthAltShield']) expect(nvb).toContain(n)
+    const set = nmstool.parse(r.adds.get('Motions/Synth.nms')!).motions()
+    const recs = ngbtool.parse(r.adds.get('Bundles/synth.ngb')!)
+    const events = (state: string) => recs.find((x) => x.name.toLowerCase() === set.get(state)!.anim.toLowerCase())!.events.map(([, t, k]) => [t, k])
+    expect(events('rangedattack')).toContainEqual([projectiles.FIRE, 0])
+    expect(events('rangedattack')).toContainEqual([projectiles.SPAWN, projectiles.LAUNCH_INDEX])
+    expect(events('rangedattack').some(([t]) => [0x56, 0x57, 0x53].includes(t))).toBe(false)
+    expect(set.get('superrangedattack')!.anim).toBe(set.get('rangedattack')!.anim)
+    expect(set.get('superattackfar')!.anim).toBe(set.get('rangedattack')!.anim)
+    expect(R.u32(T.get('act_Synth').get(0x32))! & shield.RANGED_ABILITY).toBe(shield.RANGED_ABILITY)
+    for (const state of ['dodgeexitsuperattack']) {
+      expect(events(state).some(([t]) => t === projectiles.FIRE)).toBe(false)
+      expect(events(state).some(([t]) => t === 0x56)).toBe(true)
+    }
+    expect(r.shield).toMatchObject({ internal: 'Synth', bone: basemoves.CLUB, flyBack: false })
+    expect(equal(r.dol!, D.daredevil(plain, [], [r.shield!]))).toBe(true)
+    delete c.baseMoves.grip
+    expect(imperfect.problems(c).some(([l, m]) => l === 'error' && m.includes('Baton held in'))).toBe(true)
   })
 
   it('refuses a reach on a throw that is off', () => {

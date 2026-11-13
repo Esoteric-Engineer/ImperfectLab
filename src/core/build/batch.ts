@@ -132,7 +132,8 @@ export function buildBatch(source: GameSource, chars: Batch, progress: Progress 
   }
   if (batch.some(mirrors)) r.dol = D.mirrorSkip(r.dol)
   if (batch.some(splitsCharge)) r.dol = D.chargeRate(r.dol)
-  if (batch.some(airThrows)) r.dol = D.airThrow(r.dol, batch.filter(airThrows).map(airThrowCharacter))
+  const shields = results.flatMap((x) => (x.shield ? [x.shield] : []))
+  if (batch.some(airThrows) || shields.length) r.dol = D.daredevil(r.dol, batch.filter(airThrows).map(airThrowCharacter), shields)
   if (batch.some(throwsDamage)) r.dol = D.throwDamage(r.dol)
   if (batch.some(ownSounds)) r.dol = D.soundBanks(r.dol, batch.filter(ownSounds).map((c) => c.internalName))
   if (batch.some((c) => c.zButton)) r.dol = D.zActions(r.dol, zCharacters(batch))

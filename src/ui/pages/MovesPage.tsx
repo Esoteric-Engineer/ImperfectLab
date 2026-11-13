@@ -7,7 +7,7 @@ import * as holster from '../../core/build/holster'
 import * as reach from '../../core/build/reach'
 import { formatG } from '../../core/format'
 import { keys, label } from '../../core/game/roster'
-import { airThrowClashes, airThrows, animFiles, BASE_MOVES, copyCharacter, defaultGrip, defaultHolster, GAMEPLAY, type GripHand, type Holster as HolsterPlan, HOLSTER_POSITION, HOLSTER_ROTATION, longHitStretch, longThrows, type MoveEffect, type NoThrow, PICKUP_BASES, STUN_BASES, THROW_REACH, throwReachName, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
+import { airThrowClashes, airThrows, animFiles, BASE_MOVES, copyCharacter, defaultGrip, defaultHolster, GAMEPLAY, type GripHand, type Holster as HolsterPlan, HOLSTER_POSITION, HOLSTER_ROTATION, longHitStretch, longThrows, type MoveEffect, type NoThrow, PICKUP_BASES, shieldThrows, type ShieldReturn, STUN_BASES, THROW_REACH, throwReachName, type Wall, WALL, type WallKey } from '../../core/package/imperfect'
 import type { BoneLine, MeshData } from '../../core/preview'
 import { ColorButton, Note, NumberInput, OptionCard, ToggleCard, Warning } from '../components/common'
 import { MovePreviewDialog } from '../components/MovePreviewDialog'
@@ -744,7 +744,9 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
   const off = mv.no_throw !== undefined
   const air = airThrows(c)
   const airReach = mv.air_throw_reach !== undefined
+  const shield = shieldThrows(c)
   const clash = airThrowClashes(c)[0]
+  const shieldClash = reach ? 'The baton throw reach is set: untick it to throw the shield' : off ? 'The baton throw is off: tick it back on to throw the shield' : air ? 'The air throw throws the club: untick it to throw the shield' : undefined
   const stretchedTitle = longHit ? `${sentence(longHit)} is stretched below and takes the club's long hit segment: untick it to set the reach` : undefined
   return (
     <>
@@ -758,12 +760,13 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
         {mv.no_throw === 'attack_far' && <><br />With the throw off, super attack far, ranged attack and dodge exit super attack play the "Attack far" lunge instead and hit with its damage. Super moves still cost their energy, and any of them changed above keeps its animation.</>}
         {air && <><br />The air throw makes the super jump attack throw the club from the air, aimed at the opponent's height (up to 45° down), instead of diving at them. It hits with the baton throw's damage. Its reach is the baton throw's unless the air throw reach is set: the shorter the reach, the sooner the club comes back and the shorter the hover.</>}
         {airReach && !reach && <><br />The air throw reach also makes the club's hit {formatG(basemoves.HIT_REACH)} m longer at each end, so the club's ground moves hit a little further too.</>}
+        {shield && <><br />The shield throw is PSP Captain America's: Super + Attack at range (super attack far) throws the prop, with the ranged attack's animation, as a projectile that survives what it hits (21 damage), and the prop on the arm is hidden until it's back, with a glint. {mv.shield_throw!.return === 'physics' ? 'As on the PSP it flies on physics and bounces off people and walls; it comes back only if a bounce brings it within reach, and otherwise reappears on the arm after 2 seconds.' : 'It turns back after a hit, a bounce or 20 m and flies to the hand, harmless on the way back; one that can\'t get back reappears on the arm after 4 seconds.'} While it's away it can't be thrown again, and while it's on the arm the character takes 10% less damage (20% while blocking). Every other move keeps the prop in the hand, so the grip has to be set.</>}
       </>}>
         <table className="gameplay grid">
         <thead><tr><th>Value</th><th className="num">Base</th><th>New</th></tr></thead>
         <tbody>
           <tr>
-            <td><label className="check" title={reach ? undefined : off ? 'The baton throw is off: tick it back on to set its reach' : stretchedTitle}><input type="checkbox" checked={reach} disabled={(farSwapped || longHit !== null || off) && !reach} onChange={(e) => {
+            <td><label className="check" title={reach ? undefined : off ? 'The baton throw is off: tick it back on to set its reach' : shield ? 'The shield throw is on: the shield flies until it hits something' : stretchedTitle}><input type="checkbox" checked={reach} disabled={(farSwapped || longHit !== null || off || shield) && !reach} onChange={(e) => {
               if (e.target.checked) mv.throw_reach = 35
               else delete mv.throw_reach
               edited()
@@ -775,7 +778,7 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
             }} /> m</span></td>
           </tr>
           <tr>
-            <td><label className="check" title={off ? undefined : reach ? 'The baton throw reach is set: untick it to turn the throw off' : air ? 'The air throw throws the club: untick it to turn the throw off' : undefined}><input type="checkbox" checked={off} disabled={(reach || air) && !off} onChange={(e) => {
+            <td><label className="check" title={off ? undefined : reach ? 'The baton throw reach is set: untick it to turn the throw off' : air ? 'The air throw throws the club: untick it to turn the throw off' : shield ? 'The shield throw is on: untick it to turn the throw off' : undefined}><input type="checkbox" checked={off} disabled={(reach || air || shield) && !off} onChange={(e) => {
               if (e.target.checked) mv.no_throw = 'in_hand'
               else delete mv.no_throw
               edited()
@@ -785,7 +788,7 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
               <option value="in_hand">off, club in hand</option><option value="attack_far">off, Attack far</option></select></td>
           </tr>
           <tr>
-            <td><label className="check" title={!air && clash ? sentence(clash) : undefined}><input type="checkbox" checked={air} disabled={!air && clash !== undefined} onChange={(e) => {
+            <td><label className="check" title={!air && clash ? sentence(clash) : !air && shield ? 'The shield throw is on: untick it to throw the club from the air' : undefined}><input type="checkbox" checked={air} disabled={!air && (clash !== undefined || shield)} onChange={(e) => {
               if (e.target.checked) mv.air_throw = true
               else {
                 delete mv.air_throw
@@ -807,6 +810,19 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
               mv.air_throw_reach = Math.round(v * 10) / 10
               edited()
             }} /> m</span></td>
+          </tr>
+          <tr>
+            <td><label className="check" title={shield ? undefined : shieldClash}><input type="checkbox" checked={shield} disabled={!shield && shieldClash !== undefined} onChange={(e) => {
+              if (e.target.checked) {
+                mv.shield_throw = { return: 'physics' }
+                mv.throw_cable = false
+                mv.grip ??= defaultGrip('right')
+              } else delete mv.shield_throw
+              edited()
+            }} /> Shield throw (PSP Captain America)</label></td>
+            <td className="num">baton</td>
+            <td><select disabled={!shield} value={mv.shield_throw?.return ?? 'physics'} onChange={(e) => { mv.shield_throw = { return: e.target.value as ShieldReturn }; edited() }}>
+              <option value="physics">bounces, as on the PSP</option><option value="fly_back">flies back to the hand</option></select></td>
           </tr>
           <tr>
             <td><label className="check"><input type="checkbox" checked={cable} onChange={(e) => {
@@ -845,7 +861,7 @@ function BaseMoves({ cat }: { cat: Catalog | null }) {
           </tr>
         </tbody>
       </table>
-      {gripped && mv.grip!.hand === 'left' && !off && <Warning title="Left-hand throws can't aim up or down">
+      {gripped && mv.grip!.hand === 'left' && !off && !shield && <Warning title="Left-hand throws can't aim up or down">
         The game aims the far super attack{air ? ' and the air throw' : ''} by bending {label(c.base)}'s right arm, so a club thrown from the left hand doesn't have much success with hitting opponents above or below Daredevil. Using the right hand is recommended.
       </Warning>}
       {held && <Holster />}

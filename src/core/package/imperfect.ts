@@ -61,7 +61,7 @@ export const GAMEPLAY: Record<string, [number, number, boolean]> = {
   ...Object.fromEntries(COSTS.map((c): [string, [number, number, boolean]] => [c.key, [FALLBACK.includes(c.key) ? 0.1 : 0, 100, false]])),
   ...Object.fromEntries(RECHARGE.map((r): [string, [number, number, boolean]] => [r.key, [0, 100, false]])),
 }
-export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable', 'range_grab', 'holster', 'no_throw', 'air_throw', 'air_throw_reach', 'grip'] }
+export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable', 'range_grab', 'holster', 'no_throw', 'air_throw', 'air_throw_reach', 'grip', 'shield_throw'] }
 export const NO_THROW = ['in_hand', 'attack_far'] as const
 export type NoThrow = (typeof NO_THROW)[number]
 export type WallKey = 'wall_climb' | 'wall_run'
@@ -87,6 +87,11 @@ export const HOLSTER_ROTATION: [number, number] = [-180, 180]
 export const defaultHolster = (): Holster => ({ position: [0, -0.17, 0.05], rotation: [90, 0, 0] })
 export const GRIP_HANDS = ['right', 'left'] as const
 export type GripHand = (typeof GRIP_HANDS)[number]
+export const SHIELD_RETURNS = ['physics', 'fly_back'] as const
+export type ShieldReturn = (typeof SHIELD_RETURNS)[number]
+export interface ShieldThrow {
+  return: ShieldReturn
+}
 export const defaultGrip = (hand: GripHand): Grip => ({ hand, position: [0, 0, 0], rotation: [0, 0, 0] })
 export { GUN_BULLETS, GUN_DAMAGE, GUN_ENERGY, GUN_PLACES, type GunPlace }
 export const GUN_SIDES = ['right', 'left'] as const
@@ -211,6 +216,7 @@ export interface BaseMoves {
   air_throw?: boolean
   air_throw_reach?: number
   grip?: Grip
+  shield_throw?: ShieldThrow
 }
 
 export interface Flames {
@@ -542,6 +548,7 @@ export function manifest(c: Character): Json {
 export type Problem = ['error' | 'warning' | 'note', string]
 
 export const airThrows = (c: Character) => Boolean(c.baseMoves.air_throw)
+export const shieldThrows = (c: Character) => Boolean(c.baseMoves.shield_throw)
 // a throw flying further than the base's
 export const longThrows = (c: Character) => c.baseMoves.throw_reach !== undefined || (airThrows(c) && c.baseMoves.air_throw_reach !== undefined)
 export const throwReachName = (c: Character) => (c.baseMoves.throw_reach !== undefined ? 'the baton throw reach' : 'the air throw reach')
@@ -554,6 +561,19 @@ export function airThrowClashes(c: Character): string[] {
   if (c.moves.SuperJumpAttack || c.moveAnims.SuperJumpAttack || c.moveIdle.includes('SuperJumpAttack')) out.push('the air throw is the super jump attack, which is also changed on the Moves page: set it back to the base\'s, or untick the air throw')
   if (c.moveReach.SuperJumpAttack) out.push('the air throw and a stretch both change the super jump attack: untick one of them on the Moves page')
   if (c.baseMoves.holster?.drawn?.SuperJumpAttack === false) out.push("the air throw throws the club, so the super jump attack can't hold it on the back: tick it on the Moves page")
+  return out
+}
+
+export function shieldThrowClashes(c: Character): string[] {
+  const out: string[] = []
+  if (!c.mapping.has(CLUB) && !c.materials.some((m) => m.include && m.bind === CLUB)) out.push(`the shield throw throws what is fixed to game bone ${CLUB}, and nothing is: fix a prop to it on the Materials page`)
+  if (!c.baseMoves.grip) out.push('the shield throw keeps the shield fixed in the hand for every other move: tick "Baton held in" on the Moves page')
+  if (c.baseMoves.no_throw) out.push('the shield throw replaces the baton throw, which is off: untick one on the Moves page')
+  if (c.baseMoves.throw_reach !== undefined) out.push('the shield flies until it hits something, so the baton throw reach does nothing: untick one on the Moves page')
+  if (c.baseMoves.air_throw) out.push('the air throw flies the club, and the shield throw throws it as a projectile: untick one on the Moves page')
+  if (c.baseMoves.throw_cable !== false) out.push('the baton cable runs to the club, which the shield throw leaves in flight: set the baton cable to off on the Moves page')
+  if (c.projectile.on) out.push("the shield is the character's projectile, so another can't be swapped in: untick the projectile swap")
+  if (c.projectile.remove) out.push('the projectile removal takes out the launch the shield throw needs: untick one of them')
   return out
 }
 
@@ -634,7 +654,7 @@ export function problems(c: Character): Problem[] {
     if (c.baseMoves.grip.hand === 'left' && c.baseMoves.throw_cable !== false) out.push(['error', 'the baton cable runs from the right forearm, and the club is held in the left hand: set the baton cable to off on the Moves page'])
     if (!c.mapping.has(CLUB) && !c.materials.some((m) => m.include && m.bind === CLUB)) out.push(['error', `the grip holds what is fixed to game bone ${CLUB}, and nothing is: fix a prop to it on the Materials page`])
     if (c.baseMoves.grip.hand === 'left') {
-      if (!c.baseMoves.no_throw) out.push(['warning', 'a club thrown from the left hand flies level and can\'t aim up or down: hold it in the right hand to aim'])
+      if (!c.baseMoves.no_throw && !shieldThrows(c)) out.push(['warning', 'a club thrown from the left hand flies level and can\'t aim up or down: hold it in the right hand to aim'])
       if (gunOf(c) && gunBone(c.base, gunOf(c)!.side) === LEFT_CLUB) out.push(['error', `a club in the left hand and a gun in the left hand both need game bone ${LEFT_CLUB}: hold one of them in the right hand`])
       if (c.mapping.has(LEFT_CLUB) || c.materials.some((m) => m.include && m.bind === LEFT_CLUB)) out.push(['error', `a club in the left hand is drawn on game bone ${LEFT_CLUB}, which something else is fixed to: fix it to another bone on the Materials page`])
     }
@@ -645,6 +665,7 @@ export function problems(c: Character): Problem[] {
       out.push(['warning', 'the baton throw damage is set but no move throws the club, so it does nothing'])
     }
   }
+  if (shieldThrows(c)) for (const m of shieldThrowClashes(c)) out.push(['error', m])
   if (c.baseMoves.air_throw_reach !== undefined && !c.baseMoves.air_throw) out.push(['error', 'the air throw reach is set but the air throw is off: tick it on the Moves page'])
   if (airThrows(c)) for (const m of airThrowClashes(c)) out.push(['error', m])
   if (c.moves.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach changes the base\'s own super attack far: set that move back to the base\'s, or untick the reach'])
@@ -1044,7 +1065,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
       glow: p.glow ? color(p.glow, 'glow') : null,
     }
   }
-  const mv = keys(m.base_moves ?? {}, ['throw_reach', 'throw_cable', 'range_grab', 'holster', 'no_throw', 'air_throw', 'air_throw_reach', 'grip'], 'base_moves')
+  const mv = keys(m.base_moves ?? {}, ['throw_reach', 'throw_cable', 'range_grab', 'holster', 'no_throw', 'air_throw', 'air_throw_reach', 'grip', 'shield_throw'], 'base_moves')
   c.baseMoves = {}
   const reach = num(mv.throw_reach, 'base_moves.throw_reach', THROW_REACH[0], THROW_REACH[1])
   if (reach !== null) c.baseMoves.throw_reach = reach
@@ -1071,6 +1092,12 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
     const hand = str(g.hand ?? 'right', 'base_moves.grip.hand', 8)!
     if (!(GRIP_HANDS as readonly string[]).includes(hand)) throw new LabError(`manifest: base_moves.grip.hand is one of ${GRIP_HANDS.join(', ')}`)
     c.baseMoves.grip = { hand: hand as GripHand, position: three(g.position ?? [0, 0, 0], 'base_moves.grip.position', HOLSTER_POSITION), rotation: three(g.rotation ?? [0, 0, 0], 'base_moves.grip.rotation', HOLSTER_ROTATION) }
+  }
+  if (mv.shield_throw !== null && mv.shield_throw !== undefined) {
+    const t = keys(mv.shield_throw, ['return'], 'base_moves.shield_throw')
+    const how = str(t.return ?? 'physics', 'base_moves.shield_throw.return', 16)!
+    if (!(SHIELD_RETURNS as readonly string[]).includes(how)) throw new LabError(`manifest: base_moves.shield_throw.return is one of ${SHIELD_RETURNS.join(', ')}`)
+    c.baseMoves.shield_throw = { return: how as ShieldReturn }
   }
   for (const k of Object.keys(c.baseMoves)) {
     if (!(BASE_MOVES[c.base] ?? []).includes(k as keyof BaseMoves)) throw new LabError(`manifest: base_moves.${k} only applies to a ${movesBases(k)} base`)
