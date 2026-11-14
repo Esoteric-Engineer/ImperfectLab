@@ -1,4 +1,5 @@
 // PSP Captain America's shield throw (`base_moves.shield_throw`), with the values of the PSP's proj_captamericashield
+import { LabError } from '../errors'
 import type { ShieldCharacter } from '../game/dol'
 import * as nfxtool from '../mnroi/nfxtool'
 import type * as ngbtool from '../mnroi/ngbtool'
@@ -80,18 +81,27 @@ function add(fx: Effects, type: number, body: string[], prefix: string): string 
   return name
 }
 
-// Trail and glint use only textures every match loads (Bundles/global)
-export function effects(fx: Effects, internal: string): { trail: string; glint: string } {
+// The respawn sparkles (tuning field 202 of every character)
+export const SPARKLE = 'mpTeleport'
+const SPARKLE_AREA = '(0.3,0.3,0.3)'
+
+// area_type 5 spreads particles over the whole body; without it they gather at the marker
+function onMarker(body: string[]): string[] {
+  return body.filter((l) => nfxtool.tokens(l)[0]?.toLowerCase() !== 'area_type')
+    .map((l) => (nfxtool.tokens(l)[0]?.toLowerCase() === 'area' ? `area ${SPARKLE_AREA}` : l))
+}
+
+// The trail uses only textures every match loads (Bundles/global)
+export function effects(fx: Effects, internal: string): { trail: string; sparkle: string } {
   const prefix = `${internal.slice(0, 2).toLowerCase()}sh`
   const streak = add(fx, TRAIL, ['startcol (200,215,225,255)', 'endcol (0,150,170,220)', 'startsize 0.3', 'endsize 0', 'part_life 0.25',
     'sampledelay 0.02', 'renderradius 20', 'max_particles 15'], prefix)
   const glow = add(fx, PARTSYS, ['max_particles 1', 'part_size0 1', 'part_size1 0.5', 'type_flags2 0x80001', 'material GE_PAR_LensFlare1_blue',
     'startcol (180,180,180,180)', 'turbulence 0.0', 'gravity 0.0', 'partfadein 0.0', 'spawn_delay 0.0', 'duration 0.0', 'part_life 0.4'], prefix)
   const trail = add(fx, CONTROLLER, [`effectname ${streak}`, `effectname ${glow}`, 'renderradius -1', 'flags 0x400'], prefix)
-  const glint = add(fx, PARTSYS, ['material GE_PAR_lensFlare_01_BW', 'endcol (255,255,255,255)', 'max_particles 1', 'spawn_delay 0', 'part_life 0.8',
-    'part_size0 0.9', 'part_size1 0.05', 'lerpin 0.1', 'lerpout 0.9', 'partfadeout 0.8', 'rotate_speed 360', 'gravity 0', `markertype ${SPAWN_KIND}`,
-    'type_flags 0x081', 'type_flags2 0x26101', 'modflags 0x800'], prefix)
-  return { trail, glint }
+  const sparkle = fx.tinted([SPARKLE], '', prefix, (_type, body) => onMarker(body)).get(SPARKLE.toLowerCase())
+  if (!sparkle) throw new LabError(`game.nfx has no ${SPARKLE}`)
+  return { trail, sparkle }
 }
 
 export function templatesFor(internal: string, how: ShieldReturn, trail: string): nottool.Template[] {
@@ -168,11 +178,11 @@ export const RADIUS = 1.0
 const RETURN_SPEED = 30
 export const THROW_SPEED = 70
 
-export function character(internal: string, how: ShieldReturn, glint: string, bone: number, bind: Vec3, size: number): ShieldCharacter {
+export function character(internal: string, how: ShieldReturn, sparkle: string, bone: number, bind: Vec3, size: number): ShieldCharacter {
   return {
     internal,
     templates: [templateName(internal, false), templateName(internal, true)],
-    glint,
+    glint: sparkle,
     bone,
     flyBack: how === 'fly_back',
     marker: LAUNCH_INDEX,

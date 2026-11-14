@@ -220,7 +220,7 @@ sh_pose:
 	lwz r0, 0xec(r30)
 	blr
 
-# Actor r3, entry r4, slot r5, clock r6: puts a gone, expired or caught shield back on the arm with the sparkle, and steers it in mode 1.
+# Actor r3, entry r4, slot r5, clock r6: puts a gone, expired or caught shield back on the arm (with the sparkle unless caught), and steers it in mode 1.
 tick:
 	stwu r1, -0x40(r1)
 	mflr r0
@@ -233,6 +233,7 @@ tick:
 	lwz r0, S_FLAGS(r29)
 	andi. r0, r0, F_AWAY
 	beq 9f
+	li r26, 1                   # 0 once caught: no sparkle
 	lwz r3, S_ID(r29)
 	call fn_800ACFA8
 	mr. r27, r3
@@ -256,7 +257,7 @@ tick:
 	fmuls f0, f0, f0
 	fcmpo cr0, f1, f0
 	cror 2, 0, 2
-	beq 6f
+	beq 5f
 3:	lbz r0, E_MODE(r30)
 	cmpwi r0, 0
 	beq 9f
@@ -267,6 +268,7 @@ tick:
 	mr r7, r26
 	bl steer
 	b 9f
+5:	li r26, 0
 6:	mr r3, r27
 	li r4, 0
 	li r5, 0
@@ -274,6 +276,8 @@ tick:
 7:	li r0, 0
 	stw r0, S_ID(r29)
 	stw r0, S_FLAGS(r29)
+	cmpwi r26, 0
+	beq 9f
 	mr r3, r31
 	addi r4, r30, E_GLINT
 	li r5, MARKER_KIND
