@@ -60,6 +60,16 @@ function previewTextures(meshes: MeshData[]): MeshData[] {
   return meshes.map((m) => (m.image || m.env ? { ...m, image: fresh(m.image), env: fresh(m.env) } : m))
 }
 
+// States the motion build reads from other moves.
+const READ_STATES = ['stand', 'attackfar', 'walk', 'run']
+
+export function previewScope(c: imperfect.Character, move: moves.Move): imperfect.Character {
+  const states = new Set([...move.states.map((s) => s.toLowerCase()), ...READ_STATES])
+  const near = (id: string) => moves.MOVE_IDS.get(id)?.states.some((s) => states.has(s.toLowerCase())) ?? true
+  const keep = <T>(r: Record<string, T>) => Object.fromEntries(Object.entries(r).filter(([id]) => near(id)))
+  return { ...c, moves: keep(c.moves), moveAnims: keep(c.moveAnims), moveReach: keep(c.moveReach), moveIdle: c.moveIdle.filter(near) }
+}
+
 export function defaultMaterials(model: Model): imperfect.Material[] {
   const used = [...new Set(model.prims.map((p) => p.material).filter((m): m is number => m !== null))].sort((a, b) => a - b)
   const pow2 = (d: number) => Math.min(512, 1 << Math.max(3, 32 - Math.clz32(Math.max(8, d) - 1)))
@@ -99,6 +109,7 @@ export class Service {
   private batchBuild: { token: number; result: Result } | null = null
   private batchTokens = 0
   private motionCache = new Map<string, moves.MotionFiles>()
+  private clipKeys = new WeakMap<Uint8Array, string>()
   private motionModel: Model | null = null
   private clipFiles = new Map<string, ClipFile>()
   private envs = new Map<string, RgbaImage>()
@@ -530,7 +541,12 @@ export class Service {
   }
 
   private clipKey(data: Uint8Array): string {
-    return toHex(sha256(data))
+    let key = this.clipKeys.get(data)
+    if (key === undefined) {
+      key = toHex(sha256(data))
+      this.clipKeys.set(data, key)
+    }
+    return key
   }
 
   // An animation file, read once per content.
@@ -588,6 +604,7 @@ export class Service {
       } else if (from === c.base) delete c.moves[moveId]
       else c.moves[moveId] = from
     }
+    c = previewScope(c, move)
     const src = this.src(), base = this.base(c.base)
     const notes: string[] = []
     let custom: MeshData[] | null = null, tris: Map<number, Tri[]> | null = null, sk: Skeleton | null = null
@@ -605,7 +622,8 @@ export class Service {
       }
     }
     const animFiles = [...new Set(Object.values(c.moveAnims).map((p) => p.file))].map((f) => [f, c.files.has(f) ? this.clipKey(c.files.get(f)!) : null])
-    const key = JSON.stringify([c.base, c.internalName, c.moves, c.moveIdle, c.moveReach, c.moveAnims, c.moveAnimFiles, animFiles, c.size, c.baseMoves, imperfect.gunOf(c), c.projectile.remove, c.projectile.melee, [...c.mapping], [...c.overrides], c.fit, c.materials])
+    const reworked = move.states.map((st) => st.toLowerCase())
+    const key = JSON.stringify([reworked, c.base, c.internalName, c.moves, c.moveIdle, c.moveReach, c.moveAnims, c.moveAnimFiles, animFiles, c.size, c.baseMoves, imperfect.gunOf(c), c.projectile.remove, c.projectile.melee, [...c.mapping], [...c.overrides], c.fit, c.materials])
     if (this.motionModel !== this.model) {
       this.motionCache.clear()
       this.motionModel = this.model
@@ -619,13 +637,13 @@ export class Service {
       const fx = Object.keys(c.moveReach).length ? new effects.Effects(src.entry('Misc/game.nfx')) : null
       try {
         const anims = animsOf(c, this.model, (d) => this.clipFile(d))
-        mf = moves.motionFiles(src, base, c.internalName, c.moves, c.baseMoves.throw_reach, {}, null, c.moveReach, fx, c.size, c.moveIdle, onBackPlan(c, center, grip), false, shooter, null, anims, noShots(c), null, airThrowPlan(c), grip)
+        mf = moves.motionFiles(src, base, c.internalName, c.moves, c.baseMoves.throw_reach, {}, null, c.moveReach, fx, c.size, c.moveIdle, onBackPlan(c, center, grip), false, shooter, null, anims, noShots(c), null, airThrowPlan(c), grip, false, null, new Set(reworked))
       } catch (e) {
         if (!(e instanceof LabError)) throw e
         return e.message
       }
       this.motionCache.set(key, mf)
-      if (this.motionCache.size > 8) this.motionCache.delete(this.motionCache.keys().next().value!)
+      if (this.motionCache.size > 16) this.motionCache.delete(this.motionCache.keys().next().value!)
     }
     if ((c.baseMoves.holster || c.baseMoves.grip || imperfect.gunOf(c)) && !tris) notes.push('The holstered prop needs the custom model, so the move plays without it.')
     notes.push(...mf.notes.filter((n) => n.startsWith(`moves: ${move.label} `) || n.startsWith(`reach: ${move.label} `)).map((n) => n.slice(n.indexOf(': ') + 2)))

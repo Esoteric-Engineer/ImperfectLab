@@ -7,8 +7,9 @@ import * as mapping from '../src/core/model/mapping'
 import { Skeleton } from '../src/core/model/skeleton'
 import * as imperfect from '../src/core/package/imperfect'
 import * as shaders from '../src/core/build/shaders'
+import * as moves from '../src/core/build/moves'
 import { baseMeshes, envImage, skin } from '../src/core/preview'
-import { Service } from '../src/worker/service'
+import { previewScope, Service } from '../src/worker/service'
 import type { MovePreview } from '../src/worker/protocol'
 import { fileReader, gameSource, ISO, makeGlb, pngBytes } from './helpers'
 
@@ -77,6 +78,32 @@ describe.skipIf(!ISO)('move preview', () => {
     const before = ok(s.movePreview(c, 'Attack1')).variants[0].rec.name
     c.moves.Attack1 = 'wolverine'
     expect(ok(s.movePreview(c, 'Attack1')).variants[0].rec.name).not.toBe(before)
+  })
+
+  it('keeps only the picks that change the previewed move, and the ones the build reads', () => {
+    const c = character('daredevil')
+    c.moves = { Attack1: 'wolverine', Attack2: 'wolverine', Stand: 'wolverine' }
+    c.moveIdle = ['Attack3', 'Block']
+    c.moveReach = { Attack2: { distance: 1.5 } }
+    const scoped = previewScope(c, moves.MOVE_IDS.get('Attack1')!)
+    expect(scoped.moves).toEqual({ Attack1: 'wolverine', Stand: 'wolverine' })
+    expect(scoped.moveIdle).toEqual([])
+    expect(scoped.moveReach).toEqual({})
+    expect(c.moves.Attack2).toBe('wolverine')
+  })
+
+  it('plays each move as the whole character build does', () => {
+    const s = service()
+    const c = character('daredevil')
+    c.moves = { Attack1: 'wolverine', Stand: 'wolverine', AttackFar: 'wolverine', Block: 'thing' }
+    c.moveIdle = ['Attack3']
+    const base = new R.BaseCharacter(gameSource(), c.base)
+    const mf = moves.motionFiles(gameSource(), base, c.internalName, c.moves, undefined, {}, null, {}, null, 1, c.moveIdle)
+    for (const id of ['Attack1', 'Attack2', 'Attack3', 'Block', 'Stand', 'AttackFar']) {
+      const move = moves.MOVE_IDS.get(id)!
+      const whole = moves.played(gameSource(), mf, c.internalName, move).map((p) => [p.state, p.slot, p.rec])
+      expect(ok(s.movePreview(c, id)).variants.map((v) => [v.state, v.slot, v.rec])).toEqual(whole)
+    }
   })
 
   it("plays another base's version of the move without changing the character", () => {
