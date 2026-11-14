@@ -6,13 +6,14 @@
 #     --defsym fn_800AE398=0x800AE398 --defsym fn_80393D0C=0x80393D0C --defsym fn_80067050=0x80067050 \
 #     --defsym fn_80065CB0=0x80065CB0 --defsym fn_8042EC54=0x8042EC54 --defsym fn_8007E698=0x8007E698 \
 #     --defsym Entity_GetActor=0x800CC5E0 --defsym fn_80434900=0x80434900 --defsym fn_804317BC=0x804317BC \
-#     --defsym fn_8042FF2C=0x8042FF2C --defsym strcmp=0x80172654 --defsym fn_80097CE8=0x80097CE8 -o shield.elf shield.o
+#     --defsym fn_8042FF2C=0x8042FF2C --defsym strcmp=0x80172654 --defsym fn_80097CE8=0x80097CE8 \
+#     --defsym fn_8009FD04=0x8009FD04 --defsym fn_800B0C58=0x800B0C58 -o shield.elf shield.o
 #   powerpc-eabi-objcopy -O binary -j .text shield.elf shield.bin
 # `data`: {u32 clock ms of the last refresh, PLAYERS x slot, u32 count, count x entry}, entries written by dol.ts.
 	.text
-	.globl sh_spawn, sh_pose, sh_pressed, sh_damage, sh_play
+	.globl sh_spawn, sh_pose, sh_pressed, sh_damage, sh_play, sh_hit
 	.set PLAYERS, 4
-	.set SLOT, 0x30
+	.set SLOT, 0x38
 	.set S_ACTOR, 0
 	.set S_ENTRY, 4
 	.set S_ID, 8
@@ -21,10 +22,12 @@
 	.set S_DIR, 20
 	.set S_FROM, 32
 	.set S_TICK, 44
+	.set S_HIT, 48               # the fighter it last bounced off, and when
+	.set S_HIT_MS, 52
 	.set F_AWAY, 1
 	.set F_BACK, 2
 	.set F_DIR, 4
-	.set ENTRY, 0xd8
+	.set ENTRY, 0xdc
 	.set E_NAME, 0
 	.set E_ALT, 0x20
 	.set E_TPL, 0x40
@@ -45,11 +48,13 @@
 	.set E_HIT, 0xc4
 	.set E_BIND, 0xc8
 	.set E_THROW, 0xd4
+	.set E_BOUNCE, 0xd8
 	.set RANGED, 1              # fn_800CC0BC action: attack held
 	.set FAR, 0x33              # SuperAttackFar
 	.set MARKER_KIND, 0x15
 	.set HIT, 0x800             # projectile +0x290 once it has hit
 	.set BLOCKING, 0x100        # controller +0x18
+	.set HIT_GAP, 250           # ms before the same fighter bounces it again
 
 	.macro call fn
 	lis r12, \fn@ha
@@ -526,6 +531,134 @@ sh_play:
 	addi r12, r12, fn_80097CE8@l
 	mtctr r12
 	bctr
+
+# fn_8009FF54 (projectile r3 has hit r4), in place of its bl fn_8009FD04: in mode 0 the shield bounces off a fighter, whose body it passes through.
+sh_hit:
+	stwu r1, -0x40(r1)
+	mflr r0
+	stw r0, 0x44(r1)
+	stmw r28, 0x30(r1)
+	mr r31, r3
+	mr r30, r4
+	call fn_8009FD04
+	mr r3, r30
+	call fn_800B0C58
+	cmpwi r3, 0
+	beq 9f
+	lwz r4, 0x24(r31)
+	bl shot_of
+	mr. r29, r9
+	beq 9f
+	mr r28, r11
+	lbz r0, E_MODE(r29)
+	cmpwi r0, 0
+	bne 9f
+	clock r9
+	lwz r0, S_HIT(r28)
+	cmpw r0, r30
+	bne 1f
+	lwz r0, S_HIT_MS(r28)
+	subf r0, r0, r9
+	cmpwi r0, HIT_GAP
+	blt 9f
+1:	stw r30, S_HIT(r28)
+	stw r9, S_HIT_MS(r28)
+	mr r3, r31
+	addi r4, r1, 0x20
+	call fn_80067050
+	cmpwi r3, 0
+	beq 9f
+	lfs f0, 0xa8(r31)
+	lfs f1, 0xa8(r30)
+	fsubs f0, f0, f1
+	stfs f0, 0x10(r1)
+	lfs f0, 0xac(r31)
+	lfs f1, 0xac(r30)
+	fsubs f0, f0, f1
+	stfs f0, 0x14(r1)
+	li r0, 0
+	stw r0, 0x18(r1)
+	stw r0, 0x1c(r1)
+	bl long_enough
+	beq 3f
+	addi r3, r1, 0x10
+	call fn_8042EC54
+	bl along
+	fimm f0, 0, 0
+	fcmpo cr0, f1, f0
+	blt 4f
+# already past the fighter's middle: straight back
+3:	lfs f0, 0x20(r1)
+	fneg f0, f0
+	stfs f0, 0x10(r1)
+	lfs f0, 0x24(r1)
+	fneg f0, f0
+	stfs f0, 0x14(r1)
+	li r0, 0
+	stw r0, 0x18(r1)
+	bl long_enough
+	beq 9f
+	addi r3, r1, 0x10
+	call fn_8042EC54
+	bl along
+4:	fadds f1, f1, f1
+	lfs f3, E_BOUNCE(r29)
+	lfs f0, 0x20(r1)
+	lfs f2, 0x10(r1)
+	fnmsubs f0, f1, f2, f0
+	fmuls f0, f0, f3
+	stfs f0, 0x20(r1)
+	lfs f0, 0x24(r1)
+	lfs f2, 0x14(r1)
+	fnmsubs f0, f1, f2, f0
+	fmuls f0, f0, f3
+	stfs f0, 0x24(r1)
+	lfs f0, 0x28(r1)
+	fmuls f0, f0, f3
+	stfs f0, 0x28(r1)
+	li r0, 0
+	stw r0, 0x2c(r1)
+	mr r3, r31
+	addi r4, r1, 0x20
+	call fn_80065CB0
+9:	lmw r28, 0x30(r1)
+	lwz r0, 0x44(r1)
+	mtlr r0
+	addi r1, r1, 0x40
+	blr
+
+# f1 = the caller's velocity at 0x20(r1) along its flat normal at 0x10(r1). Uses f0, f2.
+along:
+	lfs f1, 0x20(r1)
+	lfs f0, 0x10(r1)
+	fmuls f1, f1, f0
+	lfs f2, 0x24(r1)
+	lfs f0, 0x14(r1)
+	fmadds f1, f2, f0, f1
+	blr
+
+# r9 = the entry whose away shield has id r4, or 0; r11 its slot. Uses r0, r10, ctr.
+shot_of:
+	mflr r10
+	bl here
+	mtlr r10
+	addi r11, r11, 4
+	li r0, PLAYERS
+	mtctr r0
+1:	lwz r9, S_ID(r11)
+	cmpwi r9, 0
+	beq 2f
+	cmpw r9, r4
+	bne 2f
+	lwz r9, S_FLAGS(r11)
+	andi. r9, r9, F_AWAY
+	beq 2f
+	lwz r9, S_ENTRY(r11)
+	blr
+2:	addi r11, r11, SLOT
+	bdnz 1b
+	li r9, 0
+	blr
 
 # r9 = actor r4's entry or 0, r11 its slot. Uses r0, r10, ctr.
 slot_of:

@@ -139,18 +139,18 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(() => D.airThrow(out, [{ internal: 'Synth', drop: 0.85 }])).toThrow(LabError)
   })
 
-  it('hooks the launcher, the pose, the ranged attack press and the damage for the shield throw, after the air throw', () => {
+  it('hooks the launcher, the pose, the ranged attack press, the damage and the hit for the shield throw, after the air throw', () => {
     const dol = gameSource().dol
     const entry = (internal: string): D.ShieldCharacter => ({ internal, templates: [`proj_${internal}Shield`, `proj_${internal}AltShield`], glint: 'sysh0',
       bone: 39, flyBack: internal === 'Cap', marker: 4, chest: 1.1, radius: 1, minMs: 200, speed: 30, out: 20, outMs: 600, lifeMs: 3000, blocking: 0.8,
-      hit: 0.9, bind: [0.5, 0, 1.4], throwSpeed: 70 })
+      hit: 0.9, bind: [0.5, 0, 1.4], throwSpeed: 70, bounce: 0.7 })
     const out = D.daredevil(dol, [{ internal: 'Synth', drop: 0.85 }], [entry('Synth'), entry('Cap')])
     const word = (d: Uint8Array, va: number) => u32be(d, D.fileOffset(d, va))
     const target = (va: number) => va + (((word(out, va) & 0x3fffffc) << 6) >> 6)
     const air = target(0x800de74c)
     const sh = target(0x800f14d8)
     for (const [va, old, to] of [[0x800f14d8, 0x4bf5eee1, D.SHIELD_SPAWN], [0x801a4a0c, 0x801e00ec, D.SHIELD_POSE], [0x800cc124, 0x7c601b78, D.SHIELD_PRESSED],
-      [0x80030188, 0x4804e511, D.SHIELD_DAMAGE], [0x800de9bc, 0x4bfb932d, D.SHIELD_PLAY]]) {
+      [0x80030188, 0x4804e511, D.SHIELD_DAMAGE], [0x800de9bc, 0x4bfb932d, D.SHIELD_PLAY], [0x800a033c, 0x4bfff9c9, D.SHIELD_HIT]]) {
       expect(word(dol, va)).toBe(old)
       expect(word(out, va) & 0xfc000003).toBe(0x48000001)
       expect(target(va) - sh).toBe(to)
@@ -168,6 +168,7 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect([...out.subarray(cap + 0xa0, cap + 0xa4)]).toEqual([39, 1, 40, 4])
     expect(f32be(out, cap + 0xc0)).toBeCloseTo(0.8, 5)
     expect(f32be(out, cap + 0xc8 + 8)).toBeCloseTo(1.4, 5)
+    expect(f32be(out, cap + 0xd8)).toBeCloseTo(0.7, 5)
     expect(equal(D.daredevil(dol, [{ internal: 'Synth', drop: 0.85 }], []), D.airThrow(dol, [{ internal: 'Synth', drop: 0.85 }]))).toBe(true)
     expect(() => D.daredevil(out, [], [entry('Synth')])).toThrow(LabError)
   })
