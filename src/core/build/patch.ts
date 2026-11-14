@@ -146,7 +146,7 @@ export class Builder {
     this.checkNames()
     const c = this.c
     this.progress('Roster')
-    this.r.dol = D.patch(this.src.dol, c.internalName, c.displayName, c.stats.normal, c.stats.alt)
+    this.r.dol = D.bundleFit(D.patch(this.src.dol, c.internalName, c.displayName, c.stats.normal, c.stats.alt))
     this.buildFiles()
     if (this.r.cache !== null) this.r.dol = D.growEffectCache(this.r.dol, this.r.cache)
     if (mirrors(c)) this.r.dol = D.mirrorSkip(this.r.dol)
