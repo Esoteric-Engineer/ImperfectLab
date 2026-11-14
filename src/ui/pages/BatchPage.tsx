@@ -1,9 +1,10 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { MAX_BATCH, ordinal } from '../../core/build/batch'
 import { TINT_ALL_LIMIT } from '../../core/build/effects'
+import * as effectsets from '../../core/build/effectsets'
 import * as trails from '../../core/build/trails'
 import * as R from '../../core/game/roster'
-import { type Character, copyCharacter, load } from '../../core/package/imperfect'
+import { auraSet, type Character, copyCharacter, load } from '../../core/package/imperfect'
 import { canSaveInPlace, download, downloadBlob, openCharacter, opfsFile, removeOpfs } from '../../io/files'
 import type { BatchCheckResult } from '../../worker/protocol'
 import { Note, ProblemList, Progress } from '../components/common'
@@ -17,8 +18,9 @@ const kb = (n: number) => `${Math.round(n / 1024).toLocaleString('en-US')} KB`
 function aura(c: Character): string {
   const fire = (c.flames.body ? ', flames over the whole body' : c.flames.parts.length ? `, flames on ${c.flames.parts.length} part${c.flames.parts.length > 1 ? 's' : ''}` : '') +
     (trails.hasAny(c.trails) ? `, motion trails on the ${c.trails.parts.join(', ')}` : '')
-  if (c.aura.mode === 'tint') return `tinted (${c.aura.tint === 'all' ? 'all effects' : 'idle and power-up'})${fire}`
-  return (c.aura.mode === 'swap' ? 'swapped' : "the base's") + fire
+  const set = effectsets.SETS[auraSet(c)]
+  if (c.aura.mode === 'tint') return `${set ? `${set.label}, ` : ''}tinted (${c.aura.tint === 'all' ? 'all effects' : 'idle and power-up'})${fire}`
+  return (set ? set.label : c.aura.mode === 'swap' ? 'swapped' : "the base's") + fire
 }
 
 async function chooseSlot(): Promise<BatchSlot | null> {

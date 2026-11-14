@@ -11,6 +11,7 @@ import * as nfxtool from '../mnroi/nfxtool'
 import * as nvbtool from '../mnroi/nvbtool'
 import { AURA_TINTS, type Eyes, type Flames, type Trails } from '../package/imperfect'
 import { hlsToRgb, rgbToHls } from './colorsys'
+import * as effectsets from './effectsets'
 import * as flames from './flames'
 import * as templates from './templates'
 import * as trails from './trails'
@@ -34,9 +35,11 @@ export function cacheSize(used: number): number {
 }
 
 // What a tint copies, per costume.
-export function roots(fx: Effects, tun: tuning.Tuning, base: BaseCharacter, level = 'all'): [string[], string[]] {
-  const normal = [base.effect1], alt = [base.altEffect1]
+// replaced: an effect set's fields; it also replaces effect1
+export function roots(fx: Effects, tun: tuning.Tuning, base: BaseCharacter, level = 'all', replaced: Set<number> | null = null): [string[], string[]] {
+  const normal = replaced ? [] : [base.effect1], alt = replaced ? [] : [base.altEffect1]
   for (const fid of tun.fieldsOf(nvbtool.T_EFFECT)) {
+    if (replaced?.has(fid)) continue
     const n = tun.value(fid) as string, a = tun.value(fid, 5) as string
     if (tuning.POWER_EFFECTS.includes(fid) || (level === 'all' && n.toLowerCase() !== a.toLowerCase())) {
       normal.push(n)
@@ -53,6 +56,27 @@ export function roots(fx: Effects, tun: tuning.Tuning, base: BaseCharacter, leve
   }
   const unique = (names: (string | null)[]) => [...new Map(names.filter((r) => fx.has(r)).map((r) => [r!.toLowerCase(), r!])).values()]
   return [unique(normal), unique(alt)]
+}
+
+export interface SetCopies {
+  own: [Map<string, string>, Map<string, string>] // the set's roots the level tints, per costume
+  rest: [Map<string, string>, Map<string, string>] // base's effects, per costume; one copy for both unless a full tint
+  one: boolean
+  restRoots: [string[], string[]]
+}
+
+// A set's full tint falls back to this before 'power': the set tinted, the base's other effects in its color.
+export const SET_LEVEL = 'set'
+
+// A set's blocks and copies: level null is the set untinted.
+export function setCopies(fx: Effects, tun: tuning.Tuning, base: BaseCharacter, set: effectsets.EffectSet, level: string | null, colors: [string, string], prefixes: [string, string]): SetCopies {
+  effectsets.add(fx, set)
+  const own = level === 'all' || level === SET_LEVEL ? effectsets.roots(set) : level ? set.power : []
+  const tinted: [Map<string, string>, Map<string, string>] = [fx.tinted(own, colors[0], prefixes[0]), fx.tinted(own, colors[1], prefixes[1])]
+  const restRoots = roots(fx, tun, base, 'all', effectsets.replaced(set))
+  if (level === 'all') return { own: tinted, rest: [fx.tinted(restRoots[0], colors[0], prefixes[0]), fx.tinted(restRoots[1], colors[1], prefixes[1])], one: false, restRoots }
+  const rest = fx.tinted(restRoots[0], set.color, prefixes[0])
+  return { own: tinted, rest: [rest, rest], one: true, restRoots }
 }
 
 export interface TintPlan {
@@ -84,30 +108,50 @@ export function greyBytes(source: GameSource, base: BaseCharacter, alt: boolean)
   return i < 0 ? 0 : readTpl(source.entry(`Bundles/${flames.GREY_BUNDLE}.tpl`))[0][i].data.length
 }
 
-// Measured by making the copies the patch would make.
-export function tintPlans(source: GameSource, base: BaseCharacter): Record<string, TintPlan> {
+// Measured by making the copies the patch would make; 'none' is the set untinted.
+export function tintPlans(source: GameSource, base: BaseCharacter, set: effectsets.EffectSet | null = null, nfx: Effects = new Effects(source.entry('Misc/game.nfx'))): Record<string, TintPlan> {
   const tun = new tuning.Tuning(source, base)
+  const before = nfx.used()
+  const sized = (fx: Effects) => {
+    const used = fx.used()
+    return { bytes: used - before, extra: cacheSize(used) - nfxtool.CACHE_SIZE, used }
+  }
+  if (set) {
+    const fires = (fx: Effects, c: SetCopies, hide: Hidden): [number, number] => [
+      !(hide[0] && !c.one) && fx.drawsFire(c.restRoots[0]) ? greyBytes(source, base, false) : 0,
+      !(hide[1] && !c.one) && fx.drawsFire(c.restRoots[c.one ? 0 : 1]) ? greyBytes(source, base, true) : 0]
+    const plan = (level: string | null, hide: Hidden): TintPlan => {
+      const fx = nfx.clone()
+      const c = setCopies(fx, tun, base, set, level, [stand(hide[0]), stand(hide[1])], [copyPrefix('xx', false), copyPrefix('xx', true)])
+      const names = level === 'all' || level === SET_LEVEL ? effectsets.roots(set) : level ? set.power : []
+      return { roots: names, alt: names, ...sized(fx), grey: fires(fx, c, hide) }
+    }
+    return Object.fromEntries([['none', plan(null, [false, false])], ...[...AURA_TINTS, SET_LEVEL].flatMap((level) => HIDES.map((hide): [string, TintPlan] => [planKey(level, hide), plan(level, hide)]))])
+  }
   return Object.fromEntries(AURA_TINTS.flatMap((level) => {
-    const first = new Effects(source.entry('Misc/game.nfx'))
-    const [normal, alt] = roots(first, tun, base, level)
-    const fire = [first.drawsFire(normal) ? greyBytes(source, base, false) : 0, first.drawsFire(alt) ? greyBytes(source, base, true) : 0]
-    return HIDES.map((hide, h) => {
-      const fx = h ? new Effects(source.entry('Misc/game.nfx')) : first
-      const before = fx.used()
+    const [normal, alt] = roots(nfx, tun, base, level)
+    const fire = [nfx.drawsFire(normal) ? greyBytes(source, base, false) : 0, nfx.drawsFire(alt) ? greyBytes(source, base, true) : 0]
+    return HIDES.map((hide): [string, TintPlan] => {
+      const fx = nfx.clone()
       fx.tinted(normal, stand(hide[0]), copyPrefix('xx', false))
       fx.tinted(alt, stand(hide[1]), copyPrefix('xx', true))
       const grey: [number, number] = [hide[0] ? 0 : fire[0], hide[1] ? 0 : fire[1]]
-      return [planKey(level, hide), { roots: normal, alt, bytes: fx.used() - before, extra: cacheSize(fx.used()) - nfxtool.CACHE_SIZE, used: fx.used(), grey }]
+      return [planKey(level, hide), { roots: normal, alt, ...sized(fx), grey }]
     })
   }))
 }
 
-// How much several characters' tints and flames grow the cache together.
-export function sharedExtra(source: GameSource, tints: [BaseCharacter, string | null, Hidden?][], fires: [Flames, Trails, Eyes?][] = [], more: (fx: Effects) => void = () => {}): number {
+// How much several characters' tints, effect sets and flames grow the cache together.
+export function sharedExtra(source: GameSource, tints: [BaseCharacter, string | null, Hidden?, effectsets.EffectSet?][], fires: [Flames, Trails, Eyes?][] = [], more: (fx: Effects) => void = () => {}): number {
   const fx = new Effects(source.entry('Misc/game.nfx'))
-  tints.forEach(([base, level, hide = [false, false]], i) => {
-    if (level === null) return
-    const [normal, alt] = roots(fx, new tuning.Tuning(source, base), base, level)
+  tints.forEach(([base, level, hide = [false, false], set], i) => {
+    if (!set && level === null) return
+    const tun = new tuning.Tuning(source, base)
+    if (set) {
+      setCopies(fx, tun, base, set, level, [stand(hide[0]), stand(hide[1])], [copyPrefix(`x${i}`, false), copyPrefix(`x${i}`, true)])
+      return
+    }
+    const [normal, alt] = roots(fx, tun, base, level!)
     fx.tinted(normal, stand(hide[0]), copyPrefix(`x${i}`, false))
     fx.tinted(alt, stand(hide[1]), copyPrefix(`x${i}`, true))
   })
@@ -121,8 +165,16 @@ export function planExtra(p: TintPlan, more = 0): number {
 }
 
 export function tintLevel(plans: Record<string, TintPlan>, level: string, more = 0, hide: Hidden = [false, false]): string {
-  const all = plans[planKey('all', hide)]
-  return level === 'all' && all && planExtra(all, more) > TINT_ALL_LIMIT ? 'power' : level
+  const fits = (l: string) => planExtra(plans[planKey(l, hide)], more) <= TINT_ALL_LIMIT
+  if (level !== 'all' || !plans[planKey('all', hide)] || fits('all')) return level
+  return plans[planKey(SET_LEVEL, hide)] && fits(SET_LEVEL) ? SET_LEVEL : 'power'
+}
+
+// What a full tint that doesn't fit keeps at its fallback level.
+export function fallback(level: string, set: effectsets.EffectSet | null, base: string): string {
+  if (!set) return 'its idle and power-up effects are tinted'
+  const rest = `${base}'s other effects take the set's color (${set.color})`
+  return level === SET_LEVEL ? `${rest} instead of the tint` : `only ${set.effect1Label} and the power-mode glow are tinted, and ${rest}`
 }
 
 export function copyPrefix(internal: string, alt: boolean): string {
@@ -253,6 +305,15 @@ export class Effects {
   constructor(data: Uint8Array) {
     this.items = nfxtool.readNfx(data)
     for (const b of nfxtool.blocks(this.items)) if (!this.by.has(b.name.toLowerCase())) this.by.set(b.name.toLowerCase(), b)
+  }
+
+  // Shares blocks with this one: blocks are only ever added, never edited.
+  clone(): Effects {
+    const fx = Object.create(Effects.prototype) as Effects
+    fx.items = [...this.items]
+    fx.by = new Map(this.by)
+    fx.paints = new Map(this.paints)
+    return fx
   }
 
   has(name: string | null | undefined): boolean {

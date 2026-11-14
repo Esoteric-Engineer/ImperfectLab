@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import * as cutscenes from '../src/core/build/cutscenes'
 import * as damage from '../src/core/build/damage'
 import * as effects from '../src/core/build/effects'
+import * as effectsets from '../src/core/build/effectsets'
 import * as eyes from '../src/core/build/eyes'
 import { EFFECT_FIELDS } from '../src/core/build/effectslots'
 import * as flames from '../src/core/build/flames'
@@ -427,6 +428,32 @@ describe.skipIf(!ISO)('game', () => {
     expect(jo.power.roots).toEqual(['jOhmStand', 'jOhmPwrStand', 'jOhmPowerOn'])
     expect(jo.all.roots).toContain('jOhmArcToSkyL')
     expect([thing.all.roots, thing.all.alt]).toEqual([[], []])
+  })
+
+  it("leaves no costume 2 effect untinted when an effect set shares costume 1's copies", () => {
+    const nfx = new effects.Effects(src().entry('Misc/game.nfx'))
+    const last = tuning.SLOTS - 1
+    for (const key of R.keys()) {
+      const base = new R.BaseCharacter(src(), key)
+      const tun = new tuning.Tuning(src(), base)
+      for (const set of Object.values(effectsets.SETS)) {
+        const c = effects.setCopies(nfx.clone(), tun, base, set, effects.SET_LEVEL, ['#ff0000', '#ff0000'], ['xxf', 'xxa'])
+        const skip = effectsets.replaced(set)
+        const copied = (n: string) => c.rest[0].has(n.toLowerCase())
+        const tinted2 = (n: string) => c.restRoots[1].some((r) => r.toLowerCase() === n.toLowerCase())
+        const named = (t: string) => templates.chain(base.t, t).flatMap((tp) => tp.props.map(([, v]) => R.text(v))).filter((v): v is string => v !== null)
+        for (const fid of tun.fieldsOf(nvbtool.T_EFFECT)) {
+          const n = tun.value(fid, 0) as string, a = tun.value(fid, last) as string
+          if (skip.has(fid) || n.toLowerCase() === a.toLowerCase() || !tinted2(a)) continue
+          expect(copied(n), `${key} ${set.key} effect field ${fid}: ${n} / ${a}`).toBe(true)
+        }
+        for (const fid of tun.fieldsOf(nvbtool.T_TEMPLATE)) {
+          const n = tun.value(fid, 0) as string, a = tun.value(fid, last) as string
+          if (skip.has(fid) || n.toLowerCase() === a.toLowerCase() || !named(a).some(tinted2)) continue
+          expect(named(n).some(copied), `${key} ${set.key} template field ${fid}: ${n} / ${a}`).toBe(true)
+        }
+      }
+    }
   })
 
   it('swaps auras in the templates', () => {
@@ -936,6 +963,94 @@ describe.skipIf(!ISO)('game', () => {
     expect(R.text(T.prop('plr_Synth', R.P_EFFECT2))).toBe('irnManFX')
     expect(T.get('plr_altSynth').get(R.P_EFFECT2)).toBeNull()
     expect(r.notes.some((n) => n.includes('replace Iron Man'))).toBe(true)
+  })
+
+  it("gives a character Doctor Doom's PSP effects in place of the base's", () => {
+    const c = tinted('johnnyohm')
+    c.aura = { ...c.aura, mode: 'base', set: 'doom' }
+    const r = new Builder(src(), c).build()
+    const fx = new effects.Effects(r.sets.get('Misc/game.nfx')!)
+    expect(effectsets.roots(effectsets.DOOM).every((n) => fx.has(n))).toBe(true)
+    const nvb = nvbtool.parseNvb(r.adds.get('Misc/PLAYER_Synth.nvb')!)
+    const tun = new tuning.Tuning(src(), new R.BaseCharacter(src(), 'johnnyohm'))
+    const slots = (fid: number) => (nvb.slots(fid, tun.fields[fid][1]) ?? Array(tuning.SLOTS).fill(tun.fields[fid][1])).map((v) => latin1(v).split('\0')[0])
+    expect([98, 101, 203].map(slots)).toEqual(['doomPowerOn', 'doomFlyFX', 'doomSuperBlock'].map((n) => Array(tuning.SLOTS).fill(n)))
+    for (const fid of [99, 102, 204]) expect(slots(fid).every((v) => v === ''), `field ${fid}`).toBe(true)
+    const fired = new Map(EFFECT_FIELDS.map((fid, i) => [slots(fid)[0], i + 1]))
+    const kBlock = fired.get('doomBlock')!, kCharge = fired.get('doomHandChargeR')!
+    expect([kBlock, kCharge].every((k) => k !== undefined)).toBe(true)
+    const T = new R.Templates(r.sets.get('Misc/Global.not')!)
+    expect(['plr_Synth', 'plr_altSynth'].map((t) => [R.text(T.prop(t, R.P_CASTID)), R.text(T.prop(t, R.P_EFFECT1))])).toEqual([['DRDOOM', 'doomMaskGlow'], ['ALT_DRDOOM', 'doomMaskGlow']])
+    for (const costume of ['', '_alt']) {
+      expect(latin1(r.adds.get(`Bundles/synth${costume}.ngt`)!)).toContain(effectsets.DOOM.texture.name)
+      const kinds = ngmtool.read(r.adds.get(`Bundles/synth${costume}.ngm`)!)[1][0].attachments.map(([, k]) => k)
+      expect([effectsets.ARC_KIND, effectsets.PALM_KIND, effectsets.JET_KIND].map((k) => kinds.filter((x) => x === k).length)).toEqual([13, 2, 2])
+    }
+    expect(shaders.blocks(r.sets.get('Materials/Shaders/shaders.nsa')!).get(effectsets.DOOM.texture.name.toLowerCase())?.get('shader')).toBe('add')
+    const set = nmstool.parse(r.adds.get(`Motions/${moves.motionSetName('Synth')}`)!)
+    const recs = new Map(ngbtool.parse(r.adds.get('Bundles/synth.ngb')!).map((x) => [x.name.toLowerCase(), x]))
+    const own = (state: string) => recs.get(set.motions().get(state.toLowerCase())!.anim.toLowerCase())!.events.filter(([, t]) => [0x48, 0x49, 0x5d, 0x5e].includes(t)).map(([, t, k]) => [t, k])
+    expect(own('BlockStart')).toEqual([[0x48, kBlock]])
+    expect(own('RangedAttack')).toEqual([[0x48, kBlock], [0x49, kBlock]])
+    expect(own('SuperAirRangedAttack')).toEqual([[0x48, kCharge], [0x49, kCharge]])
+    expect(own('SuperAttack3')).toEqual([[0x48, kBlock], [0x49, kBlock]])
+    // one-handed shots use the right-hand bolt and launch point; the two-handed one is unchanged
+    const shot = (state: string) => recs.get(set.motions().get(state.toLowerCase())!.anim.toLowerCase())!.events.filter(([, t]) => [0x4e, 0x4f].includes(t)).map(([, t, k]) => [t, k])
+    for (const state of ['RangedAttack', 'SuperRangedAttack', 'SuperAirRangedAttack']) expect(shot(state).sort(), state).toEqual([[0x4e, 2], [0x4f, 1]])
+    expect(shot('SuperAttack3')).toEqual([[0x4e, 3]])
+    const eyesAt = ngmtool.read(r.adds.get('Bundles/synth.ngm')!)[1][0].attachments.filter(([, k]) => k === eyes.EYE_KIND).map(([, , i, m]) => [i, ...m.slice(12, 15).map((v: number) => Math.round(v * 1000) / 1000)])
+    expect(eyesAt).toEqual([[1, -0.033, 0.15, 0.046], [2, 0.033, 0.15, 0.046]])
+    expect(r.notes.some((n) => n.includes("Johnny Ohm's own power aura is off"))).toBe(true)
+    // his own shots and lightning take the set's color, one copy for both costumes
+    const shock = slots(81)
+    expect(shock[0]).not.toBe('jOhmShockL')
+    expect(shock.every((v) => v === shock[0])).toBe(true)
+    const colors = fx.tree([shock[0]]).flatMap((b) => b.lines.filter((l) => /^(start|end)col /.test(l)))
+    expect(colors.length).toBeGreaterThan(0)
+    expect(colors).not.toContain('endcol (255,0,0,255)')
+    const shots = [90, 91, 92].map(slots)
+    for (const shot of shots) {
+      expect(shot.every((v) => v === shot[0] && !v.toLowerCase().includes('johm')), shot[0]).toBe(true)
+      expect(templates.chain(T, shot[0]).some((t) => t.props.some(([, v]) => fx.has(R.text(v)) && !R.text(v)!.toLowerCase().includes('johm')))).toBe(true)
+    }
+  })
+
+  it("tints an effect set's leftovers per costume only when memory allows", () => {
+    const c = tinted('johnnyohm')
+    c.aura = { ...c.aura, set: 'doom', tint: 'all', color: '#45FF42', alt_color: '#B109D3' }
+    const r = new Builder(src(), c).build()
+    expect(r.notes.some((n) => n.includes('instead of the tint'))).toBe(true)
+    const nvb = nvbtool.parseNvb(r.adds.get('Misc/PLAYER_Synth.nvb')!)
+    const tun = new tuning.Tuning(src(), new R.BaseCharacter(src(), 'johnnyohm'))
+    const slots = (fid: number) => (nvb.slots(fid, tun.fields[fid][1]) ?? []).map((v) => latin1(v).split('\0')[0])
+    expect(slots(81)[0]).toBe(slots(81)[tuning.SLOTS - 1])
+    expect(slots(98)[0]).not.toBe(slots(98)[tuning.SLOTS - 1])
+    const light = { ...tinted('wolverine'), aura: { ...c.aura } }
+    const plans = effects.tintPlans(src(), new R.BaseCharacter(src(), 'wolverine'), effectsets.DOOM)
+    expect(effects.tintLevel(plans, 'all')).toBe('all')
+    const w = new Builder(src(), light).build()
+    expect(w.notes.some((n) => n.includes('needs more memory'))).toBe(false)
+  })
+
+  it("tints Doctor Doom's effects per costume, and adds them once for two characters", () => {
+    const c = tinted('ironman')
+    c.aura = { ...c.aura, set: 'doom', color: '#0080FF', alt_color: '#00FF0000' }
+    const r = new Builder(src(), c).build()
+    const fx = new effects.Effects(r.sets.get('Misc/game.nfx')!)
+    const T = new R.Templates(r.sets.get('Misc/Global.not')!)
+    const glow = R.text(T.prop('plr_Synth', R.P_EFFECT1))!
+    expect(glow).not.toBe('doomMaskGlow')
+    expect(fx.has(glow)).toBe(true)
+    const nvb = nvbtool.parseNvb(r.adds.get('Misc/PLAYER_Synth.nvb')!)
+    const tun = new tuning.Tuning(src(), new R.BaseCharacter(src(), 'ironman'))
+    const power = (nvb.slots(98, tun.fields[98][1]) ?? []).map((v) => latin1(v).split('\0')[0])
+    expect(power[0]).not.toBe('doomPowerOn')
+    expect(power[0]).not.toBe(power[tuning.SLOTS - 1])
+    const a = { ...tinted('johnnyohm'), aura: { mode: 'base', tint: 'all', color: '#FFFFFF', alt_color: '#FFFFFF', set: 'doom' } }
+    const b = { ...a, internalName: 'Synth2', displayName: 'SYNTH 2' }
+    const both = buildBatch(src(), [a, b])
+    const nfx = [...both.sets, ...both.adds].find(([k]) => k === 'Misc/game.nfx')![1]
+    expect(nfxtool.blocks(nfxtool.readNfx(nfx)).filter((x) => x.name === 'doomPowerOn').length).toBe(1)
   })
 
   it('combines glowing eyes with flames and trails, and counts them', () => {

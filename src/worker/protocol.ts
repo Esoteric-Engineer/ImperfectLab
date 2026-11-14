@@ -39,6 +39,7 @@ export interface BaseDetails {
   hasWire: boolean
   health: number
   tint: Record<string, TintPlan>
+  setTint: Record<string, Record<string, TintPlan>>
   sizes: Record<string, [number, number]>
 }
 

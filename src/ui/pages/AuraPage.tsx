@@ -1,7 +1,8 @@
 import * as effects from '../../core/build/effects'
+import * as effectsets from '../../core/build/effectsets'
 import * as projectileswap from '../../core/build/projectileswap'
 import * as trails from '../../core/build/trails'
-import { EYE_POSITION, EYE_SIZE, EYE_X, EYE_YZ, FLAME_SIZE, TRAIL_LENGTH } from '../../core/package/imperfect'
+import { auraSet, EYE_POSITION, EYE_SIZE, EYE_X, EYE_YZ, FLAME_SIZE, TRAIL_LENGTH } from '../../core/package/imperfect'
 import { ColorButton, Note, NumberInput, OptionCard, ToggleCard, Warning } from '../components/common'
 import { store, useStore } from '../store'
 import { PlacementView } from './MovesPage'
@@ -10,6 +11,12 @@ const TEXTS: [string, string][] = [
   ['base', "Base: The normal base character's"],
   ['swap', "Swapped: costume 1 gets the base's alternate aura and costume 2 the normal one"],
   ['tint', "Tinted: the base's aura and effects are recolored"],
+]
+
+const SET_TEXTS: [string, string][] = [
+  ['base', 'Base: their own colors on both costumes'],
+  ['swap', 'Swapped: not available, as the set has no costume 2 effects'],
+  ['tint', 'Tinted: the effects are recolored'],
 ]
 
 const LEVELS: [string, string][] = [
@@ -52,6 +59,7 @@ export function AuraPage() {
   const details = s.baseDetails()
   const edited = () => s.touch('character')
   const tint = c.aura.mode === 'tint'
+  const set = effectsets.SETS[auraSet(c)] ?? null
   const f = c.flames
   const flameMode = f.body ? 'body' : f.parts.length ? 'parts' : 'none'
   const t = c.trails
@@ -62,7 +70,7 @@ export function AuraPage() {
   const eyeBytes = extraBytes - fireBytes - trailBytes
   const extras = trails.label(f, t, e)
   const shareBytes = extraBytes + projectileswap.bytes(c.projectile)
-  const plans = details?.tint ?? {}
+  const plans = (set ? details?.setTint?.[set.key] : details?.tint) ?? {}
   const hide = effects.hidden(c.aura.color, c.aura.alt_color)
   const tooBig = (level: string) => effects.tintLevel(plans, level, shareBytes, hide) !== level
   const memory = (level: string) => {
@@ -77,7 +85,15 @@ export function AuraPage() {
   let cost = ''
   const level = effects.tintLevel(plans, c.aura.tint, shareBytes, hide)
   const plan = plans[effects.planKey(level, hide)]
-  if (base && details && plans.all) {
+  const setCost = set && plans.none ? effects.planExtra(plans.none, shareBytes) : 0
+  if (set) {
+    about = `${set.label} effects: ${set.parts.join(', ')}.`
+    if (plan && tint) {
+      const extra = effects.planExtra(plan, shareBytes)
+      cost = (level !== c.aura.tint ? `The full tint${extras ? ` with ${extras}` : ''} needs more memory than a match can spare, so ${effects.fallback(level, set, base?.label ?? 'the base')}. ` : '') +
+        `The set and its tinted copies take ${plan.bytes} bytes of the game's effect memory${extra ? `; the patch adds ${extra} bytes to it for them${extras ? ` and the ${extras}` : ''}` : ', which fits'}.`
+    }
+  } else if (base && details && plans.all) {
     tintable = plans.all.roots.length > 0 || plans.all.alt.length > 0
     about = `${base.label}'s effects: ${plans.power.roots.join(', ') || 'none'}. ${tintable ? '' : 'There is nothing to tint; Base and Swap still apply.'}`
     if (tintable && plan) {
@@ -114,10 +130,36 @@ export function AuraPage() {
       <h3>Aura and effects</h3>
       <Note>Recolor or swap the character's aura, and add various effects to the character.</Note>
       <h4>Base effects</h4>
+      <OptionCard plain head="Effects" note="Whose effects the character has: the base character's, or a different character's.">
+        <div className="form">
+          <label>Effects</label>
+          <select value={auraSet(c)} onChange={(e) => {
+            const key = e.target.value
+            if (key === 'base') delete c.aura.set
+            else c.aura.set = key
+            if (key !== 'base' && c.aura.mode === 'swap') c.aura.mode = 'base'
+            edited()
+          }}>
+            <option value="base">The base character's{base ? ` (${base.label})` : ''}</option>
+            {Object.values(effectsets.SETS).map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
+          </select>
+        </div>
+        {set && (
+          <>
+            <Note>
+              {set.label} effects replace {base ? `${base.label}'s` : "the base's"} power-mode, flight and super-block effects and the always-on effect,
+              and {base ? `${base.label}'s` : "the base's"} own power aura is turned off. {set.moves} The base's own animation effects
+              are silenced (moves borrowed on the Moves page keep their own choice). {base ? `${base.label}'s` : "The base's"} other effects, such as
+              its shots, are recolored to the set's color ({set.color}), or with the tint when everything is tinted.
+            </Note>
+            <Note>{setCost ? `The set and the recolored copies add ${setCost} bytes to the game's effect memory.` : `The set and the recolored copies take ${plans.none?.bytes ?? 0} bytes of the game's effect memory, which fits.`} Its power-up sprite adds 2 KB to each costume's textures.</Note>
+          </>
+        )}
+      </OptionCard>
       <OptionCard plain head="Aura" note={about}>
-        {TEXTS.map(([mode, text]) => (
+        {(set ? SET_TEXTS : TEXTS).map(([mode, text]) => (
           <label key={mode} className="check block">
-            <input type="radio" name="aura" checked={c.aura.mode === mode} disabled={mode === 'tint' && !tintable}
+            <input type="radio" name="aura" checked={c.aura.mode === mode} disabled={(mode === 'tint' && !tintable) || (mode === 'swap' && set !== null)}
               onChange={() => { c.aura.mode = mode; edited() }} /> {text}
           </label>
         ))}
@@ -153,8 +195,8 @@ export function AuraPage() {
           </>
         )}
       </OptionCard>
-      <ToggleCard title="Keep the base's always-on effect" checked={f.base_effect} onChange={(on) => { f.base_effect = on; edited() }}
-        note="If the base has one, such as Human Torch's body fire or Elektra's hair." />
+      <ToggleCard title={set ? "Keep the set's always-on effect" : "Keep the base's always-on effect"} checked={f.base_effect} onChange={(on) => { f.base_effect = on; edited() }}
+        note={set ? `In ${set.label} effects: ${set.effect1Label}.` : "If the base has one, such as Human Torch's body fire or Elektra's hair."} />
 
       <h4>Added effects</h4>
       <ToggleCard title="Flames" checked={flameMode !== 'none'} onChange={(on) => setFlameMode(on ? 'parts' : 'none')}

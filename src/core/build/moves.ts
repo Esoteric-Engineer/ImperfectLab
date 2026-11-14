@@ -136,6 +136,12 @@ export const MOVES: Move[] = (() => {
 export const MOVE_IDS = new Map(MOVES.map((m) => [m.id, m]))
 const MOVE_OF = new Map(MOVES.flatMap((m) => m.states.map((s): [string, string] => [s.toLowerCase(), m.id])))
 
+// Whether a state's launch (0x04) is a shot rather than a carried object or a throw.
+export function shoots(state: string): boolean {
+  const category = MOVE_IDS.get(MOVE_OF.get(state.toLowerCase()) ?? '')?.category
+  return Boolean(category) && category !== 'Carrying and weapons' && category !== 'Throws'
+}
+
 export function motionSetName(internal: string): string {
   return `${internal}.nms`
 }
@@ -683,7 +689,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
   choice: Record<string, MoveEffect> = {}, plan: EffectPlan | null = null, stretches: Record<string, MoveReach> = {}, fx: Effects | null = null,
   size = 1, idle: string[] = [], onBack: holster.Plan | null = null, throwDamage = false, shooter: gun.Plan | null = null,
   spawn: number | null = null, anims: MoveAnims | null = null, noShots: NoShots | null = null, noThrow: NoShots | null = null, airThrow: AirThrow | null = null,
-  grip: holster.Prop | null = null, shield = false): MotionFiles {
+  grip: holster.Prop | null = null, shield = false, fxEvents: ((state: string, rec: ngbtool.Record, borrowed: boolean) => ngbtool.Record) | null = null): MotionFiles {
   const set = motionSetOf(base), stem = stemOf(set), name = internal.toLowerCase()
   const own = nmstool.parse(src.entry(`Motions/${set}`))
   const bundles = loadBundles(src, stem)
@@ -1149,6 +1155,28 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     notes.push(`grip: ${base.label}'s club stays where it is modeled in the ${handName(grip!)} hand (${held} animations)`)
   }
   if (grip && thrownHeld) notes.push(`grip: ${thrownHeld} throw animation${thrownHeld === 1 ? '' : 's'} throw the club from the ${handName(grip)} hand and catch it there`)
+  if (fxEvents) {
+    const borrowed = new Set(Object.keys(moves).flatMap((id) => MOVE_IDS.get(id)?.states.map((st) => st.toLowerCase()) ?? []))
+    let changed = 0
+    for (const m of resolved(src, own, holds(bundles)).values()) {
+      if (VICTIM.test(m.state)) continue
+      const found = SLOTS.flatMap((slot): [string, ngbtool.Record][] => {
+        const rec = bundles.get(slot)?.find((r) => r.name.toLowerCase() === m.anim.toLowerCase())
+        return rec ? [[slot, rec]] : []
+      })
+      const out = found.map(([, rec]) => fxEvents(m.state, rec, borrowed.has(m.state.toLowerCase())))
+      if (!out.some((r, i) => r !== found[i][1])) continue
+      const named = ownName(out[0])
+      found.forEach(([slot], i) => {
+        const into = bundles.get(slot)!
+        if (!into.some((r) => r.name.toLowerCase() === named.toLowerCase())) into.push({ ...out[i], name: named })
+      })
+      own.set({ ...m, anim: named })
+      displaced.add(m.anim.toLowerCase())
+      changed++
+    }
+    notes.push(`aura: the effect set's events in ${changed} moves`)
+  }
   // the base's records the moves replaced, unless another state still plays them
   const used = new Set([...resolved(src, own, () => true).values()].map((m) => m.anim.toLowerCase()))
   for (const l of own.lines) if (l.motion) used.add(l.motion.anim.toLowerCase())

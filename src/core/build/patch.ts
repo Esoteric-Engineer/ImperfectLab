@@ -23,10 +23,11 @@ import * as bundle from '../model/bundle'
 import { Fit, type MaterialSlots, type Tri } from '../model/fit'
 import { Model } from '../model/glb'
 import { Skeleton } from '../model/skeleton'
-import { airThrows, shieldThrows, type Character, damageStages, gunOf, hasCutscenes, image as readImage, longThrows, type Material, problems, type Placement, WALL, type WallKey, type ZCostume, zTexture } from '../package/imperfect'
+import { airThrows, auraSet, shieldThrows, type Character, damageStages, gunOf, hasCutscenes, image as readImage, longThrows, type Material, problems, type Placement, WALL, type WallKey, type ZCostume, zTexture } from '../package/imperfect'
 import * as cutscenes from './cutscenes'
 import * as damage from './damage'
 import * as effects from './effects'
+import * as effectsets from './effectsets'
 import * as basemoves from './basemoves'
 import * as eyes from './eyes'
 import * as flames from './flames'
@@ -94,6 +95,7 @@ export class Builder {
   greyTint: [boolean, boolean] = [false, false] // whether tinted effects draw the grey fire sprite
   eyesReplace = false // whether the glowing eyes replace the base's own always-on effect
   moveFx: moves.EffectPlan | null = null
+  setKs = new Map<string, number>() // the event slot of each effect an effect set's animations start
   propCenter: [number, number, number] | null = null
   gunGeometry: gun.Geometry | null = null
   swapCenter: [number, number, number] | null = null
@@ -172,7 +174,9 @@ export class Builder {
     const motionSet = this.motions()
     this.templates(effect1, description, projectiles, motionSet, effect2)
     this.sounds()
-    this.r.sets.set('Materials/Shaders/shaders.nsa', shaders.build(this.src.entry('Materials/Shaders/shaders.nsa'), materials, this.texture2, laserOf(this.c) ? laser.TEXTURES.map(([, n]) => n) : []))
+    const set = effectsets.setOf(auraSet(this.c))
+    const additive = [...(laserOf(this.c) ? laser.TEXTURES.map(([, n]) => n) : []), ...(set ? [set.texture.name] : [])]
+    this.r.sets.set('Materials/Shaders/shaders.nsa', shaders.build(this.src.entry('Materials/Shaders/shaders.nsa'), materials, this.texture2, additive))
     this.progress('Select screen, portraits and HUD')
     this.ui()
     this.r.adds = new Map([...this.uiAdds, ...this.bundleAdds, ...this.r.adds])
@@ -279,6 +283,7 @@ export class Builder {
     const first = (v: string | undefined) => shaders.firstWord(v).toLowerCase()
     const stages = damageStages(c)
     const envMaps = shaders.ENV_MAPS.filter((e) => included.some((m) => m.finish?.envmap === e.name))
+    const set = effectsets.setOf(auraSet(c))
     for (const [costume, alt] of [['', false], ['_alt', true]] as [string, boolean][]) {
       const [ngm, ngt, tpl] = base.bundleFiles(alt)
       const [, models] = ngmtool.read(ngm)
@@ -313,6 +318,7 @@ export class Builder {
           if (!extra.some(([n]) => n.toLowerCase() === to.toLowerCase())) extra.push([to, laser.grey(this.borrowTexture(laser.TEXTURE_BUNDLE, "Iron Man's costume 2", from)[1])])
         }
       }
+      if (set && !has(set.texture.name)) extra.push([set.texture.name, effectsets.textureImage(set, gxtex.readTpl(tpl)[0][0], bundle.textureHeader)])
       for (const e of envMaps) {
         if (has(e.name) || extra.some(([n]) => n.toLowerCase() === e.name.toLowerCase())) continue
         const borrowed = this.borrowTexture(e.bundle, e.donor, e.name)
@@ -352,6 +358,10 @@ export class Builder {
         if (!alt && empty.length) this.note(`flames: no part of the model follows the ${empty.join(', ')} bone, so its flame sits on the bone itself`)
       }
       if (eyes.hasAny(c.eyes)) eyes.markers(render, sk, c.eyes)
+      if (set) {
+        const missing = effectsets.markers(render, sk, copy, set, eyes.hasAny(c.eyes) ? [eyes.EYE_KIND] : [])
+        if (!alt && missing.length) this.note(`aura: ${base.label} has no ${missing.join(', ')} bone, so ${set.label} effects there have no marker`)
+      }
       if (boneShots(c)) projectileswap.marker(render, sk, c.projectile)
       const shieldModels: ngmtool.Model[] = []
       if (shieldThrows(c)) {
@@ -435,8 +445,8 @@ export class Builder {
   effects(): [[string, string] | null, Map<number, string[]> | null, nottool.Template[], [string | null, string | null] | null] {
     const c = this.c
     const tinted = c.aura.mode === 'tint', fire = flames.hasAny(c.flames), trailed = trails.hasAny(c.trails), theirs = Object.values(c.moveEffects).includes('theirs'), lined = paintsReach(c), eyed = eyes.hasAny(c.eyes)
-    const shoots = c.projectile.on, beam = laserOf(c), shielded = shieldThrows(c)
-    if (!tinted && !fire && !trailed && !theirs && !lined && !eyed && !gunOf(c) && !shoots && !beam && !shielded) return [null, null, [], null]
+    const shoots = c.projectile.on, beam = laserOf(c), shielded = shieldThrows(c), set = effectsets.setOf(auraSet(c))
+    if (!tinted && !set && !fire && !trailed && !theirs && !lined && !eyed && !gunOf(c) && !shoots && !beam && !shielded) return [null, null, [], null]
     const fx = new effects.Effects(this.src.entry('Misc/game.nfx'))
     const before = fx.used()
     const prefixes: [string, string] = [effects.copyPrefix(c.internalName, false), effects.copyPrefix(c.internalName, true)]
@@ -444,7 +454,7 @@ export class Builder {
       const used = hasCutscenes(c.cutscenes) ? cutscenes.effectKs(this.src, this.base, c.cutscenes) : []
       this.moveFx = moves.planEffects(this.src, this.base, c.moveEffects, fx, c.moveLines, prefixes, used, moves.movedEffects(this.src, this.base, c.moves))
     }
-    const [effect1, tintPower, extra]: [[string, string] | null, Map<number, string[]> | null, nottool.Template[]] = tinted ? this.tinted(fx) : [null, null, []]
+    const [effect1, tintPower, extra]: [[string, string] | null, Map<number, string[]> | null, nottool.Template[]] = set ? this.setEffects(fx, set, prefixes) : tinted ? this.tinted(fx) : [null, null, []]
     let power = tintPower
     if (lined) {
       const fids = moves.reachLineFields(this.src, this.base, c.moveReach, c.moves, c.moveEffects, fx)
@@ -490,8 +500,9 @@ export class Builder {
       const p = c.eyes.position.map((v) => formatG(v)).join(', ')
       const hiddenIn = ['1', '2'].filter((_, i) => effects.hidden(c.eyes.color, c.eyes.alt_color)[i])
       this.note(`glowing eyes: at ±${p} m from the head bone, ${formatG(c.eyes.size)}x Iron Man's size${hiddenIn.length ? `; costume ${hiddenIn[0]} has none` : ''}`)
-      this.eyesReplace = Boolean(this.base.effect1) && fx.eyesOnly(this.base.effect1) && fx.eyesOnly(this.base.altEffect1)
-      if (this.eyesReplace) this.note(`glowing eyes: they replace ${this.base.label}'s own (${this.base.effect1})`)
+      const own = set ? [set.effect1, set.effect1] : [this.base.effect1, this.base.altEffect1]
+      this.eyesReplace = Boolean(own[0]) && fx.eyesOnly(own[0]) && fx.eyesOnly(own[1])
+      if (this.eyesReplace) this.note(`glowing eyes: they replace ${set ? set.label : `${this.base.label}'s own`} (${own[0]})`)
     }
     if (fire) this.note(`flames: ${c.flames.body ? "over the whole body (Human Torch's body fire)" : `on the ${c.flames.parts.join(', ')}`}`)
     if (trailed) {
@@ -505,6 +516,46 @@ export class Builder {
     if (size > nfxtool.CACHE_SIZE) this.r.cache = size
     this.note(`effects: ${fx.used() - before} bytes added, ${fx.used()} of ${size} bytes of effect cache used`)
     return [effect1, power, extra, effect2]
+  }
+
+  // An effect set in place of the base's, tinted per costume when the aura is a tint.
+  private setEffects(fx: effects.Effects, set: effectsets.EffectSet, prefixes: [string, string]): [[string, string], Map<number, string[]>, nottool.Template[]] {
+    const c = this.c
+    const tun = new tuning.Tuning(this.src, this.base)
+    const hide = effects.hidden(c.aura.color, c.aura.alt_color)
+    let level: string | null = null
+    if (c.aura.mode === 'tint') {
+      const more = trails.cost(c.flames, c.trails, c.eyes) + projectileswap.bytes(c.projectile) + this.laserBytes()
+      level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, this.base, set), 'all', more, hide) : c.aura.tint)
+      if (this.tint === null && level !== c.aura.tint) this.note(`aura tint: ${set.label} full tint needs more memory than a match can spare; ${effects.fallback(level, set, this.base.label)}`)
+    }
+    const copies = effects.setCopies(fx, tun, this.base, set, level, [c.aura.color, c.aura.alt_color], prefixes)
+    const [mn, ma] = copies.own, [rn, ra] = copies.rest
+    const shown = (i: number) => copies.one || !hide[i]
+    this.greyTint = [shown(0) && fx.drawsFire(copies.restRoots[0]), shown(1) && fx.drawsFire(copies.restRoots[copies.one ? 0 : 1])]
+    if (level) {
+      const hiddenIn = ['1', '2'].filter((_, i) => hide[i])
+      this.note(`aura tint: ${new Set([...mn.values(), ...ma.values()]).size} effect blocks added${hiddenIn.length ? `; costume ${hiddenIn.join(' and ')}'s effects hidden` : ''}`)
+    }
+    const recolored = new Set([...rn.values(), ...ra.values()]).size
+    if (recolored) this.note(`aura: ${this.base.label}'s other effects (${copies.restRoots[0].join(', ')}) recolored ${copies.one ? set.color : 'with the tint'}: ${recolored} effect blocks added`)
+    const pick = (m: Map<string, string>, name: string) => (name ? m.get(name.toLowerCase()) ?? name : name)
+    const slots = (name: string) => Array.from({ length: tuning.SLOTS }, (_, s) => pick(s === tuning.SLOTS - 1 ? ma : mn, name))
+    if (set.fired.length) {
+      const used = hasCutscenes(c.cutscenes) ? cutscenes.effectKs(this.src, this.base, c.cutscenes) : []
+      this.moveFx ??= moves.planEffects(this.src, this.base, c.moveEffects, fx, c.moveLines, prefixes, used, moves.movedEffects(this.src, this.base, c.moves))
+      const missed: string[] = []
+      for (const name of set.fired) {
+        const k = this.moveFx.slots.claim(slots(name))
+        if (k === null) missed.push(name)
+        else this.setKs.set(name.toLowerCase(), k)
+      }
+      if (missed.length) this.note(`aura: no free effect slot for ${missed.join(', ')}, so the moves don't start ${missed.length === 1 ? 'it' : 'them'}`)
+    }
+    this.note(`aura: ${set.label} effects (${set.parts.join(', ')}); ${this.base.label}'s own power aura is off`)
+    const [power, extra] = this.follow(tun, rn, ra, effectsets.replaced(set), copies.one)
+    for (const [fid, name] of set.fields) power.set(fid, slots(name))
+    return [[pick(mn, set.effect1), pick(ma, set.effect1)], power, extra]
   }
 
   private tinted(fx: effects.Effects): [[string, string] | null, Map<number, string[]>, nottool.Template[]] {
@@ -522,32 +573,43 @@ export class Builder {
     this.note(`aura tint: ${new Set([...mn.values(), ...ma.values()]).size} effect blocks added${hiddenIn.length ? `; costume ${hiddenIn.join(' and ')}'s effects hidden` : ''}`)
     const pick = (m: Map<string, string>, name: string | null) => m.get((name ?? '').toLowerCase()) ?? name!
     const effect1: [string, string] | null = base.effect1 ? [pick(mn, base.effect1), pick(ma, base.altEffect1)] : null
-    // Every effect field naming a tinted block follows it.
+    return [effect1, ...this.follow(tun, mn, ma)]
+  }
+
+  // Every effect field naming a copied block follows it, and a projectile's templates naming one are copied too.
+  // one: costume 2 takes costume 1's copies.
+  private follow(tun: tuning.Tuning, mn: Map<string, string>, ma: Map<string, string>, skip: Set<number> = new Set(), one = false): [Map<number, string[]>, nottool.Template[]] {
+    const last = tuning.SLOTS - 1
     const power = new Map<number, string[]>()
     const slotsOf = (fid: number) => Array.from({ length: tuning.SLOTS }, (_, s) => tun.value(fid, s) as string)
+    const from = (vals: string[], s: number, has: (v: string) => boolean): [number, string] => (s !== last ? [0, vals[s]] : one && has(vals[0]) ? [0, vals[0]] : [1, vals[s]])
     for (const fid of tun.fieldsOf(nvbtool.T_EFFECT)) {
+      if (skip.has(fid)) continue
       const vals = slotsOf(fid)
-      const next = vals.map((v, s) => pick(s === tuning.SLOTS - 1 ? ma : mn, v))
-      if (next.some((v, s) => v !== vals[s])) power.set(fid, next)
-    }
-    // A projectile's effects are named by its templates: those are copied too.
-    const extra: nottool.Template[] = []
-    const copies = [new Map<string, string>(), new Map<string, string>()]
-    const newName = this.templateName()
-    for (const fid of tun.fieldsOf(nvbtool.T_TEMPLATE)) {
-      const vals = slotsOf(fid)
-      const next = vals.map((v, s) => {
-        const alt = s === tuning.SLOTS - 1 ? 1 : 0
-        if (!copies[alt].has(v.toLowerCase())) {
-          const r = templates.retarget(base.t, v, alt ? ma : mn, newName)
-          if (r) extra.push(...r[1])
-          copies[alt].set(v.toLowerCase(), r ? r[0] : v)
-        }
-        return copies[alt].get(v.toLowerCase())!
+      const next = vals.map((_, s) => {
+        const [alt, v] = from(vals, s, (n) => mn.has(n.toLowerCase()))
+        return (alt ? ma : mn).get(v.toLowerCase()) ?? vals[s]
       })
       if (next.some((v, s) => v !== vals[s])) power.set(fid, next)
     }
-    return [effect1, power, extra]
+    const extra: nottool.Template[] = []
+    const copies = [new Map<string, string>(), new Map<string, string>()]
+    const newName = this.templateName()
+    const copy = (alt: number, v: string): string => {
+      if (!copies[alt].has(v.toLowerCase())) {
+        const r = templates.retarget(this.base.t, v, alt ? ma : mn, newName)
+        if (r) extra.push(...r[1])
+        copies[alt].set(v.toLowerCase(), r ? r[0] : v)
+      }
+      return copies[alt].get(v.toLowerCase())!
+    }
+    for (const fid of tun.fieldsOf(nvbtool.T_TEMPLATE)) {
+      if (skip.has(fid)) continue
+      const vals = slotsOf(fid)
+      const next = vals.map((_, s) => copy(...from(vals, s, (n) => copy(0, n) !== n)))
+      if (next.some((v, s) => v !== vals[s])) power.set(fid, next)
+    }
+    return [power, extra]
   }
 
   tuning(power: Map<number, string[]> | null): string | null {
@@ -624,7 +686,14 @@ export class Builder {
     const fx = Object.keys(c.moveReach).length ? new effects.Effects(this.src.entry('Misc/game.nfx')) : null
     const shooter = this.gunPlan()
     const anims = animsOf(c, c.glb ? (this.model ?? new Model(c.glb)) : null)
-    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, this.onBack(), throwsDamage(c), shooter, boneShots(c) ? projectiles.LAUNCH_INDEX : null, anims, noShots(c), noThrow(c), airThrowPlan(c), this.gripProp(), shieldThrows(c))
+    const set = effectsets.setOf(auraSet(c))
+    // a projectile swap's shots keep their own launch points
+    const shots = set && !c.projectile.on ? effectsets.shotPlan(set, new tuning.Tuning(this.src, this.base), this.base.t, new effects.Effects(this.src.entry('Misc/game.nfx'))) : null
+    const fxEvents = set && (set.events.length || shots) ? (state: string, rec: ngbtool.Record, borrowed: boolean) => {
+      const out = effectsets.withEvents(set, state, rec, this.setKs, borrowed)
+      return shots && !borrowed && moves.shoots(state) ? effectsets.handShot(out, shots, !boneShots(c)) : out
+    } : null
+    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, this.onBack(), throwsDamage(c), shooter, boneShots(c) ? projectiles.LAUNCH_INDEX : null, anims, noShots(c), noThrow(c), airThrowPlan(c), this.gripProp(), shieldThrows(c), fxEvents)
     if (shooter) this.r.gun = this.gunEntry(shooter)
     for (const [k, v] of m.files) this.r.adds.set(k, v)
     if (thrown !== undefined) this.note(`baton throw: reaches ${thrown} m (${this.base.label}'s about 8)`)
@@ -664,7 +733,8 @@ export class Builder {
     if (shieldThrows(c)) on |= shield.RANGED_ABILITY
     const mode = c.aura.mode === 'swap' ? 'swap' : 'base'
     this.r.sets.set('Misc/Global.not', templates.build(this.src.entry('Misc/Global.not'), this.base, c.internalName, mode, effect1, description,
-      on || off ? [on, off] : null, gp.health ?? null, extra, motionSet, (c.baseMoves.throw_cable ?? true) && c.flames.base_effect && !this.eyesReplace, effect2, c.size))
+      on || off ? [on, off] : null, gp.health ?? null, extra, motionSet, (c.baseMoves.throw_cable ?? true) && c.flames.base_effect && !this.eyesReplace, effect2, c.size,
+      effectsets.setOf(auraSet(c))?.castid ?? null))
   }
 
   picture(slot: string): RgbaImage | null {
@@ -771,7 +841,7 @@ export class Builder {
 
 // Whether the character gets its own motion set and animation bundles (Builder.motions).
 export function ownMotions(c: Character): boolean {
-  return gunOf(c) !== null || c.baseMoves.throw_reach !== undefined || c.baseMoves.holster !== undefined || c.baseMoves.grip !== undefined || throwsDamage(c) || Object.keys(c.moves).length > 0 || Object.keys(c.moveAnims).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1 || boneShots(c) || c.projectile.remove || c.baseMoves.no_throw !== undefined || airThrows(c) || shieldThrows(c)
+  return Boolean(effectsets.setOf(auraSet(c))?.events.length) || gunOf(c) !== null || c.baseMoves.throw_reach !== undefined || c.baseMoves.holster !== undefined || c.baseMoves.grip !== undefined || throwsDamage(c) || Object.keys(c.moves).length > 0 || Object.keys(c.moveAnims).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1 || boneShots(c) || c.projectile.remove || c.baseMoves.no_throw !== undefined || airThrows(c) || shieldThrows(c)
 }
 
 export const boneShots = (c: Character): boolean => c.projectile.on && c.projectile.from === 'bone'

@@ -5,6 +5,7 @@ import { type Batch, buildBatch, checkBatch } from '../core/build/batch'
 import * as cutscenes from '../core/build/cutscenes'
 import { airThrowPlan, Builder, glowRgba, gripCenterOf, gripPropOf, gripTris, gunPlanOf, noShots, onBackPlan, patch, type Progress, propShape, report, type Result, WIRE, write } from '../core/build/patch'
 import * as effects from '../core/build/effects'
+import * as effectsets from '../core/build/effectsets'
 import * as eyes from '../core/build/eyes'
 import * as gun from '../core/build/gun'
 import { animGlb, animsOf, ClipFile, guessTurn, parseChoice, stateClips, type Timing, type Travel } from '../core/build/moveanim'
@@ -267,12 +268,18 @@ export class Service {
       if (!(e instanceof LabError)) throw e
     }
     const ab = b.abilities
-    let tint: Record<string, effects.TintPlan> = {}
-    try {
-      tint = effects.tintPlans(src, b)
-    } catch (e) {
-      if (!(e instanceof LabError)) throw e
+    let nfx: effects.Effects | undefined
+    const plans = (set: effectsets.EffectSet | null = null): Record<string, effects.TintPlan> => {
+      try {
+        nfx ??= new effects.Effects(src.entry('Misc/game.nfx'))
+        return effects.tintPlans(src, b, set, nfx)
+      } catch (e) {
+        if (!(e instanceof LabError)) throw e
+        return {}
+      }
     }
+    const tint = plans()
+    const setTint = Object.fromEntries(Object.entries(effectsets.SETS).map(([k, set]) => [k, plans(set)]))
     let sizes: Record<string, [number, number]>
     try {
       const tiles = ui.tileSizes(src.entry(ui.P + 'screens/clashCharSelect_thumbs.big'))
@@ -293,6 +300,7 @@ export class Service {
       hasWire: Boolean(ab & WIRE),
       health: R.u32(b.t.prop(b.plr, R.P_MAXHEALTH)) || 100,
       tint,
+      setTint,
       sizes,
     }
   }

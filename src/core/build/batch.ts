@@ -8,8 +8,9 @@ import * as nfxtool from '../mnroi/nfxtool'
 import { Model } from '../model/glb'
 import * as mapping from '../model/mapping'
 import { Skeleton } from '../model/skeleton'
-import { airThrows, type Character, gunOf, hasCutscenes, NO_SHOTS, problems as characterProblems, type Problem } from '../package/imperfect'
+import { airThrows, auraSet, type Character, gunOf, hasCutscenes, NO_SHOTS, problems as characterProblems, type Problem } from '../package/imperfect'
 import * as effects from './effects'
+import * as effectsets from './effectsets'
 import { impersonationData } from './impersonate'
 import * as moves from './moves'
 import * as laser from './laser'
@@ -31,15 +32,20 @@ export function ordinal(i: number): string {
   return `${n}${end}`
 }
 
-const lower = (level: string | null) => (level === 'all' ? 'power' : level)
-
 // The tint levels they get: as asked, unless together (with their flames) they grow the effect cache by more than one full tint may.
 export function batchTints(source: GameSource, chars: Batch): [(string | null)[], number] {
   const bases = chars.map((c) => new R.BaseCharacter(source, c.base))
   const asked = chars.map((c) => (c.aura.mode === 'tint' ? c.aura.tint : null))
-  const full = asked.flatMap((t, i) => (t === 'all' ? [i] : [])).reverse()
-  const cut = (which: number[]) => asked.map((t, i) => (which.includes(i) ? lower(t) : t))
-  const tries = [asked, ...full.map((i) => cut([i])), ...full.slice(1).map((_, k) => cut(full.slice(0, k + 2)))]
+  const sets = chars.map((c) => auraSet(c) !== 'base')
+  // an effect set's full tint first gives up the base's effects it leaves
+  const lower = (level: string | null, i: number) => (level === 'all' && sets[i] ? effects.SET_LEVEL : level === 'all' || level === effects.SET_LEVEL ? 'power' : level)
+  const rounds = (from: (string | null)[]) => {
+    const full = from.flatMap((t, i) => (t === 'all' || t === effects.SET_LEVEL ? [i] : [])).reverse()
+    const cut = (which: number[]) => from.map((t, i) => (which.includes(i) ? lower(t, i) : t))
+    return [from, ...full.map((i) => cut([i])), ...full.slice(1).map((_, k) => cut(full.slice(0, k + 2)))]
+  }
+  const tries = rounds(asked)
+  if (tries[tries.length - 1].includes(effects.SET_LEVEL)) tries.push(...rounds(tries[tries.length - 1]).slice(1))
   const lines = (fx: effects.Effects) => chars.forEach((c, i) => {
     if (c.projectile.on && !NO_SHOTS.includes(c.base)) projectileswap.build(source, bases[i], fx, c.projectile, `x${i}`, templates.namer(bases[i].t, `x${i}`))
     if (c.zButton?.laser) laser.build(fx, c.zButton.laser, `x${i}`)
@@ -54,7 +60,7 @@ export function batchTints(source: GameSource, chars: Batch): [(string | null)[]
   const seen = new Map<string, number>()
   for (const t of tries) {
     const key = t.join()
-    if (!seen.has(key)) seen.set(key, effects.sharedExtra(source, t.map((level, i) => [bases[i], level, effects.hidden(chars[i].aura.color, chars[i].aura.alt_color)]), chars.map((c) => [c.flames, c.trails, c.eyes]), lines))
+    if (!seen.has(key)) seen.set(key, effects.sharedExtra(source, t.map((level, i) => [bases[i], level, effects.hidden(chars[i].aura.color, chars[i].aura.alt_color), effectsets.setOf(auraSet(chars[i])) ?? undefined]), chars.map((c) => [c.flames, c.trails, c.eyes]), lines))
     if (seen.get(key)! <= effects.TINT_ALL_LIMIT) return [t, seen.get(key)!]
   }
   const last = tries[tries.length - 1]
@@ -98,7 +104,7 @@ export function buildBatch(source: GameSource, chars: Batch, progress: Progress 
   const [batch, notes] = withVoices(chars)
   const [tints] = batchTints(source, batch)
   batch.forEach((c, i) => {
-    if (c.aura.mode === 'tint' && tints[i] !== c.aura.tint) notes.push(`${c.displayName}: aura tint: the tints together need more effect memory than a match can spare; its idle and power-up effects are tinted`)
+    if (c.aura.mode === 'tint' && tints[i] !== c.aura.tint) notes.push(`${c.displayName}: aura tint: the tints together need more effect memory than a match can spare; ${effects.fallback(tints[i]!, effectsets.setOf(auraSet(c)), R.label(c.base))}`)
   })
 
   const r = new Result()
@@ -175,7 +181,7 @@ function claims(c: Character): Set<string> {
 }
 
 // Whether the character gets its own tuning file, and so a line in Misc/nvblist.txt (Builder.tuning).
-const tuned = (c: Character) => gunOf(c) !== null || c.projectile.on || c.aura.mode === 'tint' || Object.keys(tuningFields(c)).length > 0 || hasCutscenes(c.cutscenes) || Object.values(c.moveEffects).includes('theirs') || paintsReach(c)
+const tuned = (c: Character) => gunOf(c) !== null || c.projectile.on || c.aura.mode === 'tint' || auraSet(c) !== 'base' || Object.keys(tuningFields(c)).length > 0 || hasCutscenes(c.cutscenes) || Object.values(c.moveEffects).includes('theirs') || paintsReach(c)
 
 const gameBundle = (source: GameSource, name: string) => ['ngm', 'tpl'].reduce((n, ext) => n + (source.index.byName.get(`bundles/${name}.${ext}`)?.size ?? 0), 0)
 const builtBundle = (adds: Map<string, Uint8Array>, name: string) => ['ngm', 'tpl'].reduce((n, ext) => n + (adds.get(`Bundles/${name}.${ext}`)?.length ?? 0), 0)
@@ -232,7 +238,7 @@ export function checkBatch(source: GameSource, chars: Batch, progress: Progress 
   const [tints, extra] = batchTints(source, batch)
   batch.forEach((c, i) => {
     if (c.aura.mode === 'tint' && tints[i] !== c.aura.tint) {
-      add('warning', `${named[i]}: the tints together need more effect memory than a match can spare (the patch can grow it by ${effects.TINT_ALL_LIMIT.toLocaleString('en-US')} bytes), so only its idle and power-up effects are tinted`)
+      add('warning', `${named[i]}: the tints together need more effect memory than a match can spare (the patch can grow it by ${effects.TINT_ALL_LIMIT.toLocaleString('en-US')} bytes), so ${effects.fallback(tints[i]!, effectsets.setOf(auraSet(c)), R.label(c.base))}`)
     }
   })
   chars.forEach((a, i) => chars.forEach((b, j) => {

@@ -6,9 +6,10 @@ import type * as ngmtool from '../mnroi/ngmtool'
 import type { Skeleton } from '../model/skeleton'
 import type { Eyes } from '../package/imperfect'
 import { type Effects, hexAlpha, hexRgb, hidden, num } from './effects'
+import { EYE_KIND } from './effectsets'
 import * as flames from './flames'
 
-export const EYE_KIND = 20
+export { EYE_KIND }
 const BILLBOARD = nfxtool.TYPES.indexOf('billboard')
 // irnManFX's alpha and size
 const ALPHA = 180, SIZE = 0.1

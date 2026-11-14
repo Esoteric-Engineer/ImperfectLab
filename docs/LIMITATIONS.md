@@ -41,6 +41,20 @@ What each base's full tint needs:
 | Daredevil, Elektra, Magneto, Paradox, Spider-Man, Venom, Wolverine | 0 |
 | Thing | nothing to tint |
 
+## Effect sets
+
+Character effect swaps, including Doctor Doom PSP (`aura.set` `doom`, [`FORMAT.md`](FORMAT.md#aura)):
+
+### All characters
+
+- **Arcs need a free effect slot.** Each arc is added to the character's tuning; when none is left the moves don't start it.
+
+### Doctor Doom PSP
+
+- **Converted, not copied.** The PSP stores effects as binary records the GameCube doesn't read, so each field was matched to its GameCube key on the effects the games share. The PSP draws energy beams thinner, so his arcs take the sizes of the GameCube's Johnny Ohm arcs, in Doom's colors, and without the PSP's beam texture, which the GameCube lacks.
+- **Two-handed shots, a projectile swap's and moves borrowed on the Moves page keep their own launch points.** Only one-handed shots move to his right hand.
+- **Effect memory.** The set takes 3,157 bytes of the effect cache, plus 6,120 more for the recolored copies on a Johnny Ohm base (which grows the cache by 3 KB). A full tint of the set and a Johnny Ohm base's effects together needs more than a match can spare, so there the base's effects keep the set's color.
+
 ## Motion trails
 
 The ribbons on the **Aura** page (`trails`, [`FORMAT.md`](FORMAT.md)):
