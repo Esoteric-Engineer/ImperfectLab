@@ -136,6 +136,8 @@ Game bone numbers in `model` belong to the base's body class (male, female or br
 
 A base whose full tint needs more memory than a match can spare is built as `power` ([`LIMITATIONS.md`](LIMITATIONS.md)).
 
+`set` (optional, default `base`): whose effects `mode` applies to, the base's own (`base`) or Doctor Doom's from the PSP version (`doom`; see [`LIMITATIONS.md`](LIMITATIONS.md#effect-sets)). With `doom`, `mode` is `base` or `tint`, never `swap`; `tint` `power` tints only the mask glow and power-mode glow. `flames.base_effect` keeps or drops the mask glow. Left out when `base`.
+
 ### `flames`
 Optional; left out when every key has its default. Fire that burns on the character all match, on top of the `aura`:
 - `parts` (default `[]`): any of `head chest r_hand l_hand r_foot l_foot`.

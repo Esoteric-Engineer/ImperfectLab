@@ -51,6 +51,15 @@ export class Slots {
     return [map, missed]
   }
 
+  // A k naming names (one per slot), the one that already does if any; null when no slot is free.
+  claim(names: string[]): number | null {
+    const key = JSON.stringify(names)
+    const k = this.given.get(key) ?? this.free.shift()
+    if (k === undefined) return null
+    this.given.set(key, k)
+    return k
+  }
+
   // The fields given new effects.
   fields(): Map<number, string[]> {
     const out = new Map<number, string[]>()

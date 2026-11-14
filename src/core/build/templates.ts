@@ -77,7 +77,8 @@ export function retarget(T: R.Templates, name: string, effects: Map<string, stri
 
 export function build(data: Uint8Array, base: R.BaseCharacter, internal: string, aura = 'base', effect1: [string, string] | null = null,
   description: string | null = null, abilities: [number, number] | null = null, health: number | null = null, extra: nottool.Template[] = [],
-  motionSet: string | null = null, effect1Kept = true, effect2: [string | null, string | null] | null = null, size = 1): Uint8Array {
+  motionSet: string | null = null, effect1Kept = true, effect2: [string | null, string | null] | null = null, size = 1,
+  castid: [string, string] | null = null): Uint8Array {
   const T = new R.Templates(data)
   const [actN, plrN, altN] = templateNames(internal)
   for (const n of [actN, plrN, altN, ...extra.map((t) => t.name)]) if (T.has(n)) throw new LabError(`Global.not already has a template ${n}`)
@@ -100,6 +101,11 @@ export function build(data: Uint8Array, base: R.BaseCharacter, internal: string,
     }
   } else if (aura !== 'base') {
     throw new LabError(`unknown aura mode ${JSON.stringify(aura)}`)
+  }
+  // a CASTID no character has: the base's own power aura (Levels/Generic.ncl, fn_80020E60) stays off
+  if (castid) {
+    if (T.prop(base.plr, R.P_CASTID) !== null) plr.set(R.P_CASTID, nottool.vStr(castid[0]))
+    if (T.prop(base.alt, R.P_CASTID) !== null) alt.set(R.P_CASTID, nottool.vStr(castid[1]))
   }
   if (effect1) {
     plr.set(R.P_EFFECT1, nottool.vStr(effect1[0]))

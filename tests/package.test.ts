@@ -46,6 +46,22 @@ describe('round trip', () => {
     expect(imperfect.save(d)).toEqual(data)
   })
 
+  it('writes aura.set only for an effect set, and refuses swapping one', () => {
+    const c = character()
+    expect(imperfect.manifest(c).aura).toEqual({ mode: 'tint', tint: 'power', color: '#112233', alt_color: '#445566' })
+    c.aura.set = 'base'
+    expect(imperfect.manifest(c).aura).toEqual({ mode: 'tint', tint: 'power', color: '#112233', alt_color: '#445566' })
+    c.aura.set = 'doom'
+    expect((imperfect.manifest(c).aura as Json).set).toBe('doom')
+    const d = imperfect.load(imperfect.save(c))
+    expect(imperfect.auraSet(d)).toBe('doom')
+    expect(imperfect.save(d)).toEqual(imperfect.save(c))
+    expect(imperfect.problems(c).some(([level]) => level === 'error')).toBe(false)
+    c.aura.mode = 'swap'
+    expect(imperfect.problems(c)).toContainEqual(['error', 'the effect set has no costume 2 effects to swap in: pick Base or Tint on the Aura page'])
+    expect(() => imperfect.fromManifest(imperfect.manifest(c), new Map(c.files))).toThrow(/can't be swapped/)
+  })
+
   it('writes fit.floor_from_mesh only when it is on', () => {
     const c = character()
     expect((imperfect.manifest(c).model as Json).fit).toEqual({ scale: null, torso_squash: true, flip: null })
@@ -962,6 +978,7 @@ describe('hostile files', () => {
       (m) => (m.model.materials[0].texture = '../../etc/passwd'),
       (m) => (m.aura.mode = 'rainbow'),
       (m) => (m.aura.tint = 'most'),
+      (m) => (m.aura.set = 'galactus'),
       (m) => (m.model.mapping = { pelvis: 'x' }),
       (m) => (m.base_moves = { throw_reach: 20 }),
       (m) => ((m.base = 'daredevil'), (m.moves = { throw_reach: 20 })),

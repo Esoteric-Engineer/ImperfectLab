@@ -43,6 +43,7 @@ const SUFFIX = /^(_[A-Za-z0-9]{1,7})?$/
 const COLOR = /^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$/
 export const AURA_MODES = ['base', 'swap', 'tint']
 export const AURA_TINTS = ['all', 'power']
+export const AURA_SETS = ['base', 'doom']
 export const FLAME_PARTS = ['head', 'chest', 'r_hand', 'l_hand', 'r_foot', 'l_foot']
 export const FLAME_SIZE: [number, number] = [0.5, 2.0]
 export const TRAIL_PARTS = ['arms', 'legs', 'body', 'head']
@@ -364,7 +365,7 @@ export interface Character {
   size: number
   materials: Material[]
   damageStages: DamageStage[]
-  aura: { mode: string; tint: string; color: string; alt_color: string }
+  aura: { mode: string; tint: string; color: string; alt_color: string; set?: string }
   flames: Flames
   trails: Trails
   eyes: Eyes
@@ -510,7 +511,7 @@ export function manifest(c: Character): Json {
       materials: c.materials.map(materialJson),
       damage_stages: c.damageStages.some((st, k) => st.enabled || st.health !== STAGE_HEALTH[k]) ? c.damageStages : undefined,
     },
-    aura: c.aura,
+    aura: auraSet(c) === 'base' ? { mode: c.aura.mode, tint: c.aura.tint, color: c.aura.color, alt_color: c.aura.alt_color } : c.aura,
     flames: hasFlames(c.flames) ? c.flames : undefined,
     trails: c.trails.parts.length ? c.trails : undefined,
     eyes: c.eyes.on ? { color: c.eyes.color, alt_color: c.eyes.alt_color, size: c.eyes.size, position: c.eyes.position } : undefined,
@@ -577,8 +578,11 @@ export function shieldThrowClashes(c: Character): string[] {
   return out
 }
 
+export const auraSet = (c: Character): string => c.aura.set ?? 'base'
+
 export function problems(c: Character): Problem[] {
   const out: Problem[] = []
+  if (auraSet(c) !== 'base' && c.aura.mode === 'swap') out.push(['error', "the effect set has no costume 2 effects to swap in: pick Base or Tint on the Aura page"])
   if (!INTERNAL.test(c.internalName || '')) out.push(['error', 'the internal name must be 1-10 letters and digits, starting with a letter'])
   if (!DISPLAY.test(c.displayName || '')) out.push(['error', 'the display name must be 1-16 characters: A-Z, 0-9, space and . \' & ! -'])
   if (!Object.hasOwn(BASES, c.base)) out.push(['error', 'pick a base character'])
@@ -951,10 +955,15 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
       return { enabled: typed<boolean>(s.enabled ?? false, 'boolean', 'damage stage enabled'), health: num(s.health, 'damage stage health', ...DAMAGE_HEALTH, false, true)! }
     })
   }
-  const au = keys(m.aura ?? {}, ['mode', 'tint', 'color', 'alt_color'], 'aura')
+  const au = keys(m.aura ?? {}, ['mode', 'tint', 'color', 'alt_color', 'set'], 'aura')
   c.aura = { mode: str(au.mode ?? 'base', 'aura.mode', 8)!, tint: str(au.tint ?? 'all', 'aura.tint', 8)!, color: color(au.color ?? '#40A0FF', 'aura.color'), alt_color: color(au.alt_color ?? '#50FF50', 'aura.alt_color') }
   if (!AURA_MODES.includes(c.aura.mode)) throw new LabError('manifest: unknown aura mode')
   if (!AURA_TINTS.includes(c.aura.tint)) throw new LabError('manifest: unknown aura tint')
+  if (au.set !== undefined) {
+    c.aura.set = str(au.set, 'aura.set', 8)!
+    if (!AURA_SETS.includes(c.aura.set)) throw new LabError('manifest: unknown aura set')
+    if (c.aura.set !== 'base' && c.aura.mode === 'swap') throw new LabError("manifest: an aura set can't be swapped")
+  }
   const fl = keys(m.flames ?? {}, ['parts', 'body', 'color', 'alt_color', 'size', 'base_effect'], 'flames')
   const parts = typed<unknown[]>(fl.parts ?? [], 'array', 'flames.parts').map((p) => str(p, 'flames.parts', 10)!)
   for (const p of parts) if (!FLAME_PARTS.includes(p)) throw new LabError(`manifest: unknown flame part ${JSON.stringify(p)}`)
