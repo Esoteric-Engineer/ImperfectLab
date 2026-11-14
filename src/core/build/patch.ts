@@ -101,7 +101,7 @@ export class Builder {
   swapCenter: [number, number, number] | null = null
   gripCenter: [number, number, number] | null = null
   shot: projectileswap.Shot | null = null
-  shieldGlint: string | null = null
+  shieldSparkle: string | null = null
   shieldBind: [number, number, number] | null = null
   private star: ngmtool.Model | null = null
   private namer: ((old: string) => string) | null = null
@@ -181,7 +181,7 @@ export class Builder {
     this.ui()
     this.r.adds = new Map([...this.uiAdds, ...this.bundleAdds, ...this.r.adds])
     const sh = this.c.baseMoves.shield_throw
-    if (sh) this.r.shield = shield.character(this.c.internalName, sh.return, this.shieldGlint!, shieldBone(this.c), this.shieldBind!, this.c.size)
+    if (sh) this.r.shield = shield.character(this.c.internalName, sh.return, this.shieldSparkle!, shieldBone(this.c), this.shieldBind!, this.c.size)
     return this.r
   }
 
@@ -483,8 +483,8 @@ export class Builder {
     }
     if (shielded) {
       const how = c.baseMoves.shield_throw!.return
-      const { trail, glint } = shield.effects(fx, c.internalName)
-      this.shieldGlint = glint
+      const { trail, sparkle } = shield.effects(fx, c.internalName)
+      this.shieldSparkle = sparkle
       extra.push(...shield.templatesFor(c.internalName, how, trail))
       power = new Map([...(power ?? []), [shield.FIELD, shield.fieldValues(c.internalName, tuning.SLOTS)]])
       this.note(`shield throw: the throw launches ${shield.templateName(c.internalName, false)} from tuning field ${shield.FIELD} (PSP Captain America's: ${shield.DAMAGE} damage, ${how === 'physics' ? 'bounces off what it hits and is caught when it comes back within reach' : 'turns back after a hit or 20 m and flies to the hand'}); the shield on the arm is hidden while it flies, and takes 10-20% off the damage while it's there`)
