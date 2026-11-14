@@ -23,7 +23,7 @@ import * as bundle from '../model/bundle'
 import { Fit, type MaterialSlots, type Tri } from '../model/fit'
 import { Model } from '../model/glb'
 import { Skeleton } from '../model/skeleton'
-import { airThrows, type Character, damageStages, gunOf, hasCutscenes, image as readImage, longThrows, type Material, problems, type Placement, WALL, type WallKey, type ZCostume, zTexture } from '../package/imperfect'
+import { airThrows, shieldThrows, type Character, damageStages, gunOf, hasCutscenes, image as readImage, longThrows, type Material, problems, type Placement, WALL, type WallKey, type ZCostume, zTexture } from '../package/imperfect'
 import * as cutscenes from './cutscenes'
 import * as damage from './damage'
 import * as effects from './effects'
@@ -33,6 +33,7 @@ import * as flames from './flames'
 import * as gun from './gun'
 import * as projectiles from './projectiles'
 import * as projectileswap from './projectileswap'
+import * as shield from './shield'
 import * as holster from './holster'
 import { impersonationData } from './impersonate'
 import * as laser from './laser'
@@ -65,6 +66,7 @@ export class Result {
   notes: string[] = []
   gun: D.GunCharacter | null = null
   laser: D.LaserCharacter | null = null
+  shield: D.ShieldCharacter | null = null
 }
 
 export function colorInt(color: string): number {
@@ -97,6 +99,9 @@ export class Builder {
   swapCenter: [number, number, number] | null = null
   gripCenter: [number, number, number] | null = null
   shot: projectileswap.Shot | null = null
+  shieldGlint: string | null = null
+  shieldBind: [number, number, number] | null = null
+  private star: ngmtool.Model | null = null
   private namer: ((old: string) => string) | null = null
 
   constructor(source: GameSource, character: Character, progress?: Progress, model?: Model) {
@@ -144,7 +149,7 @@ export class Builder {
     if (this.r.cache !== null) this.r.dol = D.growEffectCache(this.r.dol, this.r.cache)
     if (mirrors(c)) this.r.dol = D.mirrorSkip(this.r.dol)
     if (splitsCharge(c)) this.r.dol = D.chargeRate(this.r.dol)
-    if (airThrows(c)) this.r.dol = D.airThrow(this.r.dol, [airThrowCharacter(c)])
+    if (airThrows(c) || this.r.shield) this.r.dol = D.daredevil(this.r.dol, airThrows(c) ? [airThrowCharacter(c)] : [], this.r.shield ? [this.r.shield] : [])
     if (throwsDamage(c)) this.r.dol = D.throwDamage(this.r.dol)
     if (ownSounds(c)) this.r.dol = D.soundBanks(this.r.dol, [c.internalName])
     if (c.zButton) this.r.dol = D.zActions(this.r.dol, zCharacters([c]))
@@ -171,7 +176,20 @@ export class Builder {
     this.progress('Select screen, portraits and HUD')
     this.ui()
     this.r.adds = new Map([...this.uiAdds, ...this.bundleAdds, ...this.r.adds])
+    const sh = this.c.baseMoves.shield_throw
+    if (sh) this.r.shield = shield.character(this.c.internalName, sh.return, this.shieldGlint!, shieldBone(this.c), this.shieldBind!, this.c.size)
     return this.r
+  }
+
+  // Elektra's star, used as a single-node base for the shield
+  shieldStar(): ngmtool.Model {
+    if (!this.star) {
+      const elektra = new R.BaseCharacter(this.src, 'elektra', this.base.t)
+      const star = ngmtool.read(elektra.bundleFiles(false)[0])[1].find((m) => m.name.toLowerCase() === 'elektra_shiruken.nod')
+      if (!star) throw new LabError("Elektra's bundle has no Elektra_shiruken.nod to draw the shield on")
+      this.star = star
+    }
+    return this.star
   }
 
   materialImages(model: Model): [Material, RgbaImage, RgbaImage][] {
@@ -335,13 +353,24 @@ export class Builder {
       }
       if (eyes.hasAny(c.eyes)) eyes.markers(render, sk, c.eyes)
       if (boneShots(c)) projectileswap.marker(render, sk, c.projectile)
+      const shieldModels: ngmtool.Model[] = []
+      if (shieldThrows(c)) {
+        const bone = shieldBone(c), prop = shield.propTris(copy, bone)
+        if (!prop.size) throw new LabError(`the shield throw throws what is fixed to game bone ${basemoves.CLUB}, and nothing is`)
+        const center = holster.center(prop.values(), bone)
+        shield.marker(render, bone, center, sk.nodes[bone].pos as [number, number, number])
+        const lit = mats.map((_, i) => shield.materialName(c.internalName, alt, included[i].suffix))
+        allMaterials.push(...[...prop.keys()].map((i) => ({ name: lit[i], texture: mats[i], finish: null, plain: true })))
+        shieldModels.push(shield.model(this.shieldStar(), prop, lit, normals, shield.modelName(c.internalName, alt), renderBase.meshes.length ? renderBase.meshes[0][5] : [0, 0, 0], c.size))
+        if (!alt) this.shieldBind = sk.nodes[bone].pos as [number, number, number]
+      }
       const beam = laserOf(c)
       if (beam) laser.marker(render, sk, beam)
       if (trails.hasAny(c.trails) && !effects.hidden(c.trails.color, c.trails.alt_color)[alt ? 1 : 0]) {
         const empty = trails.markers(render, sk, copy, c.trails.parts)
         if (empty.length) this.note(`motion trails: no part of the model follows the ${empty.join(', ')} bone, so its trail ends at the bone itself`)
       }
-      const [data] = bundle.buildNgm(ngm, render, renames, c.size, extraNodes, this.shot?.models[alt ? 1 : 0] ?? [])
+      const [data] = bundle.buildNgm(ngm, render, renames, c.size, extraNodes, [...(this.shot?.models[alt ? 1 : 0] ?? []), ...shieldModels])
       const otherNames = new Set(models.slice(1).map((m) => m.name.toLowerCase()))
       const missing = [...renames.keys()].filter((old) => !otherNames.has(old))
       if (missing.length) this.note(`the base bundle has no model named ${missing.join(', ')}`)
@@ -406,8 +435,8 @@ export class Builder {
   effects(): [[string, string] | null, Map<number, string[]> | null, nottool.Template[], [string | null, string | null] | null] {
     const c = this.c
     const tinted = c.aura.mode === 'tint', fire = flames.hasAny(c.flames), trailed = trails.hasAny(c.trails), theirs = Object.values(c.moveEffects).includes('theirs'), lined = paintsReach(c), eyed = eyes.hasAny(c.eyes)
-    const shoots = c.projectile.on, beam = laserOf(c)
-    if (!tinted && !fire && !trailed && !theirs && !lined && !eyed && !gunOf(c) && !shoots && !beam) return [null, null, [], null]
+    const shoots = c.projectile.on, beam = laserOf(c), shielded = shieldThrows(c)
+    if (!tinted && !fire && !trailed && !theirs && !lined && !eyed && !gunOf(c) && !shoots && !beam && !shielded) return [null, null, [], null]
     const fx = new effects.Effects(this.src.entry('Misc/game.nfx'))
     const before = fx.used()
     const prefixes: [string, string] = [effects.copyPrefix(c.internalName, false), effects.copyPrefix(c.internalName, true)]
@@ -441,6 +470,14 @@ export class Builder {
       const borrowed = [...new Set(shot.borrow.flat().map(([b, t]) => `${t} (${b})`))]
       const copied = [...new Set(shot.models.flat().map((m) => m.name))]
       this.note(`projectile: ${shot.label} tinted ${colors} in place of ${this.base.label}'s, in tuning field${shot.fields.length === 1 ? '' : 's'} ${shot.fields.join(', ')}, from ${boneShots(c) ? `the ${c.projectile.bone} bone at (${c.projectile.position.map((v) => formatG(v)).join(', ')})` : `${this.base.label}'s own launch points`}${borrowed.length ? `; textures ${borrowed.join(', ')} borrowed` : ''}${copied.length ? `; ${copied.join(', ')} copied from ${shot.donor.label}'s models` : ''}`)
+    }
+    if (shielded) {
+      const how = c.baseMoves.shield_throw!.return
+      const { trail, glint } = shield.effects(fx, c.internalName)
+      this.shieldGlint = glint
+      extra.push(...shield.templatesFor(c.internalName, how, trail))
+      power = new Map([...(power ?? []), [shield.FIELD, shield.fieldValues(c.internalName, tuning.SLOTS)]])
+      this.note(`shield throw: the throw launches ${shield.templateName(c.internalName, false)} from tuning field ${shield.FIELD} (PSP Captain America's: ${shield.DAMAGE} damage, ${how === 'physics' ? 'bounces off what it hits and is caught when it comes back within reach' : 'turns back after a hit or 20 m and flies to the hand'}); the shield on the arm is hidden while it flies, and takes 10-20% off the damage while it's there`)
     }
     if (beam) {
       const names = laser.build(fx, beam, c.internalName)
@@ -587,7 +624,7 @@ export class Builder {
     const fx = Object.keys(c.moveReach).length ? new effects.Effects(this.src.entry('Misc/game.nfx')) : null
     const shooter = this.gunPlan()
     const anims = animsOf(c, c.glb ? (this.model ?? new Model(c.glb)) : null)
-    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, this.onBack(), throwsDamage(c), shooter, boneShots(c) ? projectiles.LAUNCH_INDEX : null, anims, noShots(c), noThrow(c), airThrowPlan(c), this.gripProp())
+    const m = moves.motionFiles(this.src, this.base, c.internalName, c.moves, thrown, c.moveEffects, this.moveFx, c.moveReach, fx, c.size, c.moveIdle, this.onBack(), throwsDamage(c), shooter, boneShots(c) ? projectiles.LAUNCH_INDEX : null, anims, noShots(c), noThrow(c), airThrowPlan(c), this.gripProp(), shieldThrows(c))
     if (shooter) this.r.gun = this.gunEntry(shooter)
     for (const [k, v] of m.files) this.r.adds.set(k, v)
     if (thrown !== undefined) this.note(`baton throw: reaches ${thrown} m (${this.base.label}'s about 8)`)
@@ -624,6 +661,7 @@ export class Builder {
     for (const w of WALL) if (gp[w.key]) on |= WALL_BITS[w.key]
     if (c.baseMoves.range_grab) on |= RANGE_GRAB_BIT
     if (stretchReturns(c)) on |= reach.RETURN_ABILITY
+    if (shieldThrows(c)) on |= shield.RANGED_ABILITY
     const mode = c.aura.mode === 'swap' ? 'swap' : 'base'
     this.r.sets.set('Misc/Global.not', templates.build(this.src.entry('Misc/Global.not'), this.base, c.internalName, mode, effect1, description,
       on || off ? [on, off] : null, gp.health ?? null, extra, motionSet, (c.baseMoves.throw_cable ?? true) && c.flames.base_effect && !this.eyesReplace, effect2, c.size))
@@ -733,7 +771,7 @@ export class Builder {
 
 // Whether the character gets its own motion set and animation bundles (Builder.motions).
 export function ownMotions(c: Character): boolean {
-  return gunOf(c) !== null || c.baseMoves.throw_reach !== undefined || c.baseMoves.holster !== undefined || c.baseMoves.grip !== undefined || throwsDamage(c) || Object.keys(c.moves).length > 0 || Object.keys(c.moveAnims).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1 || boneShots(c) || c.projectile.remove || c.baseMoves.no_throw !== undefined || airThrows(c)
+  return gunOf(c) !== null || c.baseMoves.throw_reach !== undefined || c.baseMoves.holster !== undefined || c.baseMoves.grip !== undefined || throwsDamage(c) || Object.keys(c.moves).length > 0 || Object.keys(c.moveAnims).length > 0 || Object.keys(c.moveReach).length > 0 || c.moveIdle.length > 0 || c.size !== 1 || boneShots(c) || c.projectile.remove || c.baseMoves.no_throw !== undefined || airThrows(c) || shieldThrows(c)
 }
 
 export const boneShots = (c: Character): boolean => c.projectile.on && c.projectile.from === 'bone'
@@ -760,6 +798,7 @@ export function onBackPlan(c: Character, center: ngbtool.Vec3 | null, grip: hols
   return h && center ? { ...h, center, ...(grip ? { prop: grip } : {}) } : null
 }
 
+export const shieldBone = (c: Character) => (c.baseMoves.grip?.hand === 'left' ? basemoves.LEFT_CLUB : basemoves.CLUB)
 export const gripCenterOf = (c: Character, tris: Map<number, Tri[]>): ngbtool.Vec3 | null => (c.baseMoves.grip ? holster.center(tris.values(), basemoves.CLUB) : null)
 
 // In the left hand, what is fixed to the club is drawn on the left forearm prop, and the club (its hit volume) follows its middle.

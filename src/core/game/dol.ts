@@ -720,7 +720,10 @@ export interface AirThrowCharacter {
 }
 
 export function airThrow(dol: Uint8Array, chars: AirThrowCharacter[]): Uint8Array {
-  if (!chars.length || chars.length > MAX_NEW) throw new LabError(`main.dol has room for 1 to ${MAX_NEW} characters' air throws, not ${chars.length}`)
+  return daredevil(dol, chars, [])
+}
+
+function airTable(chars: AirThrowCharacter[]): Uint8Array {
   const table = new Uint8Array(4 + AIR_ENTRY_SIZE * chars.length)
   putU32be(table, 0, chars.length)
   chars.forEach((c, i) => {
@@ -728,10 +731,107 @@ export function airThrow(dol: Uint8Array, chars: AirThrowCharacter[]): Uint8Arra
     entityNames(c.internal).forEach((name, j) => table.set(field(name), o + 0x20 * j))
     putF32be(table, o + 0x40, c.drop)
   })
-  const [out, lo] = textSection(dol, concat([fromHex(AIR_THROW_CODE), table]))
-  for (const [[site, old], to, link] of [[AIR_GATE_SITE, AIR_GATE, true], [AIR_ELEV_SITE, AIR_ELEV, true], [AIR_EVENT_SITE, AIR_EVENT, false]] as const) {
-    put(out, fileOffset(out, site), fromHex(old), word(branch(site, lo + to, link)))
+  return table
+}
+
+const SHIELD_CODE =
+// SHIELD_CODE_BEGIN
+  '9421ffc07c0802a690010044bf4100287c7f1b787cbe2b787c9a23783d808005398c03b87d8903a64e8004217c7d1b79418200e87fc4f378480007697d3c4b79418200d87d7b5b78387c0040388000003d808010398cd5fc7d8903a64e8004217c03f80041820024387c006038800000' +
+  '3d808010398cd5fc7d8903a64e8004217c03f80040820094801d0024901b000838000001901b000c3d20805981293c2c913b0010c01d00a8d01b0020c01d00acd01b0024c01d00b0d01b0028c03c00d4c01a0010d01b0014ec000072d0010010c01a0014d01b0018ec000072d0010014' +
+  'c01a0018d01b001cec000072d0010018380000009001001c38000005901b000c7fa3eb78388100103d808006398c5cb07d8903a64e8004217fa3eb78bb410028800100447c0803a6382100404e8000209421ffc07c0802a690010044bf0100207fd8f378833f00083b39ff8848000691' +
+  '7f24cb784800064d7d3b4b79418201047d7c5b783fa0805983bd3c2c801c002c7c00e8004182001c93bc002c7f23cb787f64db787f85e3787fa6eb78480000ed801c000c70000001418200c88138000088090009895b00a27c005040418000b481380064881b00a0540030327d290214' +
+  '3c0038d16000b71790010008c02100083c003f7f6000f97290010008c0e10008c05b00c8c07b00ccc09b00d0394000007ca9542eeca500b2396a00107cc95c2eeca628fa396a00207cc95c2eeca6293a396a00307cc95c2eecc531fa7cc95d2e394a00042c0a000c4180ffc839400003' +
+  '7d4903a6c0090000ec000072d0090000c0090004ec000072d0090004c0090008ec000072d0090008392900104200ffd8818100447d8803a6bb01002038210040801e00ec4e8000209421ffc07c0802a690010044bf4100207c7f1b787c9e23787cbd2b787cdc3378801d000c70000001' +
+  '418200e0807d00083d80800b398ccfa87d8903a64e8004217c7b1b7941820098801b002c740001004082008c801d00107f40e050801e00bc7c1a00004080005c801e00ac7c1a0000418000287fe3fb787fc4f3787f65db784800009dc01e00a8ec000032fc0100404c4013824182002c' +
+  '881e00a12c000000418200687fe3fb787fc4f3787fa5eb787f66db787f47d378480000a14800004c7f63db783880000038a000003d80800b398ce3987d8903a64e80042138000000901d0008901d000c7fe3fb78389e008038a0001588de00a33d808039398c3d0c7d8903a64e800421' +
+  'bb410020800100447c0803a6382100404e800020c04300a8c00500a8ec420028c06300acc00500acec630028c08300b0c00400a4ec84002ac00500b0ec840028ec2200b2ec2308faec24093a4e8000209421ffb07c0802a690010054bf61003c7c7f1b787c9e23787cbd2b787cdc3378' +
+  '7cfb3b78801d000c700900024082014070090004408200647f83e378388100103d808006398c70507d8903a64e8004212c03000041820044480001a94182003c386100103d808043398cec547d8903a64e800421c0010010d01d0014c0010014d01d0018c0010018d01d001c801d000c' +
+  '60000004901d000c801c029070000800408200b8801e00b87c1b0000408000acc03c00a8c01d0020ec210028c05c00acc01d0024ec420028c07c00b0c01d0028ec630028ec210072ec2208baec2308fac01e00b4ec000032fc0100404080006c801d000c70000004418200f47f83e378' +
+  '388100103d808006398c70507d8903a64e8004212c030000418200d4c0210010c01d0014ec210032c0410014c01d0018ec22083ac0410018c01d001cec22083a3c0000006000000090010008c0010008fc01004040800098801d000c60000002901d000c38000000901c02987fe3fb78' +
+  '7fc4f3787f85e3784bfffe4dd0410010d0610014d0810018380000009001001c4800007141820058386100103d808043398cec547d8903a64e800421c03e00b0c0010010ec000072d0010010c0010014ec000072d0010014c0010018ec000072d00100187f83e378388100103d808006' +
+  '398c5cb07d8903a64e800421bb61003c800100547c0803a6382100504e800020c0210010ec210072c0410014ec2208bac0410018ec2208ba3c003586600037bd90010008c0010008fc0100403800000040810008380000012c0000004e8000202c1e0001408200682c03000041820060' +
+  '9421ffe07c0802a690010024906100107fa3eb783d80800d398cc5e07d8903a64e8004217c641b7941820024480001552c09000041820018800b000c700000014182000c380000009001001080610010800100247c0803a6382100207c601b784e8000209421ffe07c0802a690010024' +
+  '3d808008398ce6987d8903a64e800421d02100107f84e378480000f92c0900004182003c800b000c7000000140820030807c03dc2c030000418200248003001870000100c00900c441820008c00900c0c0210010ec210032d0210010c0210010800100247c0803a6382100204e800020' +
+  '2c0400334082008c9421ffd07c0802a690010034bf8100107c7f1b787cbe2b787cdd3378d0210020d0410024d06100287c641b784800006d3860ffff2c09000041820010800b000c70000001408200307fe3fb78388000337fc5f3787fa6eb78c0210020c0410024c06100283d808009' +
+  '398c7ce87d8903a64e800421bb810010800100347c0803a6382100304e8000203d808009398c7ce87d8903a64e8004207d4802a64800017d7d4803a6396b0004380000047c0903a6812b00007c0920004082000c812b00044e800020396b00304200ffe8392000004e8000209421ffd0' +
+  '7c0802a690010034bf210014480001357d7f5b783d20805981293c2c815f00007c09500041820108913f00003bc000002c1e0004408000f81f9e00307f9cfa143b9c00043b2000003b4000003c608055386321103d808043398c49007d8903a64e8004217c1e1800408000983c608055' +
+  '386321107fc4f3783d808043398c17bc7d8903a64e8004217c7d1b783d808043398cff2c7d8903a64e8004217c791b78837f00c43b5f00c82c1b000040810050387d0004389a00003d808017398c26547d8903a64e8004212c03000041820034387d0004389a00203d808017398c2654' +
+  '7d8903a64e8004212c030000418200143b5a00d83b7bffff4bffffb03b400000801c00007c00c8004182001438000000901c0008901c000c901c002c933c0000935c00043bde00014bffff08bb210014800100347c0803a6382100304e8000207c0802a6429f00057d6802a67c0803a6' +
+  '396b00104e800020'
+// SHIELD_CODE_END
+export const SHIELD_SPAWN = 0x0, SHIELD_POSE = 0x130, SHIELD_PRESSED = 0x610, SHIELD_DAMAGE = 0x684, SHIELD_PLAY = 0x700
+const SHIELD_PLAYERS = 4, SHIELD_SLOT = 0x30, SHIELD_ENTRY_SIZE = 0xd8
+// Hooks in fn_800F0C70 (spawn), fn_801A479C (pose), fn_800CC0BC (press), fn_8002FD50 (damage) and fn_800DDCB4 (motion start)
+const SHIELD_PLAY_SITE: [number, string] = [0x800de9bc, '4bfb932d']
+const SHIELD_SPAWN_SITE: [number, string] = [0x800f14d8, '4bf5eee1']
+const SHIELD_POSE_SITE: [number, string] = [0x801a4a0c, '801e00ec']
+const SHIELD_PRESSED_SITE: [number, string] = [0x800cc124, '7c601b78']
+const SHIELD_DAMAGE_SITE: [number, string] = [0x80030188, '4804e511']
+// fn_8009F51C stops a projectile that has hit (0x800); the PSP's (fn_1499fc) only one that also sticks (0x4000)
+export const SHIELD_FREEZE: [number, string, string] = [0x8009f54c, '48001a697c601b782c00000041820010', '801e0290700048002c00480040820010']
+
+export interface ShieldCharacter {
+  internal: string
+  templates: [string, string] // costume 1's, costume 2's
+  glint: string // effect played on the arm when the shield is back
+  bone: number // the prop's drawn bone
+  flyBack: boolean
+  marker: number // kind-21 marker index on the prop
+  chest: number // catch point above the feet
+  radius: number
+  minMs: number
+  speed: number
+  out: number
+  outMs: number
+  lifeMs: number
+  blocking: number // damage taken while blocking, and otherwise
+  hit: number
+  bind: [number, number, number] // the prop bone's, which the hidden prop shrinks to
+  throwSpeed: number
+}
+
+function shieldTable(chars: ShieldCharacter[]): Uint8Array {
+  const table = new Uint8Array(4 + SHIELD_SLOT * SHIELD_PLAYERS + 4 + SHIELD_ENTRY_SIZE * chars.length)
+  const base = 4 + SHIELD_SLOT * SHIELD_PLAYERS
+  putU32be(table, base, chars.length)
+  chars.forEach((c, i) => {
+    const o = base + 4 + SHIELD_ENTRY_SIZE * i
+    entityNames(c.internal).forEach((name, j) => table.set(field(name), o + 0x20 * j))
+    c.templates.forEach((name, j) => table.set(field(name), o + 0x40 + 0x20 * j))
+    table.set(field(c.glint), o + 0x80)
+    table.set([c.bone, c.flyBack ? 1 : 0, c.bone + 1, c.marker], o + 0xa0)
+    putF32be(table, o + 0xa4, c.chest)
+    putF32be(table, o + 0xa8, c.radius)
+    putU32be(table, o + 0xac, c.minMs)
+    putF32be(table, o + 0xb0, c.speed)
+    putF32be(table, o + 0xb4, c.out)
+    putU32be(table, o + 0xb8, c.outMs)
+    putU32be(table, o + 0xbc, c.lifeMs)
+    putF32be(table, o + 0xc0, c.blocking)
+    putF32be(table, o + 0xc4, c.hit)
+    c.bind.forEach((v, k) => putF32be(table, o + 0xc8 + 4 * k, v))
+    putF32be(table, o + 0xd4, c.throwSpeed)
+  })
+  return table
+}
+
+// airthrow.s then shield.s, each followed by its table, in one text section
+export function daredevil(dol: Uint8Array, air: AirThrowCharacter[], shields: ShieldCharacter[]): Uint8Array {
+  if (air.length > MAX_NEW) throw new LabError(`main.dol has room for ${MAX_NEW} characters' air throws, not ${air.length}`)
+  if (shields.length > MAX_NEW) throw new LabError(`main.dol has room for ${MAX_NEW} characters' shield throws, not ${shields.length}`)
+  if (!air.length && !shields.length) throw new LabError('nothing to add for the Daredevil base')
+  const airPart = air.length ? concat([fromHex(AIR_THROW_CODE), airTable(air)]) : new Uint8Array(0)
+  const shieldPart = shields.length ? concat([fromHex(SHIELD_CODE), shieldTable(shields)]) : new Uint8Array(0)
+  const [out, lo] = textSection(dol, concat([airPart, shieldPart]))
+  const hooks: [[number, string], number, boolean][] = []
+  if (air.length) hooks.push([AIR_GATE_SITE, lo + AIR_GATE, true], [AIR_ELEV_SITE, lo + AIR_ELEV, true], [AIR_EVENT_SITE, lo + AIR_EVENT, false])
+  const sh = lo + airPart.length
+  if (shields.length) {
+    hooks.push([SHIELD_SPAWN_SITE, sh + SHIELD_SPAWN, true], [SHIELD_POSE_SITE, sh + SHIELD_POSE, true], [SHIELD_PRESSED_SITE, sh + SHIELD_PRESSED, true],
+      [SHIELD_DAMAGE_SITE, sh + SHIELD_DAMAGE, true], [SHIELD_PLAY_SITE, sh + SHIELD_PLAY, true])
   }
+  for (const [[site, old], to, link] of hooks) put(out, fileOffset(out, site), fromHex(old), word(branch(site, to, link)))
+  if (shields.length) put(out, fileOffset(out, SHIELD_FREEZE[0]), fromHex(SHIELD_FREEZE[1]), fromHex(SHIELD_FREEZE[2]))
   return out
 }
 

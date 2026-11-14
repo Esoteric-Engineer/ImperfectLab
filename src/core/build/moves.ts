@@ -24,6 +24,7 @@ import type { Retimed } from './strikes'
 import type { Effects } from './effects'
 import { EFFECT_FIELDS, effectNames, OWN_EFFECTS, Slots } from './effectslots'
 import * as projectiles from './projectiles'
+import * as shieldmod from './shield'
 import * as reach from './reach'
 import { scaleMotionSet, scaleRecord, strides } from './size'
 import * as tuning from './tuning'
@@ -682,7 +683,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
   choice: Record<string, MoveEffect> = {}, plan: EffectPlan | null = null, stretches: Record<string, MoveReach> = {}, fx: Effects | null = null,
   size = 1, idle: string[] = [], onBack: holster.Plan | null = null, throwDamage = false, shooter: gun.Plan | null = null,
   spawn: number | null = null, anims: MoveAnims | null = null, noShots: NoShots | null = null, noThrow: NoShots | null = null, airThrow: AirThrow | null = null,
-  grip: holster.Prop | null = null): MotionFiles {
+  grip: holster.Prop | null = null, shield = false): MotionFiles {
   const set = motionSetOf(base), stem = stemOf(set), name = internal.toLowerCase()
   const own = nmstool.parse(src.entry(`Motions/${set}`))
   const bundles = loadBundles(src, stem)
@@ -1069,6 +1070,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
     }
     notes.push(`projectile: ${moved} animation${moved === 1 ? '' : 's'} launch from the new point`)
   }
+  if (shield) notes.push(shieldMoves(src, own, bundles, displaced))
   if (shooter) notes.push(gunMoves(src, base, own, bundles, models[0], shooter, size))
   // Reworks every played record whose role isn't null, one copy per role and record.
   const rework = (roleOf: (m: nmstool.Motion) => holster.Role | null, make: (role: holster.Role, anim: string, rec: ngbtool.Record) => ngbtool.Record): number => {
@@ -1102,7 +1104,8 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
   const sizedGrip = grip && holster.sizedProp(grip, size)
   let thrownHeld = 0
   const gripped = (prop: holster.Prop, anim: string, rec: ngbtool.Record): ngbtool.Record => {
-    const flying = flights.get(anim) ?? selfFlight(rec, models[0], size)
+    // the shield throw launches the prop instead of flying it
+    const flying = shield ? null : (flights.get(anim) ?? selfFlight(rec, models[0], size))
     if (!flying) return holster.holdProp(rec, models[0], prop)
     thrownHeld++
     return holster.throwHeld(rec, models[0], prop, holster.flightOf(models[0], flying.rec, flying.release, flying.caught, flying.toSrc, flying.toOut))
@@ -1173,6 +1176,51 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
   }
   if (Object.keys(moves).length || picks.length || idle.length || size !== 1 || carried) notes.push(`${size !== 1 ? 'size' : 'moves'}: animations ${Math.round(after / 1024)} KB (${base.label}'s ${Math.round(before / 1024)} KB)`)
   return { motionSet: motionSetName(internal), files, notes, model: models[0] }
+}
+
+// Ranged attack records launch the shield and other attacks don't.
+function shieldMoves(src: GameSource, own: nmstool.MotionSet, bundles: Map<string, ngbtool.Record[]>, displaced: Set<string>): string {
+  const groups = new Map<string, [boolean, string, nmstool.Motion[]]>()
+  for (const m of resolved(src, own, holds(bundles)).values()) {
+    const category = MOVE_IDS.get(MOVE_OF.get(m.state.toLowerCase()) ?? '')?.category
+    if (!category || category === 'Carrying and weapons' || category === 'Throws') continue
+    const throws = shieldmod.STATES.includes(m.state.toLowerCase())
+    const key = `${throws} ${m.anim.toLowerCase()}`
+    if (!groups.has(key)) groups.set(key, [throws, m.anim.toLowerCase(), []])
+    groups.get(key)![2].push(m)
+  }
+  let launched = 0, stopped = 0
+  let thrower: nmstool.Motion | null = null
+  for (const [throws, anim, states] of groups.values()) {
+    const found = SLOTS.flatMap((slot): [string, ngbtool.Record][] => {
+      const rec = bundles.get(slot)?.find((r) => r.name.toLowerCase() === anim)
+      return rec ? [[slot, rec]] : []
+    })
+    if (!found.length) continue
+    if (throws && !found[0][1].events.some(([, t]) => t === projectiles.FIRE)) continue
+    const out = found.map(([, rec]) => (throws ? shieldmod.throwRecord(rec) : shieldmod.noLaunch(rec)))
+    if (!out.some((r, i) => r !== found[i][1])) continue
+    const named = ownName(out[0])
+    found.forEach(([slot], i) => {
+      const into = bundles.get(slot)!
+      if (!into.some((r) => r.name.toLowerCase() === named.toLowerCase())) into.push({ ...out[i], name: named })
+    })
+    for (const m of states) own.set({ ...m, anim: named })
+    displaced.add(anim)
+    if (throws) {
+      launched++
+      thrower ??= { ...states[0], anim: named }
+    } else stopped++
+  }
+  if (!thrower) throw new LabError('the shield throw needs a ranged attack that launches (event 0x04), and this one does not')
+  const added = !resolved(src, own, holds(bundles)).has(shieldmod.ADDED.toLowerCase())
+  if (added) own.set({ state: shieldmod.ADDED, anim: thrower.anim, opts: thrower.opts })
+  const far = resolved(src, own, holds(bundles)).get(shieldmod.FAR)
+  if (far && far.anim.toLowerCase() !== thrower.anim.toLowerCase()) {
+    displaced.add(far.anim.toLowerCase())
+    own.set({ ...far, anim: thrower.anim })
+  }
+  return `shield throw: Super + Attack at range (super attack far) and the super ranged attack throw the shield with the ranged attack's animation (${launched} animation${launched === 1 ? '' : 's'}${added ? '; the super ranged attack added' : ''})${stopped ? `; ${stopped} other animation${stopped === 1 ? '' : 's'} no longer launch it` : ''}`
 }
 
 export interface Played {

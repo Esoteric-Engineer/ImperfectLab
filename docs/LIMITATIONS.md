@@ -127,6 +127,14 @@ A Daredevil-based character's `grip` (`base_moves`, [`FORMAT.md`](FORMAT.md)):
 - **The cable must be off in the left hand**, since it is drawn from the right forearm.
 - **Memory and space** are as for swapped moves: the character has its own copy of the base's animations, and the prop's keys add about 280 KB to it (176 animations on a Captain America with imported moves).
 
+A Daredevil-based character's `shield_throw` (`base_moves`, [`FORMAT.md`](FORMAT.md)):
+
+- **Only the far super attack and the ranged attacks throw.** The dodge exit super attack and the super rise attack keep the prop in the hand and hit up close.
+- **The PSP's effects aren't carried over.** The trail is a copy of Elektra's star trail and the respawn sparkle a single lens-flare glint.
+- **The thrown shield is silent in flight** and deals the PSP's 21 damage, which the baton throw damage doesn't change.
+- **In physics mode it rarely comes back,** though this isn't a bug and just matches the PSP's behavior.
+- **While it's away the prop is shrunk to nothing on its bone**, so the club's up-close hit volume, if a move uses it then, sits at the forearm.
+
 ## Gun
 
 A gun (`z_button.gun`, [`FORMAT.md`](FORMAT.md)).

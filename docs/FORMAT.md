@@ -234,6 +234,8 @@ Daredevil (`daredevil`):
   - `hand`: `right` or `left`, default `right`. `left` requires `throw_cable: false`, nothing else fixed to game bone 59, and no left-hand `z_button.gun`.
   - `position`: three numbers from -0.6 to 0.6, default `[0, 0, 0]`, meters moved from where the prop is modeled, in the hand's frame at bind (X the character's right, Y forward, Z up).
   - `rotation`: three numbers from -180 to 180, default `[0, 0, 0]`, degrees about X, Y and Z, turning the prop about its middle.
+- `shield_throw`: optional, PSP Captain America's shield throw in place of the baton throw: `SuperAttackFar` and `SuperRangedAttack` launch what is fixed to game bone 39 as a projectile. Requires a prop on bone 39, `grip`, `throw_cable: false`, no `no_throw`, `throw_reach` or `air_throw`, and no `projectile` swap or removal.
+  - `return`: `physics` (default, as on the PSP) or `fly_back` (turns back to the hand).
 
 ### `moves`
 Moves taken from other bases: move id -> the base (not the character's own) whose animations it gets. Ids are motion-set state names, listed in `MOVES` in `src/core/build/moves.ts`; a throw or a sequence is one id covering its parts (`SuperThrow` includes the female, brute and victim versions).

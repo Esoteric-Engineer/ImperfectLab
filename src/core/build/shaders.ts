@@ -11,6 +11,7 @@ export interface ShaderMaterial {
   name: string
   texture: string
   finish: Finish | null
+  plain?: boolean // drawn without the character's light
 }
 
 export const ENV_MAPS: { name: string; label: string; bundle: string; donor: string }[] = [
@@ -30,6 +31,8 @@ export function envMap(name: string) {
   return ENV_MAPS.find((e) => e.name.toLowerCase() === name.toLowerCase()) ?? null
 }
 
+const PLAIN = (m: string, texture: string) => `\n${m}\n{\n\tshader normal\n\ttexture ${texture}\n}\n`
+
 const BLOCK = (m: string, texture: string, texture2: string, finish: Finish | null) =>
   finish
     ? `\n${m}\n{\n\tshader glossenvcharlight\n\tspecularity\t3.0\n\tshininess\t1.0\n\tintensity\t${finish.intensity.toFixed(2)}\n\ttexture ${texture}\n\tenvmap ${finish.envmap}\n\ttexture2 ${texture2}\n}\n`
@@ -44,7 +47,7 @@ export function build(data: Uint8Array, materials: ShaderMaterial[], texture2 = 
   }
   if (!(data.length >= 2 && data[data.length - 2] === 13 && data[data.length - 1] === 10)) data = concat([data, encodeLatin1('\r\n')])
   const have = blocks(data)
-  const text = materials.map((m) => BLOCK(m.name, m.texture, texture2, m.finish)).join('') + additive.filter((m) => !have.has(m.toLowerCase())).map(ADDITIVE).join('')
+  const text = materials.map((m) => (m.plain ? PLAIN(m.name, m.texture) : BLOCK(m.name, m.texture, texture2, m.finish))).join('') + additive.filter((m) => !have.has(m.toLowerCase())).map(ADDITIVE).join('')
   return concat([data, encodeLatin1(text.replaceAll('\n', '\r\n'))])
 }
 
