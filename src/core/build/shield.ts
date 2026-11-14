@@ -24,6 +24,7 @@ export const RANGED_ABILITY = 0x10000
 export const DAMAGE = 21
 const LIFE: Record<ShieldReturn, number> = { physics: 2000, fly_back: 4000 }
 const RADIUS_BODY = 0.25
+const ELASTICITY = 0.7
 // club volume on and off, hit skip, mirror skip: the projectile hits instead
 const CLUB_EVENTS = [0x56, 0x57, 0x53, 0x7e]
 
@@ -65,7 +66,7 @@ export function template(internal: string, alt: boolean, how: ShieldReturn): not
   t.set(P.ROTVEL, vVec([0, 0, 0]))
   t.set(P.FRICTION, nottool.vFloat(15))
   t.set(P.MASS, nottool.vFloat(500))
-  t.set(P.ELASTICITY, nottool.vFloat(0.7))
+  t.set(P.ELASTICITY, nottool.vFloat(ELASTICITY))
   return t
 }
 
@@ -186,5 +187,6 @@ export function character(internal: string, how: ShieldReturn, glint: string, bo
     hit: 0.9,
     bind: holster.scale(bind, size),
     throwSpeed: THROW_SPEED,
+    bounce: ELASTICITY,
   }
 }
