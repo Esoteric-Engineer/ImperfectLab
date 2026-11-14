@@ -123,6 +123,12 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
   const more = own.filter((a) => a !== null).length - 1
   const hits = hasHits(cat, c.base, move)
   const travels = store.moveTravels()?.has(move.id) ?? false
+  // imported clips are listed only while the list is in use: every row listing them all is slow to draw
+  const [listed, setListed] = useState(false)
+  const shownFiles = listed ? files : files.flatMap(([m, name, clips]): typeof files => {
+    const now = clips.filter((x) => clip?.file === m && x.name === clip.clip)
+    return now.length ? [[m, name, now]] : []
+  })
   // timing, travel: undefined keeps the move's choice, null resets it
   const choose = (v: string, timing?: Timing | null, travel?: Travel | null) => {
     const anim = parseChoice(v)
@@ -159,7 +165,7 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
         <div className="move-pick">
           <select value={clip ? animChoice(clip) : idle ? IDLE : at >= 0 ? opts[at].from[0] : (picked ?? '')} disabled={locked || (!opts.length && !offer && !picked && !files.length)}
             title={air ? 'The air throw plays here: untick it below to swap the move' : locked ? 'The baton throw reach changes this move: untick it below to swap the move' : undefined}
-            onChange={(e) => choose(e.target.value)}>
+            onChange={(e) => choose(e.target.value)} onMouseDown={() => setListed(true)} onFocus={() => setListed(true)} onBlur={() => setListed(false)}>
             <option value="">{label(c.base)} (base)</option>
             {offer && <option value={IDLE}>Idle: {stem(cat[c.moves.Stand ?? c.base]?.motions.stand ?? null)}</option>}
             {opts.map((o) => (
@@ -168,7 +174,7 @@ function MoveRow({ cat, move }: { cat: Catalog; move: Move }) {
               </option>
             ))}
             {picked && at < 0 && <option value={picked}>{label(picked)} (not available for {label(c.base)})</option>}
-            {files.map(([member, name, clips]) => (
+            {shownFiles.map(([member, name, clips]) => (
               <optgroup key={member} label={`Imported: ${name}`}>
                 {clips.map((x) => <option key={x.name} value={animChoice({ file: member, clip: x.name })}>{x.name} ({formatG(Math.round(x.seconds * 100) / 100)} s)</option>)}
               </optgroup>

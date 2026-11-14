@@ -689,7 +689,8 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
   choice: Record<string, MoveEffect> = {}, plan: EffectPlan | null = null, stretches: Record<string, MoveReach> = {}, fx: Effects | null = null,
   size = 1, idle: string[] = [], onBack: holster.Plan | null = null, throwDamage = false, shooter: gun.Plan | null = null,
   spawn: number | null = null, anims: MoveAnims | null = null, noShots: NoShots | null = null, noThrow: NoShots | null = null, airThrow: AirThrow | null = null,
-  grip: holster.Prop | null = null, shield = false, fxEvents: ((state: string, rec: ngbtool.Record, borrowed: boolean) => ngbtool.Record) | null = null): MotionFiles {
+  grip: holster.Prop | null = null, shield = false, fxEvents: ((state: string, rec: ngbtool.Record, borrowed: boolean) => ngbtool.Record) | null = null,
+  reworked: Set<string> | null = null): MotionFiles {
   const set = motionSetOf(base), stem = stemOf(set), name = internal.toLowerCase()
   const own = nmstool.parse(src.entry(`Motions/${set}`))
   const bundles = loadBundles(src, stem)
@@ -1082,6 +1083,7 @@ export function motionFiles(src: GameSource, base: R.BaseCharacter, internal: st
   const rework = (roleOf: (m: nmstool.Motion) => holster.Role | null, make: (role: holster.Role, anim: string, rec: ngbtool.Record) => ngbtool.Record): number => {
     const groups = new Map<string, [holster.Role, string, nmstool.Motion[]]>()
     for (const m of resolved(src, own, holds(bundles)).values()) {
+      if (reworked && !reworked.has(m.state.toLowerCase())) continue
       const role = roleOf(m)
       if (role === null) continue
       const key = `${role} ${m.anim.toLowerCase()}`
