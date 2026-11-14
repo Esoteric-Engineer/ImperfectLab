@@ -234,7 +234,7 @@ describe.skipIf(!ISO)('sound banks on the disc', () => {
     const iron = abktool.read(src().entry('Sounds/SFX_Iron2.abk')).samples[0]
     expect(abktool.channel0(bank.samples[1])).toEqual(abktool.channel0(iron))
     expect(abktool.info(bank.samples[1]).channels).toBe(1)
-    expect(equal(r.dol!, D.soundBanks(D.patch(src().dol, 'Loud', 'LOUD', c.stats.normal, c.stats.alt), ['Loud']))).toBe(true)
+    expect(equal(r.dol!, D.soundBanks(D.bundleFit(D.patch(src().dol, 'Loud', 'LOUD', c.stats.normal, c.stats.alt)), ['Loud']))).toBe(true)
     expect(report(c, r)).toContain('fn_80114420')
   })
 

@@ -87,6 +87,16 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(() => D.mirrorSkip(out)).toThrow(LabError)
   })
 
+  it('rewrites only the bundle heap request so a fragmented VM heap still loads a match', () => {
+    const dol = gameSource().dol
+    const out = D.bundleFit(dol)
+    const at = D.fileOffset(dol, 0x80198304)
+    const changed = [...out].flatMap((b, i) => (b !== dol[i] ? [i] : []))
+    expect(changed.length).toBeGreaterThan(0)
+    expect(changed.every((i) => i >= at && i < at + 0x5c)).toBe(true)
+    expect(() => D.bundleFit(out)).toThrow(LabError)
+  })
+
   it('rewrites only the energy rate cache for a split recharge', () => {
     const dol = gameSource().dol
     const out = D.chargeRate(dol)
@@ -616,7 +626,7 @@ describe.skipIf(!ISO)('game', () => {
     c.zButton = { stealth: { undetected: true, untouchable: false, visible: 0.5 }, costume: null, stats: null, size: null, bullet: null, gun: null, laser: null, impersonate: null, requires: { energy: { seconds: 5, regen: false } } }
     const r = new Builder(src(), c).build()
     expect(r.adds.has('Bundles/synth.ngm')).toBe(true)
-    expect(equal(r.dol!, D.zActions(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt), [{ internal: 'Synth', seconds: 5, regen: false, undetected: true, untouchable: false, visible: 0.5, costume: false, damage: [null, null, null, null, null], taken: null, lift: null, run: null, sprint: null, size: null, slow: null, gun: false }]))).toBe(true)
+    expect(equal(r.dol!, D.zActions(D.bundleFit(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt)), [{ internal: 'Synth', seconds: 5, regen: false, undetected: true, untouchable: false, visible: 0.5, costume: false, damage: [null, null, null, null, null], taken: null, lift: null, run: null, sprint: null, size: null, slow: null, gun: false }]))).toBe(true)
     expect(report(c, r)).toContain('Stealth Mode')
     expect(r.adds.has('Bundles/synth_alt.tpl')).toBe(true)
     const t = new R.Templates(r.sets.get('Misc/Global.not')!)
@@ -646,7 +656,7 @@ describe.skipIf(!ISO)('game', () => {
     expect(nsa.get('synth_altzo')!.get('texture')).toBe('Synth_alt')
     expect(latin1(r.adds.get('Bundles/synth.ngt')!)).toContain('Synth_z\r\n')
     expect(latin1(r.adds.get('Bundles/synth_alt.ngt')!)).not.toContain('Synth_altz')
-    const want = D.zActions(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt),
+    const want = D.zActions(D.bundleFit(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt)),
       [{ internal: 'Synth', seconds: 0, regen: false, undetected: false, untouchable: false, visible: 1, costume: true, damage: [null, null, 40, null, null], taken: null, lift: 'light', run: null, sprint: null, size: 1.5, slow: 0.4, gun: false }])
     expect(equal(r.dol!, want)).toBe(true)
     expect(report(c, r)).toContain('Costume Change, Stat Change, Change Size, Bullet Time')
@@ -667,7 +677,7 @@ describe.skipIf(!ISO)('game', () => {
     const auto = mapping.autoMap(new Model(c.glb), Skeleton.ofBase(new R.BaseCharacter(src(), c.base)))
     c.mapping = auto.mapping
     c.overrides = auto.overrides
-    const patched = () => D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt)
+    const patched = () => D.bundleFit(D.patch(src().dol, 'Synth', 'SYNTH', c.stats.normal, c.stats.alt))
     const parts = (r: ReturnType<Builder['build']>, name: string) => ngmtool.read(r.adds.get(name)!)[1][0].parts
 
     let r = new Builder(src(), c).build()

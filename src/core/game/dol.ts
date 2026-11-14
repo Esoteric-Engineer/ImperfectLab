@@ -38,6 +38,13 @@ const MIRROR_SKIP: [number, string, string] = [0x8019db24,
   '8083001c2884000041860048c0030004fc0100004081003c80a4003c80c4004034a5ffff4180002ca0e600042807007e40820010c0460000' +
   'fc0208004182000c38c6000c4bffffdcec410028ec21102ad02300044d86002080a3002454a5103a80630020388000004bfd488c60000000']
 
+// fn_80198304 (creates the match's MC:BUN heap) rewritten in place: it asks for min(5,744,000, the VM heap's largest free block - 0x100) instead of a fixed 5,744,000, which crashes on the loading screen once the VM heap is fragmented.
+const BUNDLE_FIT: [number, string, string] = [0x80198304,
+  '9421fff07c0802a693e1000c900100147c3f0b78800d90983920ff9d7c004800408200243d20804a3869cc383c8000576084a580' +
+  '38a0000148014cd17c601b78900d909881610000800b00047c0803a683ebfffc7d615b784e800020',
+  '9421fff07c0802a690010014800d90982c00ff9d4082003838600002480a7a153c8000576084a5803863ff007c03200040800008' +
+  '7c641b783d20804a3869cc3838a0000148014cc5906d9098800100147c0803a6382100104e800020']
+
 // fn_8009D71C (caches the energy regeneration rates) rewritten in place: the rate while holding R (+0x3D0) also adds tuning field 245, which only ImperfectLab sets.
 const CHARGE_RATE: [number, string, string] = [0x8009d71c,
   '9421fff07c0802a6bfc10008900100147c3f0b787c7e1b787fc3f3783880002d48014149fc000890d01e03cc7fc3f3783880002b48014135fc000890d01e03c47fc3f378' +
@@ -177,6 +184,13 @@ export function growEffectCache(dol: Uint8Array, size: number): Uint8Array {
 export function mirrorSkip(dol: Uint8Array): Uint8Array {
   const out = dol.slice()
   const [va, old, next] = MIRROR_SKIP
+  put(out, fileOffset(out, va), fromHex(old), fromHex(next))
+  return out
+}
+
+export function bundleFit(dol: Uint8Array): Uint8Array {
+  const out = dol.slice()
+  const [va, old, next] = BUNDLE_FIT
   put(out, fileOffset(out, va), fromHex(old), fromHex(next))
   return out
 }

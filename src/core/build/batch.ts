@@ -129,7 +129,7 @@ export function buildBatch(source: GameSource, chars: Batch, progress: Progress 
 
   progress('Roster')
   const records = batch.map((c) => ({ internal: c.internalName, display: c.displayName, stats: c.stats.normal, altStats: c.stats.alt }))
-  r.dol = records.length === 1 ? D.patch(source.dol, records[0].internal, records[0].display, records[0].stats, records[0].altStats) : D.patchMany(source.dol, records)
+  r.dol = D.bundleFit(records.length === 1 ? D.patch(source.dol, records[0].internal, records[0].display, records[0].stats, records[0].altStats) : D.patchMany(source.dol, records))
   // each tint was measured with the earlier ones' copies already in the file
   const caches = results.map((x) => x.cache).filter((x) => x !== null)
   if (caches.length) {
