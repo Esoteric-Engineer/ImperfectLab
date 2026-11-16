@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { COMMIT, RELEASES, REPO_URL, VERSION } from './core/version'
 import * as actions from './ui/actions'
 import { restoreDisc } from './ui/disc'
@@ -17,6 +17,7 @@ import { MaterialsPage } from './ui/pages/MaterialsPage'
 import { ModelPage } from './ui/pages/ModelPage'
 import { MovesPage } from './ui/pages/MovesPage'
 import { ProjectilesPage } from './ui/pages/ProjectilesPage'
+import { SecretPage } from './ui/pages/SecretPage'
 import { SoundsPage } from './ui/pages/SoundsPage'
 import { StatsPage } from './ui/pages/StatsPage'
 import { ZButtonPage } from './ui/pages/ZButtonPage'
@@ -42,6 +43,10 @@ const STEPS: [string, () => React.JSX.Element][] = [
 // After the steps, separate section.
 const PAGES: [string, () => React.JSX.Element][] = [...STEPS, ['Multi-Character Patch', BatchPage]]
 
+// Unlisted: only opened by this fragment in the URL.
+const SECRET_HASH = '#secret'
+const inSecret = () => location.hash === SECRET_HASH
+
 const NON_TEXT = new Set(['range', 'checkbox', 'radio', 'color', 'button', 'file'])
 function editingText(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
@@ -60,7 +65,16 @@ function stepHistory(redo: boolean) {
 function App() {
   useStore()
   const s = store
-  const [step, setStep] = useState(0)
+  const [step, showStep] = useState(0)
+  const [secret, setSecret] = useState(inSecret)
+  const leaveSecret = useCallback(() => {
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search)
+    setSecret(false)
+  }, [])
+  const setStep = useCallback((i: number) => {
+    leaveSecret()
+    showStep(i)
+  }, [leaveSecret])
   const [about, setAbout] = useState(false)
   const [whatsNew, setWhatsNew] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -151,6 +165,12 @@ function App() {
       window.removeEventListener('dragleave', dragLeave)
       window.removeEventListener('drop', drop)
     }
+  }, [setStep])
+
+  useEffect(() => {
+    const hash = () => setSecret(inSecret())
+    window.addEventListener('hashchange', hash)
+    return () => window.removeEventListener('hashchange', hash)
   }, [])
 
   const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'
@@ -205,11 +225,11 @@ function App() {
         {PAGES.map(([title], i) => (
           <Fragment key={title}>
             {i === STEPS.length && <hr className="divider" />}
-            <button className={i === step ? 'active' : ''} onClick={() => setStep(i)}>{title}</button>
+            <button className={!secret && i === step ? 'active' : ''} onClick={() => setStep(i)}>{title}</button>
           </Fragment>
         ))}
       </aside>
-      <main><Page /></main>
+      <main>{secret ? <SecretPage onLeave={leaveSecret} /> : <Page />}</main>
       <footer>
         <span>{s.status}</span>
         <span>{s.game ? `Game: ${s.game.name}` : 'No game disc chosen'}</span>

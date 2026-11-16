@@ -13,6 +13,7 @@ import * as moves from '../src/core/build/moves'
 import * as projectiles from '../src/core/build/projectiles'
 import * as projectileswap from '../src/core/build/projectileswap'
 import * as reach from '../src/core/build/reach'
+import { buildSecret } from '../src/core/build/secret'
 import * as shaders from '../src/core/build/shaders'
 import * as shield from '../src/core/build/shield'
 import { buildBatch, checkBatch, ordinal } from '../src/core/build/batch'
@@ -95,6 +96,18 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(changed.length).toBeGreaterThan(0)
     expect(changed.every((i) => i >= at && i < at + 0x5c)).toBe(true)
     expect(() => D.bundleFit(out)).toThrow(LabError)
+  })
+
+  it('points gDebugEnable at "1" for the secret debug mode', () => {
+    const dol = gameSource().dol
+    const out = D.debugEnable(dol)
+    const at = D.fileOffset(dol, 0x801041d3)
+    const changed = [...out].flatMap((b, i) => (b !== dol[i] ? [i] : []))
+    expect(changed).toEqual([at])
+    expect([dol[at], out[at]]).toEqual([0x60, 0x64])
+    expect(() => D.debugEnable(out)).toThrow(LabError)
+    expect(equal(buildSecret(gameSource(), { debugMenu: true }).dol!, out)).toBe(true)
+    expect(() => buildSecret(gameSource(), { debugMenu: false })).toThrow(LabError)
   })
 
   it('rewrites only the energy rate cache for a split recharge', () => {

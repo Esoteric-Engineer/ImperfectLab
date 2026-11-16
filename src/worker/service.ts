@@ -11,6 +11,7 @@ import * as gun from '../core/build/gun'
 import { animGlb, animsOf, ClipFile, guessTurn, parseChoice, stateClips, type Timing, type Travel } from '../core/build/moveanim'
 import * as moveexport from '../core/build/moveexport'
 import * as reach from '../core/build/reach'
+import { patchSecret, type SecretOptions, secretReport } from '../core/build/secret'
 import * as moves from '../core/build/moves'
 import * as portraits from '../core/build/portraits'
 import * as laser from '../core/build/laser'
@@ -781,6 +782,11 @@ export class Service {
     const models = built ? [] : await this.batchModels(chars)
     const r = await write(this.src(), { sink }, progress, verified, () => built ?? buildBatch(this.src(), chars, progress, models))
     return report(chars, r)
+  }
+
+  async patchSecret(opts: SecretOptions, sink: Sink, verified: boolean, progress: Progress): Promise<string> {
+    await patchSecret(this.src(), opts, { sink }, progress, verified)
+    return secretReport(opts)
   }
 
   async patch(c: imperfect.Character, sink: Sink, verified: boolean, progress: Progress): Promise<string> {

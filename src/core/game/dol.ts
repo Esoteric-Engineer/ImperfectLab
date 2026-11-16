@@ -45,6 +45,9 @@ const BUNDLE_FIT: [number, string, string] = [0x80198304,
   '9421fff07c0802a690010014800d90982c00ff9d4082003838600002480a7a153c8000576084a5803863ff007c03200040800008' +
   '7c641b783d20804a3869cc3838a0000148014cc5906d9098800100147c0803a6382100104e800020']
 
+// gDebugEnable (fn_801041B0) returns "1" (lbl_80490464) instead of "0" (lbl_80490460).
+const DEBUG_ENABLE: [number, string, string] = [0x801041d0, '38890460', '38890464']
+
 // fn_8009D71C (caches the energy regeneration rates) rewritten in place: the rate while holding R (+0x3D0) also adds tuning field 245, which only ImperfectLab sets.
 const CHARGE_RATE: [number, string, string] = [0x8009d71c,
   '9421fff07c0802a6bfc10008900100147c3f0b787c7e1b787fc3f3783880002d48014149fc000890d01e03cc7fc3f3783880002b48014135fc000890d01e03c47fc3f378' +
@@ -191,6 +194,13 @@ export function mirrorSkip(dol: Uint8Array): Uint8Array {
 export function bundleFit(dol: Uint8Array): Uint8Array {
   const out = dol.slice()
   const [va, old, next] = BUNDLE_FIT
+  put(out, fileOffset(out, va), fromHex(old), fromHex(next))
+  return out
+}
+
+export function debugEnable(dol: Uint8Array): Uint8Array {
+  const out = dol.slice()
+  const [va, old, next] = DEBUG_ENABLE
   put(out, fileOffset(out, va), fromHex(old), fromHex(next))
   return out
 }
