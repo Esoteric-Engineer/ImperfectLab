@@ -106,8 +106,8 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(changed).toEqual([at])
     expect([dol[at], out[at]]).toEqual([0x60, 0x64])
     expect(() => D.debugEnable(out)).toThrow(LabError)
-    expect(equal(buildSecret(gameSource(), { debugMenu: true }).dol!, out)).toBe(true)
-    expect(() => buildSecret(gameSource(), { debugMenu: false })).toThrow(LabError)
+    expect(equal(buildSecret(gameSource(), { debugMenu: true, fixedDebug: false }).dol!, out)).toBe(true)
+    expect(() => buildSecret(gameSource(), { debugMenu: false, fixedDebug: false })).toThrow(LabError)
   })
 
   it('rewrites only the energy rate cache for a split recharge', () => {

@@ -47,6 +47,10 @@ const BUNDLE_FIT: [number, string, string] = [0x80198304,
 
 // gDebugEnable (fn_801041B0) returns "1" (lbl_80490464) instead of "0" (lbl_80490460).
 const DEBUG_ENABLE: [number, string, string] = [0x801041d0, '38890460', '38890464']
+// lbl_8048A314 fills debug player slots 0 and 1 (fn_80091174).
+const DEBUG_PLAYER: [number, string, string] = [0x8048a314, '706c725f776f6c766572696e6500', '706c725f7370696465726d616e00']
+// fn_800A4DF8 (scene load) skips both uses of a missing model (fn_801A1A84), not only the first, which read from 0.
+const SCENE_NO_MODEL: [number, string, string] = [0x800a6800, '41820014', '41820038']
 
 // fn_8009D71C (caches the energy regeneration rates) rewritten in place: the rate while holding R (+0x3D0) also adds tuning field 245, which only ImperfectLab sets.
 const CHARGE_RATE: [number, string, string] = [0x8009d71c,
@@ -202,6 +206,12 @@ export function debugEnable(dol: Uint8Array): Uint8Array {
   const out = dol.slice()
   const [va, old, next] = DEBUG_ENABLE
   put(out, fileOffset(out, va), fromHex(old), fromHex(next))
+  return out
+}
+
+export function debugFixes(dol: Uint8Array): Uint8Array {
+  const out = dol.slice()
+  for (const [va, old, next] of [DEBUG_PLAYER, SCENE_NO_MODEL]) put(out, fileOffset(out, va), fromHex(old), fromHex(next))
   return out
 }
 

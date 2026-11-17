@@ -30,12 +30,12 @@ function split(files: nbig.ArchiveFile[]): Map<string, nbig.ArchiveFile> {
   return out
 }
 
-function rebuild(files: Archive, aptBytes: Uint8Array, constBytes: Uint8Array, other: Record<string, Uint8Array> = {}): Uint8Array {
+export function rebuild(files: Archive, aptBytes: Uint8Array, constBytes: Uint8Array, other: Record<string, Uint8Array> = {}): Uint8Array {
   const o: Record<string, Uint8Array> = { ...other, apt: aptBytes, const: constBytes }
   return nbig.save(files.map(([n, b]) => [n, o[n.split('.').pop()!.toLowerCase()] ?? b]), true, files.tag)
 }
 
-function openMovie(data: Uint8Array): [Archive, Map<string, nbig.ArchiveFile>, Apt] {
+export function openMovie(data: Uint8Array): [Archive, Map<string, nbig.ArchiveFile>, Apt] {
   const files = loadArchive(data)
   const d = split(files)
   const apt = d.get('apt'), cst = d.get('const')

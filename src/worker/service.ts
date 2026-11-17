@@ -785,8 +785,8 @@ export class Service {
   }
 
   async patchSecret(opts: SecretOptions, sink: Sink, verified: boolean, progress: Progress): Promise<string> {
-    await patchSecret(this.src(), opts, { sink }, progress, verified)
-    return secretReport(opts)
+    const r = await patchSecret(this.src(), opts, { sink }, progress, verified)
+    return secretReport(opts, r)
   }
 
   async patch(c: imperfect.Character, sink: Sink, verified: boolean, progress: Progress): Promise<string> {

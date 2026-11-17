@@ -59,7 +59,7 @@ export function SecretPage({ onLeave }: { onLeave: () => void }) {
       </Note>
       {SECRET_OPTIONS.map((o) => (
         <ToggleCard key={o.id} title={o.label} checked={opts[o.id]} disabled={busy !== null} note={o.description}
-          onChange={(on) => setOpts({ ...opts, [o.id]: on })}>
+          onChange={(on) => setOpts(on ? { ...noSecrets(), [o.id]: true } : { ...opts, [o.id]: false })}>
           <ul className="release-notes">{o.effects.map((e) => <li key={e}>{e}</li>)}</ul>
         </ToggleCard>
       ))}
