@@ -6,7 +6,7 @@ import { engine, errorText } from '../engine'
 import { store, useStore } from '../store'
 import { choosePatchTarget, OPFS_NAME } from '../target'
 
-export function SecretPage({ onLeave }: { onLeave: () => void }) {
+export function SecretPage() {
   useStore()
   const g = store.game
   const [opts, setOpts] = useState<SecretOptions>(noSecrets)
@@ -55,7 +55,7 @@ export function SecretPage({ onLeave }: { onLeave: () => void }) {
     <div className="page">
       <h3>Secret Options</h3>
       <Note>
-        Hidden options! Don't tell anyone (or do, I don't care). <a href="#" onClick={(e) => { e.preventDefault(); onLeave() }}>Back to ImperfectLab</a>
+        Cool secret debug options! Don't tell anyone (or do, I don't care).
       </Note>
       {SECRET_OPTIONS.map((o) => (
         <ToggleCard key={o.id} title={o.label} checked={opts[o.id]} disabled={busy !== null} note={o.description}

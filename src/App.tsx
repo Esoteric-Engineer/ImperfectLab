@@ -229,7 +229,7 @@ function App() {
           </Fragment>
         ))}
       </aside>
-      <main>{secret ? <SecretPage onLeave={leaveSecret} /> : <Page />}</main>
+      <main>{secret ? <SecretPage /> : <Page />}</main>
       <footer>
         <span>{s.status}</span>
         <span>{s.game ? `Game: ${s.game.name}` : 'No game disc chosen'}</span>
