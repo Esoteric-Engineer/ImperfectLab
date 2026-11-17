@@ -4,6 +4,7 @@ import type { ReadAt, Sink } from '../core/game/disc'
 import { RgbaImage } from '../core/image/rgba'
 import type { Batch } from '../core/build/batch'
 import type { EffectChoices } from '../core/build/cutscenes'
+import type { SecretOptions } from '../core/build/secret'
 import type { CutsceneKind } from '../core/package/imperfect'
 import type { PatchTarget, Request, Response } from './protocol'
 import { Service } from './service'
@@ -116,6 +117,8 @@ const handlers: Record<string, (progress: (stage: string, done?: number, total?:
   checkBatch: (p, chars: Batch) => service.checkBatch(chars, p),
   patchBatch: (p, chars: Batch, target: PatchTarget, verified: boolean, token: number | null) =>
     intoSink(target, (sink) => service.patchBatch(chars, sink, verified, token, p)),
+  patchSecret: (p, opts: SecretOptions, target: PatchTarget, verified: boolean) =>
+    intoSink(target, (sink) => service.patchSecret(opts, sink, verified, p)),
 }
 
 self.onmessage = async (e: MessageEvent<Request>) => {
