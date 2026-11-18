@@ -1,5 +1,8 @@
 {
   "daredevil": {
+    "40": "baton_holster_1",
+    "41": "baton_holster_2",
+    "42": "baton_holster_3",
     "43": "baton_retract",
     "44": "baton_extend",
     "46": "baton_spin_1",

@@ -186,6 +186,24 @@ describe.skipIf(!ISO)('main.dol', () => {
     expect(() => D.daredevil(out, [], [entry('Synth')])).toThrow(LabError)
   })
 
+  it('sends listed characters\' fighter hits to the prop hit\'s baton return', () => {
+    const dol = gameSource().dol
+    const out = D.daredevil(dol, [], [], ['Synth', 'Cap'])
+    const word = (d: Uint8Array, va: number) => u32be(d, D.fileOffset(d, va))
+    expect(word(dol, 0x800e7ee0)).toBe(0x480003c8)
+    expect(word(out, 0x800e7ee0) & 0xfc000003).toBe(0x48000000)
+    const code = 0x800e7ee0 + (((word(out, 0x800e7ee0) & 0x3fffffc) << 6) >> 6)
+    expect(word(out, code)).toBe(0x9421fff0)
+    const at = D.fileOffset(out, code)
+    const names = latin1(out.subarray(at, at + 0x400))
+    for (const n of ['plr_synth', 'plr_altSynth', 'plr_cap', 'plr_altCap']) expect(names).toContain(n)
+    expect(u32be(out, at + names.indexOf('plr_synth') - 4)).toBe(2)
+    const both = D.daredevil(dol, [{ internal: 'Synth', drop: 0.85 }], [], ['Synth'])
+    expect(word(both, 0x800de74c)).toBe(word(D.airThrow(dol, [{ internal: 'Synth', drop: 0.85 }]), 0x800de74c))
+    expect(() => D.daredevil(out, [], [], ['Synth'])).toThrow(LabError)
+    expect(() => D.daredevil(dol, [], [], [])).toThrow(LabError)
+  })
+
   it('binds Z to its actions', () => {
     const dol = gameSource().dol
     const none = { costume: false, damage: [null, null, null, null, null], taken: null, lift: null, run: null, sprint: null, size: null, slow: null, gun: false }

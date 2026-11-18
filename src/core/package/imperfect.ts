@@ -62,7 +62,7 @@ export const GAMEPLAY: Record<string, [number, number, boolean]> = {
   ...Object.fromEntries(COSTS.map((c): [string, [number, number, boolean]] => [c.key, [FALLBACK.includes(c.key) ? 0.1 : 0, 100, false]])),
   ...Object.fromEntries(RECHARGE.map((r): [string, [number, number, boolean]] => [r.key, [0, 100, false]])),
 }
-export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable', 'range_grab', 'holster', 'no_throw', 'air_throw', 'air_throw_reach', 'grip', 'shield_throw'] }
+export const BASE_MOVES: Record<string, (keyof BaseMoves)[]> = { daredevil: ['throw_reach', 'throw_cable', 'range_grab', 'holster', 'no_throw', 'air_throw', 'air_throw_reach', 'grip', 'shield_throw', 'throw_return'] }
 export const NO_THROW = ['in_hand', 'attack_far'] as const
 export type NoThrow = (typeof NO_THROW)[number]
 export type WallKey = 'wall_climb' | 'wall_run'
@@ -217,6 +217,7 @@ export interface BaseMoves {
   air_throw?: boolean
   air_throw_reach?: number
   grip?: Grip
+  throw_return?: boolean
   shield_throw?: ShieldThrow
 }
 
@@ -550,6 +551,9 @@ export type Problem = ['error' | 'warning' | 'note', string]
 
 export const airThrows = (c: Character) => Boolean(c.baseMoves.air_throw)
 export const shieldThrows = (c: Character) => Boolean(c.baseMoves.shield_throw)
+export const throwReturns = (c: Character) => Boolean(c.baseMoves.throw_return)
+// the moves whose thrown club the game brings back on a hit (motions 0x33 and 0x36)
+export const RETURN_MOVES = ['SuperAttackFar', 'SuperRiseAttack']
 // a throw flying further than the base's
 export const longThrows = (c: Character) => c.baseMoves.throw_reach !== undefined || (airThrows(c) && c.baseMoves.air_throw_reach !== undefined)
 export const throwReachName = (c: Character) => (c.baseMoves.throw_reach !== undefined ? 'the baton throw reach' : 'the air throw reach')
@@ -670,6 +674,11 @@ export function problems(c: Character): Problem[] {
     }
   }
   if (shieldThrows(c)) for (const m of shieldThrowClashes(c)) out.push(['error', m])
+  if (throwReturns(c)) {
+    if (c.baseMoves.no_throw) out.push(['error', 'the baton is set to come back off a fighter, but the baton throw is off: untick one on the Moves page'])
+    if (shieldThrows(c)) out.push(['error', 'the shield throw has its own return, so the baton coming back off a fighter does nothing: untick one on the Moves page'])
+    if (RETURN_MOVES.every((id) => c.moves[id] || c.moveAnims[id] || c.moveIdle.includes(id))) out.push(['warning', 'super attack far and super rise attack are both changed on the Moves page, so no club throw is left to come back off a fighter'])
+  }
   if (c.baseMoves.air_throw_reach !== undefined && !c.baseMoves.air_throw) out.push(['error', 'the air throw reach is set but the air throw is off: tick it on the Moves page'])
   if (airThrows(c)) for (const m of airThrowClashes(c)) out.push(['error', m])
   if (c.moves.SuperAttackFar && c.baseMoves.throw_reach !== undefined) out.push(['error', 'the baton throw reach changes the base\'s own super attack far: set that move back to the base\'s, or untick the reach'])
@@ -1074,7 +1083,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
       glow: p.glow ? color(p.glow, 'glow') : null,
     }
   }
-  const mv = keys(m.base_moves ?? {}, ['throw_reach', 'throw_cable', 'range_grab', 'holster', 'no_throw', 'air_throw', 'air_throw_reach', 'grip', 'shield_throw'], 'base_moves')
+  const mv = keys(m.base_moves ?? {}, ['throw_reach', 'throw_cable', 'range_grab', 'holster', 'no_throw', 'air_throw', 'air_throw_reach', 'grip', 'shield_throw', 'throw_return'], 'base_moves')
   c.baseMoves = {}
   const reach = num(mv.throw_reach, 'base_moves.throw_reach', THROW_REACH[0], THROW_REACH[1])
   if (reach !== null) c.baseMoves.throw_reach = reach
@@ -1083,6 +1092,7 @@ export function fromManifest(m0: unknown, files: Map<string, Uint8Array>): Chara
   if (mv.air_throw !== null && mv.air_throw !== undefined && typed<boolean>(mv.air_throw, 'boolean', 'base_moves.air_throw')) c.baseMoves.air_throw = true
   const airReach = num(mv.air_throw_reach, 'base_moves.air_throw_reach', THROW_REACH[0], THROW_REACH[1])
   if (airReach !== null) c.baseMoves.air_throw_reach = airReach
+  if (mv.throw_return !== null && mv.throw_return !== undefined && typed<boolean>(mv.throw_return, 'boolean', 'base_moves.throw_return')) c.baseMoves.throw_return = true
   if (mv.no_throw !== null && mv.no_throw !== undefined) {
     const v = str(mv.no_throw, 'base_moves.no_throw', 20)!
     if (!(NO_THROW as readonly string[]).includes(v)) throw new LabError(`manifest: base_moves.no_throw is one of ${NO_THROW.join(', ')}`)

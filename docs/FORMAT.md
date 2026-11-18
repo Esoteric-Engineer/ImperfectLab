@@ -228,6 +228,7 @@ Daredevil (`daredevil`):
 - `no_throw`: turns the baton throw off. `in_hand` keeps move animations with the club in the hand, hitting up close. `attack_far` plays the Attack far animation instead, with its damage, except in moves changed on the Moves page (`moves`, `move_anims`, `move_idle`, `move_reach`). Can't be combined with `throw_reach`.
 - `air_throw`: `true` makes the `SuperJumpAttack` throw the club from the air at the nearest opponent. Can't be combined with `no_throw`, nor with `SuperJumpAttack` in `moves`, `move_anims`, `move_idle` or `move_reach`, nor with `holster.drawn.SuperJumpAttack: false`.
 - `air_throw_reach`: 8-35, how far the air throw reaches, in meters. Requires `air_throw`. Defaults to the baton throw's reach (`throw_reach`, or Daredevil's).
+- `throw_return`: `true` bounces the thrown club back when it hits a fighter, as it does off a prop, instead of flying on to its full reach. Can't be combined with `no_throw` or `shield_throw`.
 - `holster`: optional, carries what is fixed to game bone 39 (the club) on the back outside power mode and in the versus intros, and ends the baton throw's catch in the power-stand grip. Requires `throw_cable: false` and a prop on bone 39.
   - `position`: three numbers from -0.6 to 0.6, the prop's middle from the chest bone in meters.
   - `rotation`: three numbers from -180 to 180, degrees about X, Y and Z, rotating the prop from the middle.

@@ -857,14 +857,33 @@ function shieldTable(chars: ShieldCharacter[]): Uint8Array {
   return table
 }
 
-// airthrow.s then shield.s, each followed by its table, in one text section
-export function daredevil(dol: Uint8Array, air: AirThrowCharacter[], shields: ShieldCharacter[]): Uint8Array {
+// batonreturn.s, then its table
+const RETURN_CODE =
+  '9421fff07c0802a6900100147fc3f3783d80800d398cc5e07d8903a64e8004212c0300004182000848000031800100147c0803a6382100102c0300003d80800e4182000c618c81c848000008618c82a87d8903a64e8004209421ffd07c0802a690010034bf2100147c7f1b78480000e5' +
+  '7d7e5b783ba000003b2000003c608055386321103d808043398c49007d8903a64e8004217c1d1800408000a03c608055386321107fa4eb783d808043398c17bc7d8903a64e8004217c7c1b783d808043398cff2c7d8903a64e8004213bbd00017c03f8004082ffa8837e00003b5e0004' +
+  '2c1b000040810054387c00047f44d3783d808017398c26547d8903a64e8004212c03000041820030387c0004389a00203d808017398c26547d8903a64e8004212c030000418200103b5a00403b7bffff4bffffb07f59d3787f23cb78bb210014800100347c0803a6382100304e800020' +
+  '7c0802a6429f00057d6802a67c0803a6396b00104e800020'
+// fn_800E7A4C's fighter-hit branch to its epilogue
+const RETURN_SITE: [number, string] = [0x800e7ee0, '480003c8']
+const RETURN_ENTRY_SIZE = 0x40
+
+function returnTable(internals: string[]): Uint8Array {
+  const table = new Uint8Array(4 + RETURN_ENTRY_SIZE * internals.length)
+  putU32be(table, 0, internals.length)
+  internals.forEach((internal, i) => entityNames(internal).forEach((name, j) => table.set(field(name), 4 + RETURN_ENTRY_SIZE * i + 0x20 * j)))
+  return table
+}
+
+// airthrow.s, shield.s and batonreturn.s, each followed by its table, in one text section
+export function daredevil(dol: Uint8Array, air: AirThrowCharacter[], shields: ShieldCharacter[], returns: string[] = []): Uint8Array {
   if (air.length > MAX_NEW) throw new LabError(`main.dol has room for ${MAX_NEW} characters' air throws, not ${air.length}`)
   if (shields.length > MAX_NEW) throw new LabError(`main.dol has room for ${MAX_NEW} characters' shield throws, not ${shields.length}`)
-  if (!air.length && !shields.length) throw new LabError('nothing to add for the Daredevil base')
+  if (returns.length > MAX_NEW) throw new LabError(`main.dol has room for ${MAX_NEW} characters' baton returns, not ${returns.length}`)
+  if (!air.length && !shields.length && !returns.length) throw new LabError('nothing to add for the Daredevil base')
   const airPart = air.length ? concat([fromHex(AIR_THROW_CODE), airTable(air)]) : new Uint8Array(0)
   const shieldPart = shields.length ? concat([fromHex(SHIELD_CODE), shieldTable(shields)]) : new Uint8Array(0)
-  const [out, lo] = textSection(dol, concat([airPart, shieldPart]))
+  const returnPart = returns.length ? concat([fromHex(RETURN_CODE), returnTable(returns)]) : new Uint8Array(0)
+  const [out, lo] = textSection(dol, concat([airPart, shieldPart, returnPart]))
   const hooks: [[number, string], number, boolean][] = []
   if (air.length) hooks.push([AIR_GATE_SITE, lo + AIR_GATE, true], [AIR_ELEV_SITE, lo + AIR_ELEV, true], [AIR_EVENT_SITE, lo + AIR_EVENT, false])
   const sh = lo + airPart.length
@@ -872,6 +891,7 @@ export function daredevil(dol: Uint8Array, air: AirThrowCharacter[], shields: Sh
     hooks.push([SHIELD_SPAWN_SITE, sh + SHIELD_SPAWN, true], [SHIELD_POSE_SITE, sh + SHIELD_POSE, true], [SHIELD_PRESSED_SITE, sh + SHIELD_PRESSED, true],
       [SHIELD_DAMAGE_SITE, sh + SHIELD_DAMAGE, true], [SHIELD_PLAY_SITE, sh + SHIELD_PLAY, true], [SHIELD_HIT_SITE, sh + SHIELD_HIT, true])
   }
+  if (returns.length) hooks.push([RETURN_SITE, sh + shieldPart.length, false])
   for (const [[site, old], to, link] of hooks) put(out, fileOffset(out, site), fromHex(old), word(branch(site, to, link)))
   if (shields.length) put(out, fileOffset(out, SHIELD_FREEZE[0]), fromHex(SHIELD_FREEZE[1]), fromHex(SHIELD_FREEZE[2]))
   return out
