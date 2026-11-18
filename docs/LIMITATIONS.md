@@ -114,6 +114,12 @@ Throwing from the air (`air_throw`, `air_throw_reach`):
 - **It throws at the nearest other player**, aimed when the attack starts, so an opponent who moves away can still be missed.
 - **Aim is limited to 45° up or down.**
 - **Memory** is the same as a swapped move.
+- **It doesn't come back early.** It flies its full reach whatever it hits, even with `throw_return`.
+
+Bouncing back off a fighter (`throw_return`):
+
+- **Only works for super attack far and super rise attack.**
+- **A move swapped from another character** comes back only if its animation has Daredevil's return event (0x53).
 
 ## Holster
 

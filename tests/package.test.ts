@@ -411,6 +411,24 @@ describe('round trip', () => {
     expect(says((x) => ((x.baseMoves.throw_cable = false), (x.baseMoves.holster = { ...imperfect.defaultHolster(), drawn: { SuperJumpAttack: false } })), 'on the back')).toBe(true)
   })
 
+  it('brings the club back off a fighter', () => {
+    const c = character()
+    c.base = 'daredevil'
+    c.baseMoves = { throw_return: true, throw_reach: 10 }
+    const d = imperfect.load(imperfect.save(c))
+    expect(d.baseMoves).toEqual({ throw_return: true, throw_reach: 10 })
+    expect(imperfect.problems(d).filter(([l]) => l === 'error')).toEqual([])
+    const says = (f: (x: imperfect.Character) => void, level: string, text: string) => {
+      const x = imperfect.load(imperfect.save(c))
+      f(x)
+      return imperfect.problems(x).some(([l, m]) => l === level && m.includes(text))
+    }
+    expect(says((x) => (delete x.baseMoves.throw_reach, (x.baseMoves.no_throw = 'in_hand')), 'error', 'baton throw is off')).toBe(true)
+    expect(says((x) => (x.baseMoves.shield_throw = { return: 'physics' }), 'error', 'its own return')).toBe(true)
+    expect(says((x) => ((x.moves.SuperAttackFar = 'wolverine'), (x.moveIdle = ['SuperRiseAttack'])), 'warning', 'no club throw is left')).toBe(true)
+    expect(says((x) => (x.moves.SuperAttackFar = 'wolverine'), 'warning', 'no club throw is left')).toBe(false)
+  })
+
   it('asks the range grab for its animation', () => {
     const c = character()
     c.base = 'daredevil'
@@ -990,6 +1008,8 @@ describe('hostile files', () => {
       (m) => (m.base_moves = { no_throw: 'in_hand' }),
       (m) => (m.base_moves = { air_throw: true }),
       (m) => ((m.base = 'daredevil'), (m.base_moves = { air_throw: 'yes' })),
+      (m) => (m.base_moves = { throw_return: true }),
+      (m) => ((m.base = 'daredevil'), (m.base_moves = { throw_return: 'yes' })),
       (m) => ((m.base = 'daredevil'), (m.base_moves = { air_throw: true, air_throw_reach: 100 })),
       (m) => (m.base_moves = { holster: { position: [0, 0, 0], rotation: [0, 0, 0] } }),
       (m) => ((m.base = 'daredevil'), (m.base_moves = { holster: { position: [0, 0, 2], rotation: [0, 0, 0] } })),

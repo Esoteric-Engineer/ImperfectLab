@@ -23,7 +23,7 @@ import * as bundle from '../model/bundle'
 import { Fit, type MaterialSlots, type Tri } from '../model/fit'
 import { Model } from '../model/glb'
 import { Skeleton } from '../model/skeleton'
-import { airThrows, auraSet, shieldThrows, type Character, damageStages, gunOf, hasCutscenes, image as readImage, longThrows, type Material, problems, type Placement, WALL, type WallKey, type ZCostume, zTexture } from '../package/imperfect'
+import { airThrows, auraSet, shieldThrows, throwReturns, type Character, damageStages, gunOf, hasCutscenes, image as readImage, longThrows, type Material, problems, type Placement, WALL, type WallKey, type ZCostume, zTexture } from '../package/imperfect'
 import * as cutscenes from './cutscenes'
 import * as damage from './damage'
 import * as effects from './effects'
@@ -151,7 +151,7 @@ export class Builder {
     if (this.r.cache !== null) this.r.dol = D.growEffectCache(this.r.dol, this.r.cache)
     if (mirrors(c)) this.r.dol = D.mirrorSkip(this.r.dol)
     if (splitsCharge(c)) this.r.dol = D.chargeRate(this.r.dol)
-    if (airThrows(c) || this.r.shield) this.r.dol = D.daredevil(this.r.dol, airThrows(c) ? [airThrowCharacter(c)] : [], this.r.shield ? [this.r.shield] : [])
+    if (airThrows(c) || this.r.shield || throwReturns(c)) this.r.dol = D.daredevil(this.r.dol, airThrows(c) ? [airThrowCharacter(c)] : [], this.r.shield ? [this.r.shield] : [], throwReturns(c) ? [c.internalName] : [])
     if (throwsDamage(c)) this.r.dol = D.throwDamage(this.r.dol)
     if (ownSounds(c)) this.r.dol = D.soundBanks(this.r.dol, [c.internalName])
     if (c.zButton) this.r.dol = D.zActions(this.r.dol, zCharacters([c]))
@@ -1004,6 +1004,7 @@ export function report(characters: Character | Character[], result: Result): str
   if (chars.length === 1) lines.push('main.dol: roster record 19, select-screen limits 18 -> 19')
   else lines.push(`main.dol: roster records 19 to ${18 + chars.length} in a new data section, select-screen limits 18 -> ${18 + chars.length}`, `main.dol: arena starts at 0x${D.arenaLo(result.dol!).toString(16).toUpperCase()}`)
   if (chars.some(mirrors)) lines.push('main.dol: fn_8019DB24 mirrors a long throw\'s or stretch\'s return on a hit')
+  if (chars.some(throwReturns)) lines.push('main.dol: fn_800E7A4C brings a thrown club back on a fighter hit, as on a prop')
   if (chars.some(airThrows)) lines.push('main.dol: fn_800DDCB4 aims the air throw\'s super jump attack at the opponent\'s height, and event 0x7F clears that aim')
   if (chars.some(splitsCharge)) lines.push('main.dol: fn_8009D71C adds tuning field 245 to the energy recharge rate while holding R')
   if (chars.some(throwsDamage)) lines.push('main.dol: fn_800E1788 reads tuning field 217 for an animation\'s damage event with param 5 (the baton throw)')

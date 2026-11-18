@@ -8,7 +8,7 @@ import * as nfxtool from '../mnroi/nfxtool'
 import { Model } from '../model/glb'
 import * as mapping from '../model/mapping'
 import { Skeleton } from '../model/skeleton'
-import { airThrows, auraSet, type Character, gunOf, hasCutscenes, NO_SHOTS, problems as characterProblems, type Problem } from '../package/imperfect'
+import { airThrows, auraSet, throwReturns, type Character, gunOf, hasCutscenes, NO_SHOTS, problems as characterProblems, type Problem } from '../package/imperfect'
 import * as effects from './effects'
 import * as effectsets from './effectsets'
 import { impersonationData } from './impersonate'
@@ -139,7 +139,7 @@ export function buildBatch(source: GameSource, chars: Batch, progress: Progress 
   if (batch.some(mirrors)) r.dol = D.mirrorSkip(r.dol)
   if (batch.some(splitsCharge)) r.dol = D.chargeRate(r.dol)
   const shields = results.flatMap((x) => (x.shield ? [x.shield] : []))
-  if (batch.some(airThrows) || shields.length) r.dol = D.daredevil(r.dol, batch.filter(airThrows).map(airThrowCharacter), shields)
+  if (batch.some(airThrows) || shields.length || batch.some(throwReturns)) r.dol = D.daredevil(r.dol, batch.filter(airThrows).map(airThrowCharacter), shields, batch.filter(throwReturns).map((c) => c.internalName))
   if (batch.some(throwsDamage)) r.dol = D.throwDamage(r.dol)
   if (batch.some(ownSounds)) r.dol = D.soundBanks(r.dol, batch.filter(ownSounds).map((c) => c.internalName))
   if (batch.some((c) => c.zButton)) r.dol = D.zActions(r.dol, zCharacters(batch))
