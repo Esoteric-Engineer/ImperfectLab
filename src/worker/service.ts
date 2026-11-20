@@ -246,12 +246,8 @@ export class Service {
   }
 
   // `channels` are already at asftool.RATE.
-  encodeCutsceneAudio(channels: Int16Array[], samples: number): Uint8Array {
-    return asftool.build(asftool.encode(channels.map((c) => {
-      const out = new Int16Array(Math.max(samples, c.length))
-      out.set(c)
-      return out
-    })))
+  encodeCutsceneAudio(channels: Int16Array[]): Uint8Array {
+    return asftool.build(asftool.encode(channels))
   }
 
   decodeCutsceneAudio(data: Uint8Array): [Int16Array[], number] {

@@ -2,7 +2,7 @@
 // Little-endian. Actors' animations are .ngb-style tracks {u32 bone, u32 channel, u32 key count, u32 pointer} with 12-byte keys.
 import { ByteWriter, cstring, encodeLatin1, f32le, putF32le, putU32le, u32le } from '../bytes'
 import { LabError } from '../errors'
-import type * as ngbtool from './ngbtool'
+import * as ngbtool from './ngbtool'
 
 export const MAGIC = 0x2715
 export const LIMIT = 0x4b001
@@ -56,9 +56,11 @@ export function setPlacement(r: Uint8Array, R: ngbtool.Mat3, T: ngbtool.Vec3) {
 }
 
 export const bone = (t: Track) => u32le(t.head, 0)
+const channel = (t: Track) => u32le(t.head, 4)
 export const fps = (cut: Cut) => f32le(cut.header, 0x10)
 export const frames = (c: Chunk) => f32le(c.head, 8)
 export const fov = (c: Chunk) => f32le(c.head, 0xc)
+export const setFov = (c: Chunk, degrees: number) => putF32le(c.head, 0xc, degrees)
 
 export function keys(t: Track): ngbtool.Key[] {
   const v = new DataView(t.keys.buffer, t.keys.byteOffset, t.keys.length)
@@ -67,7 +69,7 @@ export function keys(t: Track): ngbtool.Key[] {
 
 // An actor's animation as an .ngb record, without its events.
 export function record(a: Actor): ngbtool.Record {
-  const tracks = a.tracks.map((t): ngbtool.Track => [bone(t), u32le(t.head, 4), keys(t)])
+  const tracks = a.tracks.map((t): ngbtool.Track => [bone(t), channel(t), keys(t)])
   return { name: cstring(a.header, 0, 0x20), length: f32le(a.header, 0x28), head: a.header.slice(0x20), pointers: a.tracks.map((t) => u32le(t.head, 12)), tracks, events: [], extra: [] }
 }
 
@@ -79,12 +81,7 @@ export function setRecord(a: Actor, rec: ngbtool.Record) {
     putU32le(head, 4, ch)
     putU32le(head, 8, keys.length)
     putU32le(head, 12, rec.pointers[i] ?? 0)
-    const out = new Uint8Array(12 * keys.length), v = new DataView(out.buffer)
-    keys.forEach(([f, p], k) => {
-      v.setFloat32(12 * k, f, true)
-      p.forEach((x, j) => v.setInt16(12 * k + 4 + 2 * j, x, true))
-    })
-    return { head, keys: out }
+    return { head, keys: keyBytes(keys) }
   })
 }
 
@@ -180,6 +177,75 @@ export function build(cut: Cut, sizes?: number[]): Uint8Array {
   for (const w of cut.chunkWords) out.u32le(w)
   for (const c of chunks) out.bytes(c)
   return out.finish()
+}
+
+export const length = (cut: Cut) => cut.chunks.reduce((s, c) => s + frames(c), 0)
+const CUE = 0x0d // finisher cam's end cue. Keeping for now bc the purpose is unknown
+
+function packedAt(t: Track, f: number): ngbtool.Packed {
+  const ks = keys(t)
+  const i = ks.findIndex(([k]) => k >= f)
+  if (i === 0) return ks[0][1]
+  if (i < 0) return ks[ks.length - 1][1]
+  const [f0, a] = ks[i - 1], [f1, b] = ks[i]
+  const u = f1 > f0 ? (f - f0) / (f1 - f0) : 0
+  if (channel(t) === 1) {
+    const p = ngbtool.translation(a), q = ngbtool.translation(b)
+    return ngbtool.encodeTranslation(p.map((x, k) => x + (q[k] - x) * u) as ngbtool.Vec3)
+  }
+  const s = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3] < 0 ? -1 : 1
+  const v = a.map((x, k) => x + (s * b[k] - x) * u), n = Math.hypot(...v) || 1
+  return v.map((x) => Math.round((x / n) * 16384)) as ngbtool.Packed
+}
+
+function keyBytes(ks: ngbtool.Key[]): Uint8Array {
+  const out = new Uint8Array(12 * ks.length), v = new DataView(out.buffer)
+  ks.forEach(([f, p], k) => {
+    v.setFloat32(12 * k, f, true)
+    p.forEach((x, j) => v.setInt16(12 * k + 4 + 2 * j, x, true))
+  })
+  return out
+}
+
+function eventsOf(a: Actor): Uint8Array[] {
+  return Array.from({ length: a.events.length / 12 }, (_, i) => a.events.slice(12 * i, 12 * i + 12))
+}
+
+// Longer holds the last pose; shorter drops what is past the end but moves the cue to the last frame.
+export function retime(cut: Cut, total: number) {
+  if (!(total >= 1)) throw new LabError(`a cutscene can't be ${total} frames long`)
+  let start = 0, keep = 1
+  while (keep < cut.chunks.length && start + frames(cut.chunks[keep - 1]) < total) start += frames(cut.chunks[keep++ - 1])
+  const last = cut.chunks[keep - 1], n = total - start, was = frames(last)
+  const cues = new Map<string, Uint8Array[]>()
+  const cue = (name: string, e: Uint8Array) => cues.set(name, [...(cues.get(name) ?? []), e])
+  for (const c of cut.chunks.slice(keep)) for (const a of c.actors) for (const e of eventsOf(a)) if ((e[4] | (e[5] << 8)) === CUE) cue(recordName(a.record), e)
+  putF32le(last.head, 8, n)
+  for (const a of last.actors) {
+    putF32le(a.header, 0x28, n)
+    a.tracks = a.tracks.map((t) => {
+      const ks = keys(t)
+      if (!ks.length) return t
+      const held = ks.filter(([f]) => f <= n)
+      if (!held.length || held[held.length - 1][0] < n) held.push([n, packedAt(t, n)])
+      return { head: t.head, keys: keyBytes(held) }
+    })
+    const evs = eventsOf(a).filter((e) => {
+      if (f32le(e, 0) <= n - 1 || n >= was) return true
+      if ((e[4] | (e[5] << 8)) === CUE) cue(recordName(a.record), e)
+      return false
+    })
+    for (const e of cues.get(recordName(a.record)) ?? []) {
+      putF32le(e, 0, Math.max(0, n - 1))
+      evs.push(e)
+    }
+    cues.delete(recordName(a.record))
+    if (evs.length > 255) throw new LabError('too many cutscene events in one chunk')
+    a.events = new Uint8Array(evs.flatMap((e) => [...e]))
+  }
+  cut.chunks = cut.chunks.slice(0, keep)
+  cut.chunkWords = cut.chunkWords.slice(0, keep)
+  cut.sizes = cut.sizes.slice(0, keep)
 }
 
 export function streams(cut: Cut): string[] {

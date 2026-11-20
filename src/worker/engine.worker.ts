@@ -85,7 +85,7 @@ const handlers: Record<string, (progress: (stage: string, done?: number, total?:
   cutscenePcm: (_p, base: string, kind: CutsceneKind, key: string) => service.cutscenePcm(base, kind, key),
   cutsceneAnimation: (_p, base: string, kind: CutsceneKind, key: string) => service.cutsceneAnimation(base, kind, key),
   checkCutsceneAnimation: (_p, base: string, kind: CutsceneKind, key: string, glb: Uint8Array) => service.checkCutsceneAnimation(base, kind, key, glb),
-  encodeCutsceneAudio: (_p, channels: Int16Array[], samples: number) => service.encodeCutsceneAudio(channels, samples),
+  encodeCutsceneAudio: (_p, channels: Int16Array[]) => service.encodeCutsceneAudio(channels),
   decodeCutsceneAudio: (_p, data: Uint8Array) => service.decodeCutsceneAudio(data),
   soundCatalog: () => service.soundCatalog(),
   soundPcm: (_p, base: string, index: number) => service.soundPcm(base, index),

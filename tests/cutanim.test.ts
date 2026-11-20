@@ -3,7 +3,7 @@ import * as cutanim from '../src/core/build/cutanim'
 import { equal } from '../src/core/bytes'
 import * as R from '../src/core/game/roster'
 import * as cuttool from '../src/core/mnroi/cuttool'
-import { GLB } from '../src/core/mnroi/gltf'
+import { GLB, type Json } from '../src/core/mnroi/gltf'
 import * as ngbtool from '../src/core/mnroi/ngbtool'
 import { gameSource, ISO } from './helpers'
 
@@ -138,5 +138,58 @@ describe.skipIf(!ISO)('cutscene animation', () => {
     const own = (c: cuttool.Cut) => c.records.find((r) => cuttool.recordName(r).toLowerCase() === 'wolverine')!
     const lastChunk = back.chunks[back.chunks.length - 1].actors.find((a) => cuttool.recordName(a.record).toLowerCase() === 'wolverine')!
     expect(cuttool.placement(own(back))).toEqual(cuttool.placement(lastChunk.record))
+  })
+
+  describe('field of view', () => {
+    const rigs = () => new Map([['wolverine', cutanim.rig(new R.BaseCharacter(gameSource(), 'wolverine'))]]) as cutanim.Rigs
+    const read = () => cuttool.read(gameSource().entry('Cutscenes/mp_wl_int_1.cut'))
+    const fovs = (cut: cuttool.Cut) => cut.chunks.map((c) => cuttool.fov(c))
+    const yfov = (fov: number) => 2 * Math.atan(Math.tan((fov * Math.PI) / 360) * 0.75)
+    const rejson = (glb: Uint8Array, edit: (j: Json) => void) => {
+      const g = new GLB(glb)
+      edit(g.j)
+      const json = new TextEncoder().encode(JSON.stringify(g.j)), pad = (4 - (json.length % 4)) % 4
+      const out = new Uint8Array(28 + json.length + pad + g.bin.length), dv = new DataView(out.buffer)
+      out.set([0x67, 0x6c, 0x54, 0x46])
+      dv.setUint32(4, 2, true)
+      dv.setUint32(8, out.length, true)
+      dv.setUint32(12, json.length + pad, true)
+      dv.setUint32(16, 0x4e4f534a, true)
+      out.set(json, 20)
+      out.fill(0x20, 20 + json.length, 20 + json.length + pad)
+      dv.setUint32(20 + json.length + pad, g.bin.length, true)
+      dv.setUint32(24 + json.length + pad, 0x004e4942, true)
+      out.set(g.bin, 28 + json.length + pad)
+      return out
+    }
+
+    it('writes each camera\'s shots as lens keys and reads them back', () => {
+      const cut = read()
+      const glb = cutanim.toGlb(cut, rigs())
+      const j = new GLB(glb).j
+      expect(j.extensionsUsed).toEqual(['KHR_animation_pointer'])
+      const pointers = j.animations[0].channels.filter((c: Json) => c.target.path === 'pointer')
+      expect(pointers.map((c: Json) => c.target.extensions.KHR_animation_pointer.pointer)).toEqual(j.cameras.map((_: Json, i: number) => `/cameras/${i}/perspective/yfov`))
+      expect(j.animations[0].samplers[pointers[0].sampler].interpolation).toBe('STEP')
+      expect(fovs(cutanim.fromGlb(glb, cut, rigs()).cut)).toEqual(fovs(cut))
+    })
+
+    it('changes only the shot whose lens key changed', () => {
+      const cut = read(), zoomed = read()
+      expect(cut.chunks.length).toBeGreaterThan(1)
+      cuttool.setFov(zoomed.chunks[1], 40)
+      const back = cutanim.fromGlb(cutanim.toGlb(zoomed, rigs()), cut, rigs()).cut
+      expect(fovs(back)).toEqual(fovs(cut).map((f, i) => (i === 1 ? 40 : f)))
+    })
+
+    it('takes an unkeyed lens for every shot only when it changed', () => {
+      const cut = read()
+      const still = (fov: number | null) => rejson(cutanim.toGlb(cut, rigs()), (j) => {
+        for (const a of j.animations) a.channels = a.channels.filter((c: Json) => c.target.path !== 'pointer')
+        if (fov !== null) j.cameras[0].perspective.yfov = yfov(fov)
+      })
+      expect(fovs(cutanim.fromGlb(still(null), cut, rigs()).cut)).toEqual(fovs(cut))
+      expect(new Set(fovs(cutanim.fromGlb(still(50), cut, rigs()).cut))).toEqual(new Set([50]))
+    })
   })
 })

@@ -50,8 +50,6 @@ export interface BaseCutscenes {
 export type Catalog = Record<string, BaseCutscenes>
 
 export const cutPath = (name: string) => `Cutscenes/${name.trim().replace(/\.cut$/i, '')}.cut`
-// Seconds new audio may run past the stream it replaces.
-export const AUDIO_SLACK = 0.05
 
 export function removeAudio(c: Character, key: string) {
   const member = c.cutscenes.audio[key]
@@ -72,14 +70,10 @@ export function dropAnimations(c: Character, kind: CutsceneKind): string[] {
   return dropped
 }
 
-// Remove a kind's new audio that does not fit where the kind is now taken from.
+// Remove a kind's new audio that has no slot where the kind is now taken from.
 export function dropUnfitAudio(c: Character, cat: Catalog, kind: CutsceneKind): string[] {
   const slots = cat[c.cutscenes[kind] ?? c.base]?.kinds[kind].slots ?? []
-  const fits = (k: string) => {
-    const s = slots.find((n) => n.key === k)
-    const body = c.files.get(c.cutscenes.audio[k])
-    return s !== undefined && body !== undefined && asftool.seconds(asftool.read(body)) <= s.seconds + AUDIO_SLACK
-  }
+  const fits = (k: string) => slots.some((n) => n.key === k) && c.files.has(c.cutscenes.audio[k])
   const dropped = Object.keys(c.cutscenes.audio).filter((k) => k.startsWith(kind + '_') && !fits(k))
   for (const k of dropped) removeAudio(c, k)
   return dropped
@@ -362,24 +356,24 @@ export function plan(src: GameSource, base: R.BaseCharacter, c: Character, given
     const stowed = kind === 'intro' ? (stow ?? hold) : hold
     if (from === base && !clips.length && !stowed && !anims.length) continue
     const avail = slots(r, kind, names)
-    const clipFor = new Map<string, string>()
+    // original stream -> [new stream, seconds]
+    const clipFor = new Map<string, [string, number]>()
     for (const [key, member] of clips) {
       const slot = avail.find((s) => s.key === key)
       if (!slot) throw new LabError(`${from.label}'s ${LABELS[kind].toLowerCase()} has no audio ${key}`)
-      const asf = asftool.read(c.files.get(member) ?? new Uint8Array())
-      if (asftool.seconds(asf) > slot.seconds + AUDIO_SLACK) {
-        throw new LabError(`the new audio for ${slot.label.toLowerCase()} is longer than the ${slot.seconds.toFixed(1)} seconds it replaces`)
-      }
+      const body = c.files.get(member) ?? new Uint8Array()
       const name = `${prefix}_${key}.asf`
       if (src.has(STREAMS + name)) throw new LabError(`the game already has ${STREAMS + name}: pick another internal name`)
-      out.files.set(STREAMS + name, asftool.info(asf).samples < slot.samples ? asftool.build(asftool.padded(asf, slot.samples)) : c.files.get(member)!)
-      clipFor.set(slot.stream.toLowerCase(), name)
+      out.files.set(STREAMS + name, body)
+      clipFor.set(slot.stream.toLowerCase(), [name, asftool.seconds(asftool.read(body))])
     }
+    const streamSeconds = (s: string) => avail.find((a) => a.stream.toLowerCase() === s.toLowerCase())?.seconds ?? (src.has(STREAMS + s) ? asftool.seconds(asftool.read(src.entry(STREAMS + s))) : 0)
     const cross = from.body !== base.body
     if (cross && nodes === null) nodes = ngmtool.read(base.bundleFiles()[0])[1][0].nodes.length
     const renamed = new Map<string, string>()
     const firsts = animationCuts(names).map(([cut]) => cut.trim().toLowerCase())
     const animNotes = new Set<string>()
+    const lengths = new Set<string>()
     let copies = 0
     for (const slotNames of names) {
       const own = cuttool.streams(r.cut(slotNames[0]))
@@ -391,7 +385,7 @@ export function plan(src: GameSource, base: R.BaseCharacter, c: Character, given
         const key = v.trim().toLowerCase()
         if (renamed.has(key)) continue
         const theirs = cuttool.streams(r.cut(v))
-        const changes = own.flatMap((s, j): [number, string][] => (clipFor.has(s.toLowerCase()) && theirs[j] ? [[j, clipFor.get(s.toLowerCase())!]] : []))
+        const changes = own.flatMap((s, j): [number, string, number][] => (clipFor.has(s.toLowerCase()) && theirs[j] ? [[j, ...clipFor.get(s.toLowerCase())!]] : []))
         const effectCopy = effects.size > 0 && usesAny(r.cut(v), effects)
         const stripCopy = c.cutscenes.effects[kind] === 'none' && performers(r.cut(v)).some((a) => !effectEvents(a).next().done)
         if (!cross && !changes.length && !effectCopy && !stripCopy && !stowed && !glb) {
@@ -399,6 +393,13 @@ export function plan(src: GameSource, base: R.BaseCharacter, c: Character, given
           continue
         }
         let cut = cuttool.read(cuttool.build(r.cut(v)))
+        if (changes.length) {
+          // the cutscene runs as long as the longest stream it plays
+          const seconds = Math.max(...theirs.map((s, j) => changes.find(([k]) => k === j)?.[2] ?? (s ? streamSeconds(s) : 0)))
+          const was = cuttool.length(cut)
+          cuttool.retime(cut, Math.max(1, Math.ceil(seconds * cuttool.fps(cut))))
+          lengths.add(`${v.trim()} ${(was / cuttool.fps(cut)).toFixed(1)} s -> ${(cuttool.length(cut) / cuttool.fps(cut)).toFixed(1)} s`)
+        }
         if (glb) {
           const got = cutanim.fromGlb(glb, cut, r.actorRigs(v, from.key))
           cut = got.cut
@@ -410,6 +411,9 @@ export function plan(src: GameSource, base: R.BaseCharacter, c: Character, given
         // a new animation places the club itself
         if (stowed && !glb) for (const a of performers(cut)) cuttool.setRecord(a, stowed(cuttool.record(a)))
         for (const [j, n] of changes) cuttool.setStream(cut, j, n)
+        cut.chunks.forEach((ch, i) => {
+          if (cuttool.buildChunk(ch).length > cuttool.LIMIT) throw new LabError(`chunk ${i + 1} of ${v.trim()} is more than the ${cuttool.LIMIT} bytes the game streams`)
+        })
         const name = `${prefix}_${kind}${++copies}`
         if (src.has(cutPath(name))) throw new LabError(`the game already has ${cutPath(name)}: pick another internal name`)
         out.files.set(cutPath(name), cuttool.build(cut))
@@ -425,6 +429,7 @@ export function plan(src: GameSource, base: R.BaseCharacter, c: Character, given
     }
     if (c.cutscenes.effects[kind] === 'none') note += '; no effects'
     out.notes.push(note + (cross ? `; ${from.body} animations on a ${base.body} skeleton, so approximate` : ''))
+    if (lengths.size) out.notes.push(`cutscenes: ${LABELS[kind].toLowerCase()} lengths follow the new audio: ${[...lengths].join(', ')}`)
     for (const n of animNotes) out.notes.push(`cutscenes: ${n}`)
   }
   return out
