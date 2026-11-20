@@ -294,8 +294,9 @@ Cutscenes and audio changed on the **Cutscenes** page (`cutscenes`, [`FORMAT.md`
 - **`none` removes only the cutscene's own effects.** The character's always-on effects, such as a glow, still show.
 - **Projectiles and sounds stay the base's.**
 - **Other body classes are approximate.** Their animations are mapped bone by bone, but limbs differ, as for swapped moves. The victim's side of a finisher is unchanged.
-- **New audio replaces the whole mix** (voice, music and sounds) and can be no longer than the track it replaces; a shorter one is padded with silence, because the cutscene keeps time with its audio.
-- **A new animation keeps the cutscene's length**, audio, effects and fields of view. Animation past the end is cut and a shorter one holds its last pose.
+- **New audio replaces the whole mix** (voice, music and sounds), except Thing's, Van Roekel's and Venom's finishers play a few of the base's sound effects, which stay.
+- **The cutscene follows its new audio's length.** A longer track holds the final pose, a shorter one ends the cutscene early.
+- **One field of view per shot.** A lens animated within a shot shows only its value at the shot's start. Exporting lens keys from Blender bakes every frame, which softens camera cuts.
 - **Extra tracks stay as they are.** Most cutscenes carry a second set of tracks on some bones (flagged in the bone word; purpose unknown). They are left out of the download and kept unchanged, though edits to those bones still show in the game.
 - **Blender bakes on whole frames**, so a jump in pose between two chunks is smoothed over one frame. Camera cuts stay sharp only with **Sampling Animations** off when exporting.
 

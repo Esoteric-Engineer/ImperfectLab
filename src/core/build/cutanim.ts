@@ -21,6 +21,10 @@ type Quat = [number, number, number, number]
 export const CAMERA = /^nis_camera/i
 export const RATE = 30
 const EPS = 0.01
+const toYfov = (fov: number) => 2 * Math.atan(Math.tan((fov * Math.PI) / 360) * 0.75)
+const fromYfov = (y: number) => (360 / Math.PI) * Math.atan(Math.tan(y / 2) / 0.75)
+const fovPointer = (camera: number) => `/cameras/${camera}/perspective/yfov`
+const POINTER = 'KHR_animation_pointer'
 const TOL = 1e-3
 const MARK = 0.02
 
@@ -185,14 +189,21 @@ export function toGlb(cut: cuttool.Cut, rigs: Rigs): Uint8Array {
   for (const r of cut.records) {
     const name = cuttool.recordName(r)
     if (CAMERA.test(name)) {
-      // the game's field of view is across the width of its 4:3 frame
-      const fov = cuttool.fov(cut.chunks.find((c) => actorIn(c, name)) ?? cut.chunks[0])
-      const yfov = 2 * Math.atan(Math.tan((fov * Math.PI) / 360) * 0.75)
+      const yfov = toYfov(cuttool.fov(cut.chunks.find((c) => actorIn(c, name)) ?? cut.chunks[0]))
       const camera = g.json.cameras.push({ name, type: 'perspective', perspective: { yfov, znear: 0.05, aspectRatio: 4 / 3 } }) - 1
       const node = g.node({ name, camera })
       g.json.scenes[0].nodes.push(node)
       for (const bone of used(name, 0)) animate(node, 'rotation', timeline(cut, name, bone, 0, (p) => toGltf(ngbtool.matQuat(mul(M, ngbtool.qmat(ngbtool.quat(p))))), [0, 0, 0, 1]))
       for (const bone of used(name, 1)) animate(node, 'translation', timeline(cut, name, bone, 1, (p) => conv(ngbtool.translation(p)), [0, 0, 0]))
+      const shots: [number, number][] = [] // each shot's FoV
+      let start = 0
+      for (const c of cut.chunks) {
+        if (actorIn(c, name)) shots.push([start / RATE, toYfov(cuttool.fov(c))])
+        start += cuttool.frames(c)
+      }
+      const input = g.floats(shots.map(([s]) => [s]), 'SCALAR'), output = g.floats(shots.map(([, y]) => [y]), 'SCALAR')
+      channels.push({ sampler: samplers.push({ input, output, interpolation: 'STEP' }) - 1, target: { path: 'pointer', extensions: { [POINTER]: { pointer: fovPointer(camera) } } } })
+      g.json.extensionsUsed = [POINTER]
       continue
     }
     const rg = rigs.get(name.toLowerCase())
@@ -258,6 +269,7 @@ export class Scene {
   nodes: Json[]
   parent: Map<number, number>
   channels = new Map<number, Partial<Record<Path, Sampler>>>()
+  pointers = new Map<string, Sampler>()
   private rest: Map<number, Mat4>
 
   constructor(data: Uint8Array | GLB, only: number | null = null) {
@@ -269,6 +281,12 @@ export class Scene {
       if (only !== null && i !== only) continue
       for (const ch of anim.channels ?? []) {
         const node = ch.target?.node, path = ch.target?.path
+        const pointer = ch.target?.extensions?.[POINTER]?.pointer
+        if (path === 'pointer' && typeof pointer === 'string') {
+          const s = anim.samplers[ch.sampler]
+          this.pointers.set(pointer, { times: this.g.accessor(s.input).map((v) => v[0]), values: this.g.accessor(s.output), interp: s.interpolation ?? 'LINEAR' })
+          continue
+        }
         if (node === undefined || !PATHS.includes(path)) continue
         const s = anim.samplers[ch.sampler]
         const entry = this.channels.get(node) ?? {}
@@ -276,6 +294,15 @@ export class Scene {
         this.channels.set(node, entry)
       }
     }
+  }
+
+  lens(n: number): [(t: number) => number, boolean] | null {
+    const camera = this.nodes[n].camera
+    if (camera === undefined) return null
+    const keys = this.pointers.get(fovPointer(camera))
+    if (keys) return [(t) => sample(keys, t, false)[0], true]
+    const still = this.g.j.cameras?.[camera]?.perspective?.yfov
+    return typeof still === 'number' ? [() => still, false] : null
   }
 
   find(name: string, under: number | null = null): number[] {
@@ -410,6 +437,7 @@ export function fromGlb(data: Uint8Array, template: cuttool.Cut, rigs: Rigs): Im
   const scene = new Scene(data)
   const cut = cuttool.read(cuttool.build(template))
   const notes: string[] = [], keyed: string[] = []
+  const refov = new Map<number, number>() // first camera to change a chunk's FoV wins
   const total = cut.chunks.reduce((s, c) => s + cuttool.frames(c), 0)
   const end = Math.max(0, ...[...scene.channels.values()].flatMap((c) => Object.values(c).map((s) => s.times[s.times.length - 1])))
   const frames = end * RATE
@@ -440,6 +468,18 @@ export function fromGlb(data: Uint8Array, template: cuttool.Cut, rigs: Rigs): Im
         start += len
       })
       placeAll(cut, name, [0, 0, 0], true)
+      const lens = scene.lens(node)
+      const first = cut.chunks.find((c) => actorIn(c, name))
+      // an unkeyed lens counts only if it differs from the download's
+      if (lens && first && (lens[1] || Math.abs(fromYfov(lens[0](0)) - cuttool.fov(first)) > 0.05)) {
+        let at = 0
+        cut.chunks.forEach((chunk, i) => {
+          const len = cuttool.frames(chunk)
+          const fov = Math.round(fromYfov(lens[0](at / RATE + 1e-4)) * 100) / 100
+          if (actorIn(chunk, name) && !refov.has(i) && Math.abs(fov - cuttool.fov(chunk)) > 0.05) refov.set(i, fov)
+          at += len
+        })
+      }
       continue
     }
     const rg = rigs.get(name.toLowerCase())
@@ -496,6 +536,7 @@ export function fromGlb(data: Uint8Array, template: cuttool.Cut, rigs: Rigs): Im
     })
     placeAll(cut, name, rg.nodes[0][0].slice(0, 3) as Vec3)
   }
+  for (const [i, fov] of refov) cuttool.setFov(cut.chunks[i], fov)
   cut.chunks.forEach((c, i) => {
     const n = cuttool.buildChunk(c).length
     if (n > cuttool.LIMIT) throw new LabError(`chunk ${i + 1} of the cutscene is ${n} bytes, more than the ${cuttool.LIMIT} the game streams`)

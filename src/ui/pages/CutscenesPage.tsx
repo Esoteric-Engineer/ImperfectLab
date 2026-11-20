@@ -47,8 +47,7 @@ export function CutscenesPage() {
         Use another character's intro, victory, or finisher, replace their audio, or re-animate them in Blender.<br /><br />
         A cutscene taken from another character starts {label(c.base)}'s effects at its cues. Use the <b>Effects</b> choice to play the other character's instead. Projectiles stay {label(c.base)}'s.
         <br /><br />
-        New audio replaces the whole track (voice, music and sounds), for both costumes. It always lasts exactly as long as the audio it replaces, since the cutscene keeps time with its audio: a shorter file is padded with silence, a longer one cut.
-        
+        New audio replaces the whole track (voice, music and sounds), for both costumes. The cutscene then runs as long as the new audio, up to {MAX_AUDIO_SECONDS} seconds: it holds its last pose to fill a longer track and ends early with a shorter one.
       </Note>
       <details className="help">
         <summary><b>Memory, disc space and other limits</b></summary>
@@ -78,6 +77,7 @@ export function CutscenesPage() {
               <li>Ensure <b>Format</b> is set to <code>glTF Binary (.glb)</code>.</li>
               <li>Under <b>Include &gt; Data</b>, ensure <b>Cameras</b> is checked.</li>
               <li>Under <b>Animation</b>, ensure <b>Sampling Animations</b> is unchecked.</li>
+              <li>Only if you changed the camera's zoom: under <b>Animation</b>, set <b>Animation Mode</b> to <code>Scene</code> and check <b>Animation Pointer (Experimental)</b>, and set the scene's <b>End</b> frame (Output Properties &gt; Frame Range) to the cutscene's last frame. Blender then bakes every frame, so camera cuts soften over one frame.</li>
             </ul>
           </li>
           <li>Upload the modified <code>.glb</code> below.</li>
@@ -95,9 +95,9 @@ export function CutscenesPage() {
             </li>
             <li>Don't rename any object names or bone names. This will break the import.</li>
             <li>Move the character up/down by it's Pelvis, not it's Root. The root is ignored for some reason.</li>
-            <li>The edited cutscene must be the same duration as the original cutscene. Anything past the end of the original is left out, and if the new cutscene is shorter, it stays on the last frame for the remaining duration.</li>
+            <li>The cutscene keeps its length, or its new audio's if you upload some. Animation past the end is left out, and a shorter animation holds its last pose.</li>
             <li>Audio and effect swapping is not done in the menu below, not in the <code>.glb</code>.</li>
-            <li>Each shot keeps the original's field of view. Camera changes aren't supported yet.</li>
+            <li>Move and turn <code>nis_camera</code> to change the camera. Its lens (focal length) is the zoom, one per shot: it has a key at the start of each shot, and the game reads it there, so a zoom animated within a shot is not seen.</li>
             <li>The small shapes on the joints are only there so that Blender makes an armature.</li>
             <li>Don't ask me for help with animating. <a href="https://youtu.be/gFAuKtT_o-0" target='_blank'>You can almost certainly do it better than I can.</a></li>
           </ul>
@@ -298,14 +298,14 @@ function AudioRow({ kind, slot }: { kind: CutsceneKind; slot: AudioSlot }) {
     await store.edit(async () => {
       let channels: Int16Array[]
       try {
-        channels = await decodeSound(file, asftool.RATE, slot.seconds)
+        channels = await decodeSound(file, asftool.RATE, MAX_AUDIO_SECONDS, 2, false)
       } catch (e) {
         store.fail(`The sound could not be read:\n${(e as Error).message}`)
         return
       }
       let data: Uint8Array
       try {
-        data = await engine.call<Uint8Array>('encodeCutsceneAudio', [channels, slot.samples])
+        data = await engine.call<Uint8Array>('encodeCutsceneAudio', [channels])
       } catch (e) {
         store.fail(e)
         return
@@ -335,11 +335,10 @@ function AudioRow({ kind, slot }: { kind: CutsceneKind; slot: AudioSlot }) {
               <button title="Download as .wav" onClick={() => sound('decodeCutsceneAudio', [body], `${c.internalName}_${slot.key}.wav`)}>⤓</button>
               <button onClick={upload}>Replace...</button>
               <button onClick={() => { removeAudio(c, slot.key); store.touch('character') }}>Remove</button>
+              <span className="muted">{seconds(asftool.seconds(asftool.read(body)))}</span>
             </>
           ) : !slot.samples ? (
             <span className="muted">not on this disc</span>
-          ) : slot.seconds > MAX_AUDIO_SECONDS ? (
-            <span className="muted">longer than {MAX_AUDIO_SECONDS} s, too long to replace</span>
           ) : (
             <button onClick={upload}>Upload...</button>
           )}

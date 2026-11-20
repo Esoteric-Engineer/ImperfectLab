@@ -76,7 +76,7 @@ describe('new cutscene audio', () => {
     expect(Object.keys(c.cutscenes.audio)).toEqual(['intro_1', 'victory_1'])
     expect(c.files.has('cutscenes/intro_2.asf')).toBe(false)
     c.files.set('cutscenes/intro_1.asf', clip(1.5))
-    expect(cutscenes.dropUnfitAudio(c, cat, 'intro')).toEqual(['intro_1'])
+    expect(cutscenes.dropUnfitAudio(c, cat, 'intro')).toEqual([])
   })
 })
 
@@ -150,6 +150,63 @@ const fieldValues = (nvb: Uint8Array, fid: number) => {
   return Array.from({ length: tuning.SLOTS }, (_, s) => t.value(fid, s) as string)
 }
 
+describe.skipIf(!ISO)('cutscene length', () => {
+  const read = () => cuttool.read(gameSource().entry('Cutscenes/fm_dd_male_1.cut'))
+  const cues = (cut: cuttool.Cut) => {
+    const out: [string, number][] = []
+    let at = 0
+    for (const ch of cut.chunks) {
+      for (const a of ch.actors) for (let i = 0; i < a.events.length; i += 12) if (a.events[i + 4] === 0x0d) out.push([cuttool.recordName(a.record), at + new DataView(a.events.buffer, a.events.byteOffset + i).getFloat32(0, true)])
+      at += cuttool.frames(ch)
+    }
+    return out
+  }
+  const lastFrames = (ch: cuttool.Chunk) => ch.actors.flatMap((a) => a.tracks.map((t) => cuttool.keys(t).at(-1)![0]))
+
+  it('holds the last pose to run longer', () => {
+    const cut = read(), was = read()
+    cuttool.retime(cut, cuttool.length(was) + 100)
+    expect(cuttool.length(cut)).toBe(cuttool.length(was) + 100)
+    expect(cut.chunks.length).toBe(was.chunks.length)
+    const last = cut.chunks.at(-1)!, before = was.chunks.at(-1)!
+    expect(new Set(lastFrames(last))).toEqual(new Set([cuttool.frames(last)]))
+    last.actors.forEach((a, k) => {
+      expect(new DataView(a.header.buffer, a.header.byteOffset).getFloat32(0x28, true)).toBe(cuttool.frames(last))
+      a.tracks.forEach((t, n) => {
+        const ks = cuttool.keys(t), old = cuttool.keys(before.actors[k].tracks[n])
+        expect(ks.slice(0, old.length)).toEqual(old)
+        expect(ks.at(-1)![1]).toEqual(old.at(-1)![1])
+      })
+      expect(a.events).toEqual(before.actors[k].events)
+    })
+    expect(cues(cut)).toEqual(cues(was))
+    expect(cuttool.read(cuttool.build(cut)).chunks.length).toBe(cut.chunks.length)
+  })
+
+  it('ends early, keeping its cue', () => {
+    const cut = read(), was = read()
+    expect(cues(was).map(([n]) => n)).toEqual(['NIS_CAMERA'])
+    cuttool.retime(cut, 100)
+    expect(cuttool.length(cut)).toBe(100)
+    expect(cut.chunks.length).toBeLessThan(was.chunks.length)
+    expect(new Set(lastFrames(cut.chunks.at(-1)!))).toEqual(new Set([cuttool.frames(cut.chunks.at(-1)!)]))
+    expect(cues(cut)).toEqual([['NIS_CAMERA', 99]])
+    const back = cuttool.read(cuttool.build(cut))
+    expect(back.chunks.length).toBe(cut.chunks.length)
+    expect(cuttool.length(back)).toBe(100)
+  })
+
+  it('cuts a chunk between keys at an in-between pose', () => {
+    const cut = read(), was = read()
+    cuttool.retime(cut, cuttool.frames(was.chunks[0]) - 0.5)
+    const t = cut.chunks[0].actors[0].tracks.find((t) => t.head[4] === 1)!
+    const old = cuttool.keys(was.chunks[0].actors[0].tracks.find((t) => t.head[4] === 1)!)
+    const [, a] = old.at(-2)!, [, b] = old.at(-1)!
+    const mid = ngbtool.translation(cuttool.keys(t).at(-1)![1]), pa = ngbtool.translation(a), pb = ngbtool.translation(b)
+    mid.forEach((v, k) => expect(v).toBeCloseTo((pa[k] + pb[k]) / 2, 3))
+  })
+})
+
 describe.skipIf(!ISO)('cutscenes', () => {
   const src = () => gameSource()
 
@@ -206,7 +263,7 @@ describe.skipIf(!ISO)('cutscenes', () => {
     expect(p.notes.some((n) => n.includes('approximate'))).toBe(true)
   })
 
-  it('keeps flagged tracks when it remaps, and pads short audio to the stream it replaces', () => {
+  it('keeps flagged tracks when it remaps, and ends the cutscene with short audio', () => {
     const c = character('daredevil')
     c.cutscenes = { victory: 'megalith', audio: { victory_1: 'cutscenes/v.asf' }, effects: {}, animation: {} }
     c.files.set('cutscenes/v.asf', clip(1))
@@ -220,7 +277,9 @@ describe.skipIf(!ISO)('cutscenes', () => {
     // only the thumb tips, which a male skeleton lacks, are left behind
     expect(megalith(theirs).tracks.length - megalith(mine).tracks.length).toBeLessThanOrEqual(4)
     const audio = asftool.read(p.files.get('Sounds/ASF/english/synth_victory_1.asf')!)
-    expect(asftool.info(audio).samples).toBe(asftool.info(asftool.read(src().entry('Sounds/ASF/english/MP_ML_EXT_1.asf'))).samples)
+    expect(asftool.info(audio).samples).toBe(asftool.RATE)
+    expect(cuttool.length(mine)).toBe(Math.ceil(cuttool.fps(mine)))
+    expect(p.notes.some((n) => n.includes('lengths follow the new audio'))).toBe(true)
   })
 
   it('points copies of the cutscenes at new audio, for both costumes and both sides', () => {
@@ -229,12 +288,15 @@ describe.skipIf(!ISO)('cutscenes', () => {
     c.files.set('cutscenes/intro_2.asf', clip(1))
     c.files.set('cutscenes/finisher_1.asf', clip(2))
     const p = cutscenes.plan(src(), new R.BaseCharacter(src(), 'daredevil'), c)
-    expect(asftool.seconds(asftool.read(p.files.get('Sounds/ASF/english/synth_intro_2.asf')!))).toBeCloseTo(cutscenes.catalog(src()).wolverine.kinds.intro.slots[1].seconds, 3)
+    expect(asftool.seconds(asftool.read(p.files.get('Sounds/ASF/english/synth_intro_2.asf')!))).toBeCloseTo(1, 3)
     const intro = p.fields.get(170)!
     expect(intro[0]).toBe('synth_intro1')
     expect(intro[5]).toBe('synth_intro2')
     expect(cuttool.streams(cuttool.read(p.files.get('Cutscenes/synth_intro1.cut')!))).toEqual(['MP_WL_INT_1.asf', 'synth_intro_2.asf', ''])
     expect(cuttool.streams(cuttool.read(p.files.get('Cutscenes/synth_intro2.cut')!))[1]).toBe('synth_intro_2.asf')
+    // player 1's side keeps its original track, the longer one
+    const intro1 = cuttool.read(p.files.get('Cutscenes/synth_intro1.cut')!)
+    expect(cuttool.length(intro1)).toBe(Math.ceil(cutscenes.catalog(src()).wolverine.kinds.intro.slots[0].seconds * cuttool.fps(intro1)))
     // the second intro has no player 2 stream of its own
     expect(p.fields.get(171)![0]).toBe('mp_wl_int_2')
     for (const [i, fid] of [206, 207, 208].entries()) {
@@ -243,7 +305,11 @@ describe.skipIf(!ISO)('cutscenes', () => {
       expect(cuttool.streams(cuttool.read(p.files.get(`Cutscenes/${name}.cut`)!))[0]).toBe('synth_finisher_1.asf')
     }
     c.files.set('cutscenes/finisher_1.asf', clip(40))
-    expect(() => cutscenes.plan(src(), new R.BaseCharacter(src(), 'daredevil'), c)).toThrow(/longer than/)
+    const long = cutscenes.plan(src(), new R.BaseCharacter(src(), 'daredevil'), c)
+    for (const n of [1, 2, 3]) {
+      const cut = cuttool.read(long.files.get(`Cutscenes/synth_finisher${n}.cut`)!)
+      expect(cuttool.length(cut)).toBe(Math.ceil(40 * cuttool.fps(cut)))
+    }
   })
 
   it('knows every effect slot a victim can play', () => {

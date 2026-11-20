@@ -156,14 +156,6 @@ export function encode(channels: Int16Array[], rate = RATE): Asf {
   return { tags, blocks }
 }
 
-export function padded(a: Asf, samples: number): Asf {
-  return encode(decode(a).map((c) => {
-    const out = new Int16Array(Math.max(samples, c.length))
-    out.set(c)
-    return out
-  }), info(a).rate)
-}
-
 export function check(d: Uint8Array, maxSeconds: number): Asf {
   const a = read(d)
   const i = info(a)

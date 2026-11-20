@@ -4,8 +4,8 @@ import { LabError } from '../core/errors'
 // Below this the start and end of an upload count as silence and are cut.
 const SILENCE = 0.004
 
-// A mono file goes in both channels, and one channel is a mix of all of them; silence at either end is trimmed.
-export async function decodeSound(file: Blob, rate: number, maxSeconds: number, channels = 2): Promise<Int16Array[]> {
+// A mono file goes in both channels, and one channel is a mix of all of them; with `trim`, silence at either end is cut.
+export async function decodeSound(file: Blob, rate: number, maxSeconds: number, channels = 2, trim = true): Promise<Int16Array[]> {
   let decoded: AudioBuffer
   try {
     decoded = await new OfflineAudioContext(channels, 1, 44100).decodeAudioData(await file.arrayBuffer())
@@ -25,6 +25,7 @@ export async function decodeSound(file: Blob, rate: number, maxSeconds: number, 
   while (start < end && !loud(start)) start++
   while (end > start && !loud(end - 1)) end--
   if (end === start) throw new LabError('the sound file is silent')
+  if (!trim) [start, end] = [0, Math.min(length, Math.ceil(decoded.duration * rate))]
   const n = Math.min(end - start, Math.floor(maxSeconds * rate))
   return chans.map((ch) => Int16Array.from({ length: n }, (_, i) => Math.max(-32768, Math.min(32767, Math.round(ch[start + i] * 32767)))))
 }
