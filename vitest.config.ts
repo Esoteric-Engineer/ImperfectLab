@@ -1,5 +1,5 @@
 import { defineConfig } from 'vitest/config'
-import { define } from './buildInfo'
+import { define } from './buildInfo.ts'
 
 export default defineConfig({
   define,
