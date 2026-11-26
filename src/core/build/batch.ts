@@ -17,6 +17,7 @@ import * as laser from './laser'
 import * as projectileswap from './projectileswap'
 import { motionSetName, SLOTS } from './moves'
 import { airThrowCharacter, Builder, impersonates, mirrors, ownMotions, ownSounds, paintsReach, type PatchOutput, type Progress, Result, splitsCharge, throwsDamage, tuningFields, write, zCharacters, healthCharacters } from './patch'
+import { type BuildTarget, GAMECUBE } from './target'
 import * as templates from './templates'
 import { templateNames } from './templates'
 import * as tuning from './tuning'
@@ -33,7 +34,7 @@ export function ordinal(i: number): string {
 }
 
 // The tint levels they get: as asked, unless together (with their flames) they grow the effect cache by more than one full tint may.
-export function batchTints(source: GameSource, chars: Batch): [(string | null)[], number] {
+export function batchTints(source: GameSource, chars: Batch, target: BuildTarget = GAMECUBE): [(string | null)[], number] {
   const bases = chars.map((c) => new R.BaseCharacter(source, c.base))
   const asked = chars.map((c) => (c.aura.mode === 'tint' ? c.aura.tint : null))
   const sets = chars.map((c) => auraSet(c) !== 'base')
@@ -60,8 +61,8 @@ export function batchTints(source: GameSource, chars: Batch): [(string | null)[]
   const seen = new Map<string, number>()
   for (const t of tries) {
     const key = t.join()
-    if (!seen.has(key)) seen.set(key, effects.sharedExtra(source, t.map((level, i) => [bases[i], level, effects.hidden(chars[i].aura.color, chars[i].aura.alt_color), effectsets.setOf(auraSet(chars[i])) ?? undefined]), chars.map((c) => [c.flames, c.trails, c.eyes]), lines))
-    if (seen.get(key)! <= effects.TINT_ALL_LIMIT) return [t, seen.get(key)!]
+    if (!seen.has(key)) seen.set(key, effects.sharedExtra(source, t.map((level, i) => [bases[i], level, effects.hidden(chars[i].aura.color, chars[i].aura.alt_color), effectsets.setOf(auraSet(chars[i])) ?? undefined]), chars.map((c) => [c.flames, c.trails, c.eyes]), lines, target))
+    if (seen.get(key)! <= target.tintLimit) return [t, seen.get(key)!]
   }
   const last = tries[tries.length - 1]
   return [last, seen.get(last.join())!]
@@ -97,12 +98,13 @@ function sameNames(chars: Batch): [number, number][] {
   return out
 }
 
-export function buildBatch(source: GameSource, chars: Batch, progress: Progress = () => {}, models: (Model | undefined)[] = []): Result {
-  if (!chars.length || chars.length > MAX_BATCH) throw new LabError(`a patch takes 1 to ${MAX_BATCH} characters, not ${chars.length}`)
+export function buildBatch(source: GameSource, chars: Batch, progress: Progress = () => {}, models: (Model | undefined)[] = [], target: BuildTarget = GAMECUBE): Result {
+  const max = target.maxCharacters
+  if (!chars.length || chars.length > max) throw new LabError(`a patch takes 1 to ${max} characters, not ${chars.length}`)
   const same = sameNames(chars)[0]
   if (same) throw new LabError(`the ${ordinal(same[0])} and ${ordinal(same[1])} characters both have the internal name ${chars[same[0]].internalName}: one of them needs another`)
   const [batch, notes] = withVoices(chars)
-  const [tints] = batchTints(source, batch)
+  const [tints] = batchTints(source, batch, target)
   batch.forEach((c, i) => {
     if (c.aura.mode === 'tint' && tints[i] !== c.aura.tint) notes.push(`${c.displayName}: aura tint: the tints together need more effect memory than a match can spare; ${effects.fallback(tints[i]!, effectsets.setOf(auraSet(c)), R.label(c.base))}`)
   })
@@ -113,7 +115,7 @@ export function buildBatch(source: GameSource, chars: Batch, progress: Progress 
   let src = source
   batch.forEach((c, i) => {
     const name = batch.length > 1 ? `${c.displayName} (${i + 1} of ${batch.length})` : c.displayName
-    const b = new Builder(src, c, (stage, done, total) => progress(`${name}: ${stage}`, done, total), models[i])
+    const b = new Builder(src, c, (stage, done, total) => progress(`${name}: ${stage}`, done, total), models[i], target)
     b.selectId = ui.NEW_ID + i
     b.tint = tints[i]
     b.checkNames()
@@ -127,30 +129,35 @@ export function buildBatch(source: GameSource, chars: Batch, progress: Progress 
     if (i < batch.length - 1) src = new LayeredSource(source, new Map([...r.sets, ...r.adds]))
   })
 
+  r.guns = results.flatMap((x) => (x.gun ? [x.gun] : []))
+  r.lasers = results.flatMap((x) => (x.laser ? [x.laser] : []))
+  r.shields = results.flatMap((x) => (x.shield ? [x.shield] : []))
+  r.notes = [...notes, ...results.flatMap((x, i) => x.notes.map((n) => `${batch[i].displayName}: ${n}`))]
+  const caches = results.map((x) => x.cache).filter((x) => x !== null)
+  if (!target.patchDol) {
+    if (caches.length) r.cache = Math.max(...caches)
+    return r
+  }
+
   progress('Roster')
   const records = batch.map((c) => ({ internal: c.internalName, display: c.displayName, stats: c.stats.normal, altStats: c.stats.alt }))
   r.dol = D.bundleFit(records.length === 1 ? D.patch(source.dol, records[0].internal, records[0].display, records[0].stats, records[0].altStats) : D.patchMany(source.dol, records))
   // each tint was measured with the earlier ones' copies already in the file
-  const caches = results.map((x) => x.cache).filter((x) => x !== null)
   if (caches.length) {
     r.cache = Math.max(...caches)
     r.dol = D.growEffectCache(r.dol, r.cache)
   }
   if (batch.some(mirrors)) r.dol = D.mirrorSkip(r.dol)
   if (batch.some(splitsCharge)) r.dol = D.chargeRate(r.dol)
-  const shields = results.flatMap((x) => (x.shield ? [x.shield] : []))
-  if (batch.some(airThrows) || shields.length || batch.some(throwReturns)) r.dol = D.daredevil(r.dol, batch.filter(airThrows).map(airThrowCharacter), shields, batch.filter(throwReturns).map((c) => c.internalName))
+  if (batch.some(airThrows) || r.shields.length || batch.some(throwReturns)) r.dol = D.daredevil(r.dol, batch.filter(airThrows).map(airThrowCharacter), r.shields, batch.filter(throwReturns).map((c) => c.internalName))
   if (batch.some(throwsDamage)) r.dol = D.throwDamage(r.dol)
   if (batch.some(ownSounds)) r.dol = D.soundBanks(r.dol, batch.filter(ownSounds).map((c) => c.internalName))
   if (batch.some((c) => c.zButton)) r.dol = D.zActions(r.dol, zCharacters(batch))
   const health = healthCharacters(batch)
   if (health.length) r.dol = D.health(r.dol, health)
-  const guns = results.flatMap((x) => (x.gun ? [x.gun] : []))
-  if (guns.length) r.dol = D.gun(r.dol, guns)
-  const lasers = results.flatMap((x) => (x.laser ? [x.laser] : []))
-  if (lasers.length) r.dol = D.laser(r.dol, lasers)
+  if (r.guns.length) r.dol = D.gun(r.dol, r.guns)
+  if (r.lasers.length) r.dol = D.laser(r.dol, r.lasers)
   if (batch.some(impersonates)) r.dol = D.impersonate(r.dol, impersonationData())
-  r.notes = [...notes, ...results.flatMap((x, i) => x.notes.map((n) => `${batch[i].displayName}: ${n}`))]
   return r
 }
 
@@ -187,14 +194,14 @@ const gameBundle = (source: GameSource, name: string) => ['ngm', 'tpl'].reduce((
 const builtBundle = (adds: Map<string, Uint8Array>, name: string) => ['ngm', 'tpl'].reduce((n, ext) => n + (adds.get(`Bundles/${name}.${ext}`)?.length ?? 0), 0)
 
 // Everything that would stop the batch or that a match might not survive, cheapest first; the build is only tried when nothing simpler is wrong.
-export function checkBatch(source: GameSource, chars: Batch, progress: Progress = () => {}, models: (Model | undefined)[] = []): [BatchCheck, Result | null] {
+export function checkBatch(source: GameSource, chars: Batch, progress: Progress = () => {}, models: (Model | undefined)[] = [], target: BuildTarget = GAMECUBE): [BatchCheck, Result | null] {
   const out: BatchCheck = { problems: [], models: [], largest: 0, cacheExtra: 0, notes: [] }
   const add = (level: Problem[0], text: string) => out.problems.push([level, text])
   const errors = () => out.problems.some(([l]) => l === 'error')
   const named = chars.map((c, i) => `${ordinal(i)} (${c.displayName})`)
 
-  if (!chars.length || chars.length > MAX_BATCH) {
-    add('error', `choose 1 to ${MAX_BATCH} characters`)
+  if (!chars.length || chars.length > target.maxCharacters) {
+    add('error', `choose 1 to ${target.maxCharacters} characters`)
     return [out, null]
   }
   chars.forEach((c, i) => {
@@ -212,7 +219,7 @@ export function checkBatch(source: GameSource, chars: Batch, progress: Progress 
 
   chars.forEach((c, i) => {
     try {
-      new Builder(source, c).checkNames()
+      new Builder(source, c, undefined, undefined, target).checkNames()
     } catch (e) {
       if (!(e instanceof LabError)) throw e
       add('error', `${named[i]}: ${e.message}`)
@@ -227,7 +234,7 @@ export function checkBatch(source: GameSource, chars: Batch, progress: Progress 
   }))
   const lines = chars.flatMap((c, i) => (tuned(c) ? [i] : []))
   const need = lines.reduce((n, i) => n + tuning.listCost(chars[i].internalName), 0)
-  const room = tuning.listRoom(source.entry('Misc/nvblist.txt'))
+  const room = tuning.listRoom(source.entry('Misc/nvblist.txt'), target.listBuffer)
   if (need > room) {
     add('error', `${lines.map((i) => named[i]).join(', ')} each need their own tuning file (a tinted aura, changed gameplay or cutscenes), and their lines in the game's tuning list take ${need} bytes where it has ${room} free (a line costs its internal name's length plus 8): give some of them the Base or Swap aura, default gameplay and their base's cutscenes, or shorter internal names`)
   }
@@ -235,10 +242,10 @@ export function checkBatch(source: GameSource, chars: Batch, progress: Progress 
 
   const [batch, voiceNotes] = withVoices(chars)
   for (const n of voiceNotes) add('warning', n)
-  const [tints, extra] = batchTints(source, batch)
+  const [tints, extra] = batchTints(source, batch, target)
   batch.forEach((c, i) => {
     if (c.aura.mode === 'tint' && tints[i] !== c.aura.tint) {
-      add('warning', `${named[i]}: the tints together need more effect memory than a match can spare (the patch can grow it by ${effects.TINT_ALL_LIMIT.toLocaleString('en-US')} bytes), so ${effects.fallback(tints[i]!, effectsets.setOf(auraSet(c)), R.label(c.base))}`)
+      add('warning', `${named[i]}: the tints together need more effect memory than a match can spare (the patch can grow it by ${target.tintLimit.toLocaleString('en-US')} bytes), so ${effects.fallback(tints[i]!, effectsets.setOf(auraSet(c)), R.label(c.base))}`)
     }
   })
   chars.forEach((a, i) => chars.forEach((b, j) => {
@@ -246,11 +253,11 @@ export function checkBatch(source: GameSource, chars: Batch, progress: Progress 
       add('note', `${named[i]} and ${named[j]} share a base, so in a match between them both fighters use the first player's sounds`)
     }
   }))
-  if (extra > effects.TINT_ALL_LIMIT) add('warning', `even cut back, the tints and flames grow the effect cache by ${extra.toLocaleString('en-US')} bytes, more than has been tested`)
+  if (extra > target.tintLimit) add('warning', `even cut back, the tints and flames grow the effect cache by ${extra.toLocaleString('en-US')} bytes, more than has been tested`)
 
   let r: Result
   try {
-    r = buildBatch(source, chars, progress, models)
+    r = buildBatch(source, chars, progress, models, target)
   } catch (e) {
     if (!(e instanceof LabError)) throw e
     add('error', `the patch cannot be built: ${e.message}`)
