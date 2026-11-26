@@ -8,10 +8,12 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:core": "vite build -c vite.core.config.ts && tsc -p tsconfig.core.json && cp LICENSE dist-core/"
   },
   "dependencies": {
     "@fontsource/teko": "^5.3.0",
+    "@nemesismods/workspace": "^0.1.0",
     "@noble/hashes": "^2.4.0",
     "fast-png": "^8.0.0",
     "fflate": "^0.8.3",

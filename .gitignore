@@ -47,3 +47,5 @@ __MACOSX/
 .AppleDouble
 .LSOverride
 Icon[]
+# Core package build
+dist-core
