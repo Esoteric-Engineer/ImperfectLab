@@ -284,3 +284,17 @@ export async function writeIso(sink: Sink, disc: Disc, dol: Uint8Array, replace:
   await padTo(GC_DISC_SIZE)
   return GC_DISC_SIZE
 }
+
+export function folderDisc(entries: Map<string, ReadAt>, name: string): FolderDisc {
+  let root = ''
+  for (const k of entries.keys()) {
+    const i = k.toLowerCase().lastIndexOf('sys/boot.bin')
+    if (i >= 0 && (i === 0 || k[i - 1] === '/')) {
+      root = k.slice(0, i)
+      break
+    }
+  }
+  const inner = new Map<string, ReadAt>()
+  for (const [k, v] of entries) if (k.startsWith(root)) inner.set(k.slice(root.length), v)
+  return new FolderDisc(inner, name)
+}

@@ -40,12 +40,30 @@ Tests that need the game skip unless `IMPERFECTLAB_ISO` points at an unmodified 
 IMPERFECTLAB_ISO=/path/to/GVLE69.iso npm test
 ```
 
+`IMPERFECTLAB_XBOX` pointing at the Xbox image of [15Cyber's port](https://github.com/15Cyber/marvel-nemesis-recomp) (its `assets/*.iso`) turns on the retail Xbox format tests too. `tests/golden.test.ts` holds GameCube output fixed: regenerate its snapshot (`vitest -u`) only on purpose.
+
 Layout:
 
-- `src/core/`: everything that reads and writes game and character data, with no DOM or React
+- `src/core/`: everything that reads and writes game and character data, with no DOM or React (ESLint holds it to that)
+  - `src/core/xbox/`: the Xbox formats, for ports built from the Xbox version
+  - `src/core/build/target.ts`: what a build targets (`GAMECUBE` by default; Lab Builder passes its own)
+- `src/web/`: browser helpers for other tools (disc and image reading in a worker)
 - `src/worker/`: the engine worker that holds the opened disc and runs the core
-- `src/io/`: file pickers, downloads and browser-storage fallback for the patched disc
+- `src/io/`: file pickers, downloads, browser storage, and the shared workspace (the disc and Multi-Character Patch list Lab Builder reads)
 - `src/ui/`: React app
+
+### The core package
+
+`src/core` and `src/web` are published as `@nemesismods/imperfectlab-core`, which all other tools use:
+
+```bash
+npm run build:core                           # dist-core/, versioned 1.<commit count>.0
+npm publish ./dist-core --access public      # from main only
+```
+
+Import paths follow `src/core` (`@nemesismods/imperfectlab-core/build/batch`), plus `@nemesismods/imperfectlab-core/web`. Consumers need `moduleResolution: "bundler"`.
+
+ImperfectLab is meant to run inside the NemesisMods suite at nemesismods.com/lab (see NemesisModsCore). For the suite's local dev server, `SUITE_BASE=/lab/` serves it under that path.
 
 ## Credits
 

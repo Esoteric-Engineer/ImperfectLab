@@ -2,7 +2,7 @@
 // More characters (up to 9, the select grid's third row) need records past the 20th, which the tables have no room for: patchMany moves them into a new data section.
 // The roster tables (Game/unlockables.c in the decomp) hold 0x4C-byte records.
 import { sha1 } from '@noble/hashes/legacy.js'
-import { concat, cstring, encodeLatin1, equal, fromHex, i32be, i8, putF32be, putU32be, toHex, u32be } from '../bytes'
+import { concat, cstring, encodeLatin1, equal, fromHex, i32be, i8, putF32be, putF32le, putU32be, putU32le, toHex, u32be } from '../bytes'
 import { LabError } from '../errors'
 
 export const NORMAL_TABLE = 0x4c751c
@@ -522,25 +522,36 @@ export const GUN_DRAW = 0.3
 function gunTable(guns: GunCharacter[]): Uint8Array {
   const out = new Uint8Array(GUN_ENTRIES + GUN_ENTRY_SIZE * guns.length)
   putU32be(out, GUN_COUNT, guns.length)
+  gunEntries(out, GUN_ENTRIES, guns, putF32be)
+  return out
+}
+
+export function gunTableLE(guns: GunCharacter[]): Uint8Array {
+  const out = new Uint8Array(4 + GUN_ENTRY_SIZE * guns.length)
+  putU32le(out, 0, guns.length)
+  gunEntries(out, 4, guns, putF32le)
+  return out
+}
+
+function gunEntries(out: Uint8Array, at: number, guns: GunCharacter[], putF32: (d: Uint8Array, o: number, v: number) => void) {
   guns.forEach((g, i) => {
-    const o = GUN_ENTRIES + GUN_ENTRY_SIZE * i
+    const o = at + GUN_ENTRY_SIZE * i
     if (g.k.length !== 12 || (g.swap && g.swap.k.length !== 12)) throw new LabError('a gun holster is a 4x3 matrix')
     if (g.arm.length !== 3 || g.moves.length !== 3) throw new LabError("a gun's arm is an upper arm, forearm and hand")
     if (g.moves.some((bones) => bones.some((b) => b >= 128))) throw new LabError("the gun's arm has a bone past the 128 a reach can move")
     out.set([g.bone, g.hand, g.anchor, g.nodes, g.automatic ? 1 : 0, g.upper, g.fore, g.swap?.bone ?? 0xff], o)
-    putF32be(out, o + 8, g.energy)
-    g.bind.forEach((v, j) => putF32be(out, o + 0xc + 4 * j, v))
-    g.k.forEach((v, j) => putF32be(out, o + 0x18 + 4 * j, v))
-    g.arm.flat().forEach((v, j) => putF32be(out, o + 0x48 + 4 * j, v))
-    putF32be(out, o + 0x6c, 1 / (1000 * g.draw))
+    putF32(out, o + 8, g.energy)
+    g.bind.forEach((v, j) => putF32(out, o + 0xc + 4 * j, v))
+    g.k.forEach((v, j) => putF32(out, o + 0x18 + 4 * j, v))
+    g.arm.flat().forEach((v, j) => putF32(out, o + 0x48 + 4 * j, v))
+    putF32(out, o + 0x6c, 1 / (1000 * g.draw))
     g.moves.forEach((bones, j) => bones.forEach((b) => { out[o + 0x70 + 0x10 * j + (b >> 3)] |= 1 << (b & 7) }))
     entityNames(g.internal).forEach((name, j) => out.set(field(name), o + 0xa0 + 0x20 * j))
     if (g.swap) {
-      g.swap.k.forEach((v, j) => putF32be(out, o + 0xe0 + 4 * j, v))
-      g.swap.bind.forEach((v, j) => putF32be(out, o + 0x110 + 4 * j, v))
+      g.swap.k.forEach((v, j) => putF32(out, o + 0xe0 + 4 * j, v))
+      g.swap.bind.forEach((v, j) => putF32(out, o + 0x110 + 4 * j, v))
     }
   })
-  return out
 }
 
 // Needs zActions first: the gun is drawn while the character's Z slot is live (gun.s calls its stealth_test).
@@ -607,18 +618,29 @@ export interface HealthCharacter {
 function healthTable(chars: HealthCharacter[]): Uint8Array {
   const out = new Uint8Array(HEALTH_ENTRIES + HEALTH_ENTRY_SIZE * chars.length)
   putU32be(out, HEALTH_COUNT, chars.length)
+  healthEntries(out, HEALTH_ENTRIES, chars, putF32be)
+  return out
+}
+
+export function healthTableLE(chars: HealthCharacter[]): Uint8Array {
+  const out = new Uint8Array(4 + HEALTH_ENTRY_SIZE * chars.length)
+  putU32le(out, 0, chars.length)
+  healthEntries(out, 4, chars, putF32le)
+  return out
+}
+
+function healthEntries(out: Uint8Array, at: number, chars: HealthCharacter[], putF32: (d: Uint8Array, o: number, v: number) => void) {
   chars.forEach((c, i) => {
-    const o = HEALTH_ENTRIES + HEALTH_ENTRY_SIZE * i
+    const o = at + HEALTH_ENTRY_SIZE * i
     if (!c.stages.length || c.stages.length > HEALTH_STAGES) throw new LabError(`a costume has 1 to ${HEALTH_STAGES} damage stages, not ${c.stages.length}`)
     c.stages.forEach((v, j) => {
       if (!(v > 0 && v < 1) || (j && !(v < c.stages[j - 1]))) throw new LabError('damage stages start below full health and fall')
     })
     if (c.kept < 1 || (c.z !== null && (c.z < 1 || c.z >= c.kept))) throw new LabError("a costume's Z twins come after its own materials and before the untouched copies")
-    for (let j = 0; j < HEALTH_STAGES; j++) putF32be(out, o + 4 * j, c.stages[j] ?? -1)
+    for (let j = 0; j < HEALTH_STAGES; j++) putF32(out, o + 4 * j, c.stages[j] ?? -1)
     out.set([c.kept, c.z ?? 0xff, c.kept + 1 + c.stages.length], o + 0xc)
     entityNames(c.internal).forEach((name, j) => out.set(field(name), o + 0x10 + 0x20 * j))
   })
-  return out
 }
 
 // A character with Z twins needs zActions first: its stage gives way to them while Z holds them.
@@ -693,24 +715,36 @@ export interface LaserCharacter {
   effects: [string, string] // costume 1's and 2's effect
 }
 
-function laserTable(chars: LaserCharacter[]): Uint8Array {
-  const out = new Uint8Array(LASER_ENTRIES + LASER_ENTRY_SIZE * chars.length)
-  putU32be(out, LASER_COUNT, chars.length)
+function laserEntries(out: Uint8Array, at: number, chars: LaserCharacter[], putF32: (d: Uint8Array, o: number, v: number) => void,
+  putU32: (d: Uint8Array, o: number, v: number) => void) {
   chars.forEach((c, i) => {
-    const o = LASER_ENTRIES + LASER_ENTRY_SIZE * i
+    const o = at + LASER_ENTRY_SIZE * i
     if (!(c.range > 0) || !(c.damage > 0)) throw new LabError("a laser's range and damage are above 0")
     for (const name of c.effects) if (!name || name.length > 31) throw new LabError(`a laser effect is named in 1 to 31 characters, not ${name}`)
-    putF32be(out, o, c.range)
-    putF32be(out, o + 4, c.damage * LASER_TICK_SECONDS)
-    putF32be(out, o + 8, LASER_TICK_SECONDS)
-    putF32be(out, o + 0xc, LASER_RADIUS * c.size)
-    putF32be(out, o + 0x10, LASER_TURN)
-    putU32be(out, o + 0x14, LASER_DAMAGE_TYPE)
-    putU32be(out, o + 0x18, LASER_DAMAGE_FLAGS)
-    putU32be(out, o + 0x1c, LASER_REACTION)
+    putF32(out, o, c.range)
+    putF32(out, o + 4, c.damage * LASER_TICK_SECONDS)
+    putF32(out, o + 8, LASER_TICK_SECONDS)
+    putF32(out, o + 0xc, LASER_RADIUS * c.size)
+    putF32(out, o + 0x10, LASER_TURN)
+    putU32(out, o + 0x14, LASER_DAMAGE_TYPE)
+    putU32(out, o + 0x18, LASER_DAMAGE_FLAGS)
+    putU32(out, o + 0x1c, LASER_REACTION)
     entityNames(c.internal).forEach((name, j) => out.set(field(name), o + 0x20 + 0x20 * j))
     c.effects.forEach((name, j) => out.set(field(name), o + 0x60 + 0x20 * j))
   })
+}
+
+function laserTable(chars: LaserCharacter[]): Uint8Array {
+  const out = new Uint8Array(LASER_ENTRIES + LASER_ENTRY_SIZE * chars.length)
+  putU32be(out, LASER_COUNT, chars.length)
+  laserEntries(out, LASER_ENTRIES, chars, putF32be, putU32be)
+  return out
+}
+
+export function laserTableLE(chars: LaserCharacter[]): Uint8Array {
+  const out = new Uint8Array(4 + LASER_ENTRY_SIZE * chars.length)
+  putU32le(out, 0, chars.length)
+  laserEntries(out, 4, chars, putF32le, putU32le)
   return out
 }
 
@@ -1016,6 +1050,12 @@ function impersonationTable(dol: Uint8Array, d: ImpersonationData): Uint8Array {
     out[IMP_THROWBITS + (i >> 3)] |= 1 << (i & 7)
   }
   return out
+}
+
+// impersonationTable without its code addresses
+export function impersonationTableXbox(dol: Uint8Array, d: ImpersonationData): Uint8Array {
+  const t = impersonationTable(dol, d)
+  return t.slice(IMP_THROWBITS, IMP_AMAPS + 9 * IMP_AMAPLEN)
 }
 
 // Needs zActions first: impersonate.s takes over its hook and calls its z_update and stealth_test.

@@ -67,7 +67,7 @@ const GROUPS = [['arms'], ['legs'], ['body', 'head']]
 
 export function effectNames(fx: Effects, t: Trails, internal: string): [string | null, string | null] | null {
   if (!hasAny(t)) return null
-  const prefix = `${internal.slice(0, 2).toLowerCase()}tr`
+  const prefix = `${fx.prefix(internal)}tr`
   const hide = hidden(t.color, t.alt_color)
   const costume = (color: string, i: number): string | null => {
     if (hide[i]) return null
@@ -84,7 +84,7 @@ export function alwaysOn(fx: Effects, f: Flames, t: Trails, internal: string, e:
   const all = [flames.effectNames(fx, f, internal), effectNames(fx, t, internal), e ? eyes.effectNames(fx, e, internal) : null]
     .filter((x): x is [string | null, string | null] => x !== null)
   if (!all.length) return null
-  const prefix = `${internal.slice(0, 2).toLowerCase()}tr`
+  const prefix = `${fx.prefix(internal)}tr`
   const costume = (i: number): string | null => {
     const names = all.map((x) => x[i]).filter((n): n is string => n !== null)
     return names.length > 1 ? flames.add(fx, CONTROLLER, names.map((n) => `effectname ${n}`), prefix) : names[0] ?? null

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
-// Content-Security-Policy for lab.nemesismods.com (Cloudflare Pages).
+// Content-Security-Policy for nemesismods.com/lab (Cloudflare Pages); only the suite's own shell may frame it.
 const root = new URL('../', import.meta.url)
 const read = (path: string) => readFileSync(new URL(path, root), 'utf8')
 
@@ -18,7 +18,7 @@ describe('security headers', () => {
     const directives = new Map(csp!.split(';').map((d) => d.trim().split(/\s+/)).map(([name, ...values]) => [name, values]))
     expect(directives.get('script-src')).toEqual(["'self'", 'https://static.cloudflareinsights.com'])
     expect(directives.get('connect-src')).toContain('https://cloudflareinsights.com')
-    expect(directives.get('frame-ancestors')).toEqual(["'none'"])
+    expect(directives.get('frame-ancestors')).toEqual(["'self'"])
     expect(directives.get('object-src')).toEqual(["'none'"])
   })
 })

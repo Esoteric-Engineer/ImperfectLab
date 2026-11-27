@@ -86,6 +86,7 @@ function App() {
 
   useEffect(() => {
     void restoreDisc()
+    void store.restoreBatch()
   }, [])
 
   const gameKey = s.game?.key ?? null

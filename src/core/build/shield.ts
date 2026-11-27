@@ -93,7 +93,7 @@ function onMarker(body: string[]): string[] {
 
 // The trail uses only textures every match loads (Bundles/global)
 export function effects(fx: Effects, internal: string): { trail: string; sparkle: string } {
-  const prefix = `${internal.slice(0, 2).toLowerCase()}sh`
+  const prefix = `${fx.prefix(internal)}sh`
   const streak = add(fx, TRAIL, ['startcol (200,215,225,255)', 'endcol (0,150,170,220)', 'startsize 0.3', 'endsize 0', 'part_life 0.25',
     'sampledelay 0.02', 'renderradius 20', 'max_particles 15'], prefix)
   const glow = add(fx, PARTSYS, ['max_particles 1', 'part_size0 1', 'part_size1 0.5', 'type_flags2 0x80001', 'material GE_PAR_LensFlare1_blue',

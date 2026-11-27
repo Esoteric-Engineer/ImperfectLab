@@ -14,11 +14,8 @@ import { GLB, type Json } from '../src/core/mnroi/gltf'
 import * as ngbtool from '../src/core/mnroi/ngbtool'
 import * as ngmtool from '../src/core/mnroi/ngmtool'
 import * as nvbtool from '../src/core/mnroi/nvbtool'
-import { Model } from '../src/core/model/glb'
-import * as mapping from '../src/core/model/mapping'
-import { Skeleton } from '../src/core/model/skeleton'
 import * as imperfect from '../src/core/package/imperfect'
-import { gameSource, ISO, makeGlb, pngBytes } from './helpers'
+import { character, gameSource, ISO, makeGlb, pngBytes } from './helpers'
 
 function snr(a: Int16Array, b: Int16Array): number {
   let sig = 0, err = 0
@@ -123,20 +120,6 @@ describe.skipIf(!ISO)('cutscene files on the disc', () => {
     }
   })
 })
-
-function character(base: string, internal = 'Synth'): imperfect.Character {
-  const c = imperfect.newCharacter()
-  c.internalName = internal
-  c.displayName = internal.toUpperCase()
-  c.base = base
-  c.glb = makeGlb()
-  c.materials = [{ ...imperfect.newMaterial(0, 'skin', true, '', [64, 64]), texture: 'textures/skin.png' }]
-  c.files = new Map([['textures/skin.png', pngBytes()]])
-  const auto = mapping.autoMap(new Model(c.glb), Skeleton.ofBase(new R.BaseCharacter(gameSource(), c.base)))
-  c.mapping = auto.mapping
-  c.overrides = auto.overrides
-  return c
-}
 
 function clip(seconds: number): Uint8Array {
   const n = Math.round(seconds * asftool.RATE)

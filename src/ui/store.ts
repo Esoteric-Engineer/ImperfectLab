@@ -4,11 +4,14 @@ import type { Catalog, MoveEffectFit } from '../core/build/moves'
 import type { Catalog as SoundCatalog } from '../core/build/sounds'
 import type { Joint, JointModel } from '../core/model/glb'
 import type { DiscDetails, RememberedDisc } from '../io/discHandle'
+import { type BatchSlot, publishBatch, recallBatch } from '../io/sharedList'
 import { Skeleton } from '../core/model/skeleton'
 import { type Character, copyCharacter, newCharacter, snapshotCharacter } from '../core/package/imperfect'
 import type { BaseDetails, BaseInfo, BatchCheckResult, ModelInfo } from '../worker/protocol'
 import { engine, errorText } from './engine'
 import { History } from './history'
+
+export type { BatchSlot }
 
 const DISCRETE_INPUTS = new Set(['checkbox', 'radio', 'button', 'file', 'submit', 'reset'])
 const controlIds = new WeakMap<Element, number>()
@@ -62,12 +65,6 @@ export interface Game {
 }
 
 export type Change = 'character' | 'model' | 'mapping' | 'game'
-
-// A character chosen for a patch of several, and where it came from.
-export interface BatchSlot {
-  source: string
-  character: Character
-}
 
 class Store {
   character: Character = newCharacter()
@@ -231,6 +228,14 @@ class Store {
   private changeBatch(next: BatchSlot[]) {
     this.batch = next
     this.batchCheck = null
+    this.emit()
+    publishBatch(next)
+  }
+
+  async restoreBatch() {
+    const saved = await recallBatch()
+    if (!saved.length || this.batch.length) return
+    this.batch = saved
     this.emit()
   }
 

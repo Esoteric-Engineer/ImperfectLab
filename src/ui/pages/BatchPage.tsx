@@ -162,6 +162,7 @@ export function BatchPage() {
         Characters with a tinted aura or changed gameplay each need a line in the game's small tuning list, so only a few of them fit in one patch.
         Characters with the base's or a swapped aura and the base's gameplay have no such limit.
       </Note>
+      <Note>For Xbox Recomp (15Cyber), add this list in <a href="/#builder" target="_top">Lab Builder</a>.</Note>
       <div className="slots">
         {batch.map((slot, i) => <SlotCard key={i} index={i} slot={slot} count={batch.length} busy={busy !== null} />)}
       </div>

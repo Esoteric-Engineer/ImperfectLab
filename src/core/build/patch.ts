@@ -44,6 +44,7 @@ import * as portraits from './portraits'
 import * as reach from './reach'
 import * as shaders from './shaders'
 import * as sounds from './sounds'
+import { type BuildTarget, GAMECUBE } from './target'
 import * as templates from './templates'
 import * as trails from './trails'
 import * as tuning from './tuning'
@@ -68,6 +69,15 @@ export class Result {
   gun: D.GunCharacter | null = null
   laser: D.LaserCharacter | null = null
   shield: D.ShieldCharacter | null = null
+  guns: D.GunCharacter[] = []
+  lasers: D.LaserCharacter[] = []
+  shields: D.ShieldCharacter[] = []
+}
+
+// a faded character's see-through twins (for the Xbox recomp, since it doesn't do transparency correctly)
+export function ghostTwinned(c: Character, target: BuildTarget): boolean {
+  const visible = c.zButton?.stealth?.visible ?? 1
+  return target.ghostTwins && !c.zButton?.costume && visible > 0 && visible < 1
 }
 
 export function colorInt(color: string): number {
@@ -103,15 +113,21 @@ export class Builder {
   shot: projectileswap.Shot | null = null
   shieldSparkle: string | null = null
   shieldBind: [number, number, number] | null = null
+  target: BuildTarget
   private star: ngmtool.Model | null = null
   private namer: ((old: string) => string) | null = null
 
-  constructor(source: GameSource, character: Character, progress?: Progress, model?: Model) {
+  constructor(source: GameSource, character: Character, progress?: Progress, model?: Model, target: BuildTarget = GAMECUBE) {
     this.src = source
     this.c = character
     this.progress = progress ?? (() => {})
     this.base = new R.BaseCharacter(source, character.base)
     this.model = model ?? null
+    this.target = target
+  }
+
+  private nfx(): effects.Effects {
+    return new effects.Effects(this.src.entry('Misc/game.nfx'), this.target)
   }
 
   note(text: string) {
@@ -333,7 +349,8 @@ export class Builder {
       const mats = included.map((m) => c.internalName + costume + m.suffix)
       const shade = (name: string, texture: string, i: number): shaders.ShaderMaterial => ({ name, texture, finish: included[i].finish })
       allMaterials.push(...mats.map((name, i) => shade(name, name, i)))
-      const zs = c.zButton?.costume ? this.zImages(imgs, alt) : []
+      const zs: [string, RgbaImage | null][] = c.zButton?.costume ? this.zImages(imgs, alt)
+        : ghostTwinned(c, this.target) ? imgs.map(([m]) => [c.internalName + (alt ? '_altz' : '_z') + m.suffix, null]) : []
       const kept = zs.length || stages.length ? included.map((m) => c.internalName + (alt ? '_altzo' : '_zo') + m.suffix) : []
       const staged = stages.length ? this.stageImages(imgs, alt, stages) : []
       allMaterials.push(...zs.map(([name, im], i) => shade(name, im ? name : mats[i], i)), ...kept.map((name, i) => shade(name, mats[i], i)),
@@ -430,7 +447,7 @@ export class Builder {
   // The effect cache the laser beam takes, for the tint's budget.
   laserBytes(): number {
     const beam = laserOf(this.c)
-    return beam ? laser.bytes(() => new effects.Effects(this.src.entry('Misc/game.nfx')), beam) : 0
+    return beam ? laser.bytes(() => this.nfx(), beam) : 0
   }
 
   borrowTexture(bundleName: string, label: string, texture: string): [string, gxtex.TplImage] {
@@ -447,9 +464,9 @@ export class Builder {
     const tinted = c.aura.mode === 'tint', fire = flames.hasAny(c.flames), trailed = trails.hasAny(c.trails), theirs = Object.values(c.moveEffects).includes('theirs'), lined = paintsReach(c), eyed = eyes.hasAny(c.eyes)
     const shoots = c.projectile.on, beam = laserOf(c), shielded = shieldThrows(c), set = effectsets.setOf(auraSet(c))
     if (!tinted && !set && !fire && !trailed && !theirs && !lined && !eyed && !gunOf(c) && !shoots && !beam && !shielded) return [null, null, [], null]
-    const fx = new effects.Effects(this.src.entry('Misc/game.nfx'))
+    const fx = this.nfx()
     const before = fx.used()
-    const prefixes: [string, string] = [effects.copyPrefix(c.internalName, false), effects.copyPrefix(c.internalName, true)]
+    const prefixes: [string, string] = [fx.copyPrefix(c.internalName, false), fx.copyPrefix(c.internalName, true)]
     if (theirs) {
       const used = hasCutscenes(c.cutscenes) ? cutscenes.effectKs(this.src, this.base, c.cutscenes) : []
       this.moveFx = moves.planEffects(this.src, this.base, c.moveEffects, fx, c.moveLines, prefixes, used, moves.movedEffects(this.src, this.base, c.moves))
@@ -526,7 +543,7 @@ export class Builder {
     let level: string | null = null
     if (c.aura.mode === 'tint') {
       const more = trails.cost(c.flames, c.trails, c.eyes) + projectileswap.bytes(c.projectile) + this.laserBytes()
-      level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, this.base, set), 'all', more, hide) : c.aura.tint)
+      level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, this.base, set, this.nfx()), 'all', more, hide, this.target.tintLimit) : c.aura.tint)
       if (this.tint === null && level !== c.aura.tint) this.note(`aura tint: ${set.label} full tint needs more memory than a match can spare; ${effects.fallback(level, set, this.base.label)}`)
     }
     const copies = effects.setCopies(fx, tun, this.base, set, level, [c.aura.color, c.aura.alt_color], prefixes)
@@ -562,13 +579,13 @@ export class Builder {
     const c = this.c, base = this.base
     const tun = new tuning.Tuning(this.src, base)
     const hide = effects.hidden(c.aura.color, c.aura.alt_color)
-    const level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, base), 'all', trails.cost(c.flames, c.trails, c.eyes) + projectileswap.bytes(c.projectile) + this.laserBytes(), hide) : c.aura.tint)
+    const level = this.tint ?? (c.aura.tint === 'all' ? effects.tintLevel(effects.tintPlans(this.src, base, null, this.nfx()), 'all', trails.cost(c.flames, c.trails, c.eyes) + projectileswap.bytes(c.projectile) + this.laserBytes(), hide, this.target.tintLimit) : c.aura.tint)
     if (this.tint === null && level !== c.aura.tint) this.note(`aura tint: ${base.label}'s full tint needs more memory than a match can spare; its idle and power-up effects are tinted`)
     const [rootsN, rootsA] = effects.roots(fx, tun, base, level)
     if (!rootsN.length && !rootsA.length) throw new LabError(`${base.label} has no effects to tint; use the Base or Swap aura`)
     this.greyTint = [!hide[0] && fx.drawsFire(rootsN), !hide[1] && fx.drawsFire(rootsA)]
-    const mn = fx.tinted(rootsN, c.aura.color, effects.copyPrefix(c.internalName, false))
-    const ma = fx.tinted(rootsA, c.aura.alt_color, effects.copyPrefix(c.internalName, true))
+    const mn = fx.tinted(rootsN, c.aura.color, fx.copyPrefix(c.internalName, false))
+    const ma = fx.tinted(rootsA, c.aura.alt_color, fx.copyPrefix(c.internalName, true))
     const hiddenIn = ['1', '2'].filter((_, i) => hide[i])
     this.note(`aura tint: ${new Set([...mn.values(), ...ma.values()]).size} effect blocks added${hiddenIn.length ? `; costume ${hiddenIn.join(' and ')}'s effects hidden` : ''}`)
     const pick = (m: Map<string, string>, name: string | null) => m.get((name ?? '').toLowerCase()) ?? name!
@@ -648,7 +665,7 @@ export class Builder {
     for (const [fid, names] of this.moveFx?.slots.fields() ?? []) strings.set(fid, names)
     if (!Object.keys(fields).length && !strings.size) return null
     const tun = new tuning.Tuning(this.src, this.base)
-    const [name, nvb, listed] = tun.build(c.internalName, fields, strings)
+    const [name, nvb, listed] = tun.build(c.internalName, fields, strings, this.target.listBuffer)
     this.r.adds.set(name, nvb)
     this.r.sets.set('Misc/nvblist.txt', listed)
     return c.internalName
@@ -683,12 +700,12 @@ export class Builder {
     const c = this.c
     if (!ownMotions(c)) return null
     const thrown = c.baseMoves.throw_reach
-    const fx = Object.keys(c.moveReach).length ? new effects.Effects(this.src.entry('Misc/game.nfx')) : null
+    const fx = Object.keys(c.moveReach).length ? this.nfx() : null
     const shooter = this.gunPlan()
     const anims = animsOf(c, c.glb ? (this.model ?? new Model(c.glb)) : null)
     const set = effectsets.setOf(auraSet(c))
     // a projectile swap's shots keep their own launch points
-    const shots = set && !c.projectile.on ? effectsets.shotPlan(set, new tuning.Tuning(this.src, this.base), this.base.t, new effects.Effects(this.src.entry('Misc/game.nfx'))) : null
+    const shots = set && !c.projectile.on ? effectsets.shotPlan(set, new tuning.Tuning(this.src, this.base), this.base.t, this.nfx()) : null
     const fxEvents = set && (set.events.length || shots) ? (state: string, rec: ngbtool.Record, borrowed: boolean) => {
       const out = effectsets.withEvents(set, state, rec, this.setKs, borrowed)
       return shots && !borrowed && moves.shoots(state) ? effectsets.handShot(out, shots, !boneShots(c)) : out
@@ -933,11 +950,11 @@ export function zCharacters(chars: Character[]): D.ZCharacter[] {
 }
 
 // The characters whose costumes change with their health, and where their parts' blocks are (Builder.buildModel lays them out).
-export function healthCharacters(chars: Character[]): D.HealthCharacter[] {
+export function healthCharacters(chars: Character[], target: BuildTarget = GAMECUBE): D.HealthCharacter[] {
   return chars.flatMap((c) => {
     const stages = damageStages(c)
     if (!stages.length) return []
-    const z = c.zButton?.costume ? 1 : null
+    const z = c.zButton?.costume || ghostTwinned(c, target) ? 1 : null
     return [{ internal: c.internalName, stages: stages.map(([, f]) => f), kept: z === null ? 1 : 2, z }]
   })
 }

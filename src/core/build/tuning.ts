@@ -7,6 +7,7 @@ import { roundHalfEven } from '../mnroi/gxtex'
 import * as nvbtool from '../mnroi/nvbtool'
 import * as damage from './damage'
 import * as energy from './energy'
+import { GAMECUBE } from './target'
 
 export const SLOTS = nvbtool.SLOTS
 export const RESISTANCE = [134, 135, 136, 137, 138]
@@ -18,7 +19,7 @@ export const FIELDS: Record<string, number> = {
 export const POWER_EFFECTS = [98, 99]
 export const AIM_RANGE = 2
 export const PICKUP_RANGE = 240
-const LIST_BUFFER = 0x200
+export const LIST_BUFFER = GAMECUBE.listBuffer
 
 type Value = number | string
 
@@ -112,7 +113,7 @@ export class Tuning {
     return vals.map((v) => v * k)
   }
 
-  build(internal: string, gameplay: Record<string, unknown>, strings: Map<number, string[]> | null = null): [string, Uint8Array, Uint8Array] {
+  build(internal: string, gameplay: Record<string, unknown>, strings: Map<number, string[]> | null = null, listBuffer = LIST_BUFFER): [string, Uint8Array, Uint8Array] {
     const nvb = nvbtool.parseNvb(nvbtool.buildNvb(this.nvb))
     const raw = new Uint8Array(0x40)
     raw.set(encodeLatin1(internal))
@@ -146,15 +147,15 @@ export class Tuning {
     const pickup = gameplay.pickup_range as number | undefined
     if (pickup !== null && pickup !== undefined) this.set(nvb, PICKUP_RANGE, new Array(SLOTS).fill(pickup))
     for (const [fid, names] of strings ?? []) this.set(nvb, fid, names)
-    return [`Misc/PLAYER_${internal}.nvb`, nvbtool.buildNvb(nvb), this.listed(internal)]
+    return [`Misc/PLAYER_${internal}.nvb`, nvbtool.buildNvb(nvb), this.listed(internal, listBuffer)]
   }
 
-  listed(internal: string): Uint8Array {
+  listed(internal: string, listBuffer = LIST_BUFFER): Uint8Array {
     let text = latin1(this.list)
     for (const [a, b] of listPairs(this.list)) {
       if (a.toUpperCase() === 'PLAYER' && b.toLowerCase() === internal.toLowerCase()) throw new LabError(`nvblist.txt already lists PLAYER ${internal}`)
     }
-    if (listCost(internal) > listRoom(this.list)) throw new LabError('Misc/nvblist.txt has no room for another tuning file')
+    if (listCost(internal) > listRoom(this.list, listBuffer)) throw new LabError('Misc/nvblist.txt has no room for another tuning file')
     if (!text.endsWith('\r\n')) text += '\r\n'
     return encodeLatin1(text + `PLAYER ${internal}\r\n`)
   }
@@ -175,6 +176,6 @@ export function listCost(internal: string): number {
   return 'PLAYER'.length + internal.length + 2
 }
 
-export function listRoom(list: Uint8Array): number {
-  return LIST_BUFFER - 1 - listPairs(list).reduce((n, [a, b]) => n + a.length + b.length + 2, 0)
+export function listRoom(list: Uint8Array, buffer = LIST_BUFFER): number {
+  return buffer - 1 - listPairs(list).reduce((n, [a, b]) => n + a.length + b.length + 2, 0)
 }

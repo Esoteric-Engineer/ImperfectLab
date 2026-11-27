@@ -20,7 +20,7 @@ import * as sounds from '../core/build/sounds'
 import * as tuning from '../core/build/tuning'
 import * as ui from '../core/build/ui'
 import { LabError } from '../core/errors'
-import { FolderDisc, ImageDisc, type ReadAt, type Sink } from '../core/game/disc'
+import { type FolderDisc, folderDisc, ImageDisc, type ReadAt, type Sink } from '../core/game/disc'
 import * as R from '../core/game/roster'
 import { menuCity } from '../core/game/menuart'
 import { GameSource } from '../core/game/source'
@@ -32,7 +32,7 @@ import * as gshtool from '../core/mnroi/gshtool'
 import * as ngmtool from '../core/mnroi/ngmtool'
 import * as bundle from '../core/model/bundle'
 import { Fit, type MaterialSlots, type Tri } from '../core/model/fit'
-import { Model } from '../core/model/glb'
+import { type ImageDecoder, Model } from '../core/model/glb'
 import * as mapping from '../core/model/mapping'
 import { Skeleton } from '../core/model/skeleton'
 import * as imperfect from '../core/package/imperfect'
@@ -43,7 +43,6 @@ const DEFAULT_SIZES: Record<string, [number, number]> = {
   tile0: [64, 32], tile1: [64, 32], hud: [64, 64], strip0: [128, 256], strip1: [32, 256], strip0_alt: [128, 256], strip1_alt: [32, 256],
 }
 
-export type ImageDecoder = (body: Uint8Array) => Promise<RgbaImage>
 
 function shrink(im: RgbaImage | null, side: number): RgbaImage | null {
   if (!im) return null
@@ -133,17 +132,7 @@ export class Service {
   }
 
   openFolder(entries: Map<string, ReadAt>, name: string): DiscInfo {
-    let root = ''
-    for (const k of entries.keys()) {
-      const i = k.toLowerCase().lastIndexOf('sys/boot.bin')
-      if (i >= 0 && (i === 0 || k[i - 1] === '/')) {
-        root = k.slice(0, i)
-        break
-      }
-    }
-    const inner = new Map<string, ReadAt>()
-    for (const [k, v] of entries) if (k.startsWith(root)) inner.set(k.slice(root.length), v)
-    return this.openDisc(new FolderDisc(inner, name))
+    return this.openDisc(folderDisc(entries, name))
   }
 
   private src(): GameSource {
@@ -314,10 +303,7 @@ export class Service {
   }
 
   private async decodeImages(m: Model) {
-    for (const i of m.undecoded()) {
-      if (!this.decoder) throw new LabError('the GLB has a texture that is not a PNG')
-      m.setDecoded(i, await this.decoder(m.imageBytes(i)))
-    }
+    await m.decodeWith(this.decoder)
   }
 
   async importModel(raw: Uint8Array): Promise<ImportedModel> {
