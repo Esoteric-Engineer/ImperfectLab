@@ -4,11 +4,15 @@ import { sha256 } from '@noble/hashes/sha2.js'
 import { toHex, utf8 } from '../src/core/bytes'
 import type { ReadAt } from '../src/core/game/disc'
 import { ImageDisc } from '../src/core/game/disc'
+import * as R from '../src/core/game/roster'
 import { GameSource } from '../src/core/game/source'
 import { encodePng } from '../src/core/image/png'
 import { RgbaImage } from '../src/core/image/rgba'
+import { Model } from '../src/core/model/glb'
+import * as mapping from '../src/core/model/mapping'
 import { Skeleton } from '../src/core/model/skeleton'
 import type { Json } from '../src/core/mnroi/gltf'
+import * as imperfect from '../src/core/package/imperfect'
 
 export const ISO = process.env.IMPERFECTLAB_ISO
 
@@ -188,4 +192,18 @@ let source: GameSource | null = null
 export function gameSource(): GameSource {
   if (!source) source = new GameSource(new ImageDisc(fileReader(ISO!), ISO!))
   return source
+}
+
+export function character(base: string, internal = 'Synth'): imperfect.Character {
+  const c = imperfect.newCharacter()
+  c.internalName = internal
+  c.displayName = internal.toUpperCase()
+  c.base = base
+  c.glb = makeGlb()
+  c.materials = [{ ...imperfect.newMaterial(0, 'skin', true, '', [64, 64]), texture: 'textures/skin.png' }]
+  c.files = new Map([['textures/skin.png', pngBytes()]])
+  const auto = mapping.autoMap(new Model(c.glb), Skeleton.ofBase(new R.BaseCharacter(gameSource(), c.base)))
+  c.mapping = auto.mapping
+  c.overrides = auto.overrides
+  return c
 }
