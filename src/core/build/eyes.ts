@@ -53,7 +53,7 @@ function glow(color: string, size: number): string[] {
 
 export function effectNames(fx: Effects, e: Eyes, internal: string): [string | null, string | null] | null {
   if (!hasAny(e)) return null
-  const prefix = `${internal.slice(0, 2).toLowerCase()}ey`
+  const prefix = `${fx.prefix(internal)}ey`
   const hide = hidden(e.color, e.alt_color)
   return [e.color, e.alt_color].map((color, i) => (hide[i] ? null : flames.add(fx, BILLBOARD, glow(color, e.size), prefix))) as [string | null, string | null]
 }

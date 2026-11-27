@@ -122,7 +122,7 @@ export function add(fx: Effects, type: number, body: string[], prefix: string): 
 
 export function effectNames(fx: Effects, f: Flames, internal: string): [string, string] | null {
   if (!hasAny(f)) return null
-  const prefix = `${internal.slice(0, 2).toLowerCase()}fl`
+  const prefix = `${fx.prefix(internal)}fl`
   const costume = (color: string | null): string => {
     if (f.body) {
       if (color === null && f.size === 1) {

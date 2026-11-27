@@ -57,7 +57,7 @@ function costume(fx: Effects, color: string, range: number, prefix: string): str
 }
 
 export function build(fx: Effects, l: Laser, internal: string): [string, string] {
-  const prefix = `${internal.slice(0, 2).toLowerCase()}lz`
+  const prefix = `${fx.prefix(internal)}lz`
   const made = new Map<string, string>()
   return [l.color, l.alt_color].map((color) => {
     const key = color.toLowerCase()

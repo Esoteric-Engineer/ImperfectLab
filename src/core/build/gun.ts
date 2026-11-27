@@ -302,7 +302,7 @@ function add(fx: Effects, type: number, body: string[], prefix: string): string 
 
 // A short warm streak with a glow at its head, on the textures every match loads (Bundles/global).
 export function tracer(fx: Effects, internal: string): string {
-  const prefix = `${internal.slice(0, 2).toLowerCase()}gn`
+  const prefix = `${fx.prefix(internal)}gn`
   const streak = add(fx, TRAIL, ['startcol (220,255,236,170)', 'endcol (0,255,190,90)', 'startsize 0.08', 'endsize 0', 'part_life 0.12',
     'sampledelay 0.01', 'renderradius 20', 'max_particles 14'], prefix)
   const glow = add(fx, PARTSYS, ['max_particles 1', 'part_size0 0.45', 'part_size1 0.3', 'type_flags2 0x80001', 'material GE_PAR_lensFlare_01_BW',

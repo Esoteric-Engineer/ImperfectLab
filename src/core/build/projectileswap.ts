@@ -98,7 +98,7 @@ export function build(src: GameSource, base: R.BaseCharacter, fx: Effects, p: Pr
   const own = templates.chain(T, donorInfo.template).map((t) => t.name.toLowerCase())
   const all = templates.chains(T, [donorInfo.template, ...spawned])
   const roots = effectRoots(fx, all)
-  const prefix = `${internal.slice(0, 2).toLowerCase()}pj`
+  const prefix = `${fx.prefix(internal)}pj`
   const out: nottool.Template[] = []
   const made = new Map<string, string>()
   const copiesOf = new Map<string, nottool.Template[]>()
