@@ -1,35 +1,20 @@
 /// <reference lib="webworker" />
 import { LabError } from '../core/errors'
-import type { ReadAt, Sink } from '../core/game/disc'
-import { RgbaImage } from '../core/image/rgba'
+import type { Sink } from '../core/game/disc'
 import type { Batch } from '../core/build/batch'
 import type { EffectChoices } from '../core/build/cutscenes'
 import type { SecretOptions } from '../core/build/secret'
 import type { CutsceneKind } from '../core/package/imperfect'
 import type { PatchTarget, Request, Response } from './protocol'
 import { Service } from './service'
+import { blobReader, decodeImage } from '../web'
 
 declare const self: DedicatedWorkerGlobalScope
 
 const service = new Service()
 const FRESH = new Set(['preview', 'holsterPreview', 'eyesPreview', 'projectilePreview', 'laserPreview', 'materialPreview', 'movePreview', 'materialThumbs', 'materialPngs', 'compose', 'layout', 'bases', 'stripOutlines', 'cutscenePcm', 'cutsceneAnimation', 'moveAnimations', 'encodeCutsceneAudio', 'decodeCutsceneAudio', 'soundPcm', 'encodeSound', 'menuArt'])
 
-function fileReader(file: Blob): ReadAt {
-  const reader = new FileReaderSync()
-  return {
-    size: file.size,
-    read: (offset, size) => new Uint8Array(reader.readAsArrayBuffer(file.slice(offset, offset + size))),
-  }
-}
-
-service.decoder = async (body) => {
-  const bitmap = await createImageBitmap(new Blob([body as BlobPart]), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' })
-  const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
-  const ctx = canvas.getContext('2d')!
-  ctx.drawImage(bitmap, 0, 0)
-  const data = ctx.getImageData(0, 0, bitmap.width, bitmap.height).data
-  return new RgbaImage(bitmap.width, bitmap.height, data)
-}
+service.decoder = decodeImage
 
 async function openSink(target: PatchTarget): Promise<[Sink, () => Promise<void>, () => Promise<void>]> {
   if (target.kind === 'handle') {
@@ -73,8 +58,8 @@ function transfers(value: unknown, out: Set<ArrayBuffer>, seen = new Set<unknown
 }
 
 const handlers: Record<string, (progress: (stage: string, done?: number, total?: number) => void, ...args: never[]) => unknown> = {
-  openFile: (_p, file: File) => service.openImage(fileReader(file), file.name),
-  openFolder: (_p, name: string, files: [string, File][]) => service.openFolder(new Map(files.map(([k, f]) => [k, fileReader(f)])), name),
+  openFile: (_p, file: File) => service.openImage(blobReader(file), file.name),
+  openFolder: (_p, name: string, files: [string, File][]) => service.openFolder(new Map(files.map(([k, f]) => [k, blobReader(f)])), name),
   verify: (p) => service.verify(p),
   bases: () => service.baseList(),
   baseDetails: (_p, key: string) => service.baseDetails(key),

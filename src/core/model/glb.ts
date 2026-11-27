@@ -3,6 +3,8 @@ import { decodeImage, isPng } from '../image/decode'
 import type { RgbaImage } from '../image/rgba'
 import { colMajor, COMP_SIZE, GLB, identity, matMul, matVec, NCOMP, type Json, type Mat4 } from '../mnroi/gltf'
 
+export type ImageDecoder = (body: Uint8Array) => Promise<RgbaImage>
+
 const MAX_VERTICES = 400000
 const MAX_ACCESSOR_BYTES = 64 << 20
 export const RIGID_PREFIX = 'mesh:'
@@ -278,6 +280,13 @@ export class Model implements JointModel {
 
   setDecoded(i: number, im: RgbaImage) {
     this.decoded.set(i, im)
+  }
+
+  async decodeWith(decoder: ImageDecoder | null) {
+    for (const i of this.undecoded()) {
+      if (!decoder) throw new LabError('the GLB has a texture that is not a PNG')
+      this.setDecoded(i, await decoder(this.imageBytes(i)))
+    }
   }
 
   undecoded(): number[] {
