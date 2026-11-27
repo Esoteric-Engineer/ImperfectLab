@@ -1,4 +1,5 @@
-// The last disc chosen, as a File System Access handle in IndexedDB, so a reload can reopen it (Chromium only).
+// The last disc chosen, as a File System Access handle in the shared workspace, so a reload (or Lab Builder) can reopen it.
+import { forgetHandle, getHandle, setHandle } from '@nemesismods/workspace'
 
 export type DiscKind = 'file' | 'folder'
 
@@ -22,35 +23,9 @@ interface PermissionHandle {
   requestPermission?: (o: { mode: 'read' }) => Promise<PermissionState>
 }
 
-const DB = 'imperfectlab'
-const STORE = 'disc'
-const KEY = 'last'
-
-function db(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 1)
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE)
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
-  })
-}
-
-async function run<T>(mode: IDBTransactionMode, work: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  const d = await db()
-  try {
-    return await new Promise<T>((resolve, reject) => {
-      const req = work(d.transaction(STORE, mode).objectStore(STORE))
-      req.onsuccess = () => resolve(req.result)
-      req.onerror = () => reject(req.error)
-    })
-  } finally {
-    d.close()
-  }
-}
-
 export async function rememberDisc(disc: RememberedDisc) {
   try {
-    await run('readwrite', (s) => s.put(disc, KEY))
+    await setHandle('gamecube-disc', disc)
   } catch {
     // storage may be unavailable; the disc is then chosen again next time
   }
@@ -58,7 +33,7 @@ export async function rememberDisc(disc: RememberedDisc) {
 
 export async function recallDisc(): Promise<RememberedDisc | null> {
   try {
-    const v = await run<RememberedDisc | undefined>('readonly', (s) => s.get(KEY))
+    const v = await getHandle<RememberedDisc>('gamecube-disc')
     return v && v.handle && (v.kind === 'file' || v.kind === 'folder') ? v : null
   } catch {
     return null
@@ -67,7 +42,7 @@ export async function recallDisc(): Promise<RememberedDisc | null> {
 
 export async function forgetDisc() {
   try {
-    await run('readwrite', (s) => s.delete(KEY))
+    await forgetHandle('gamecube-disc')
   } catch {
     // nothing to forget
   }
